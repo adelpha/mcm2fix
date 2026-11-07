@@ -11,8 +11,10 @@
 #include <windows.h>
 #include <initguid.h>  // define the IIDs used below in this file
 #include <ddraw.h>
-#include <d3d.h>
 
+#include "d3d7_min.h"
+
+#include <cstdarg>
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -174,7 +176,7 @@ void Track(void* object, Kind kind) {
 }
 
 void TrackByIid(REFIID riid, void* object) {
-  if (riid == IID_IDirect3D7) Track(object, kD3D7);
+  if (riid == d7::kIID_IDirect3D7) Track(object, kD3D7);
   else if (riid == IID_IDirectDraw7) Track(object, kDD7);
   else if (riid == IID_IDirectDrawSurface7) Track(object, kSurf7);
   else if (riid == IID_IDirectDrawGammaControl) Track(object, kGamma);
@@ -307,8 +309,8 @@ HRESULT WINAPI S7_SetColorKey(IDirectDrawSurface7* self, DWORD f, LPDDCOLORKEY k
 }
 
 // ---- IDirect3D7 handlers ----
-HRESULT WINAPI D3D7_CreateDevice(IDirect3D7* self, REFCLSID cls, LPDIRECTDRAWSURFACE7 rt,
-                                 LPDIRECT3DDEVICE7* out) {
+HRESULT WINAPI D3D7_CreateDevice(d7::Direct3D7* self, REFCLSID cls, LPDIRECTDRAWSURFACE7 rt,
+                                 d7::Device7** out) {
   Count(self, 4);
   HRESULT hr = Orig<decltype(&D3D7_CreateDevice)>(self, 4)(self, cls, rt, out);
   const GUID& g = cls;
@@ -317,8 +319,8 @@ HRESULT WINAPI D3D7_CreateDevice(IDirect3D7* self, REFCLSID cls, LPDIRECTDRAWSUR
   if (SUCCEEDED(hr) && out) Track(*out, kDev7);
   return hr;
 }
-HRESULT WINAPI D3D7_CreateVertexBuffer(IDirect3D7* self, LPD3DVERTEXBUFFERDESC d,
-                                       LPDIRECT3DVERTEXBUFFER7* out, DWORD f) {
+HRESULT WINAPI D3D7_CreateVertexBuffer(d7::Direct3D7* self, d7::VertexBufferDesc* d,
+                                       d7::VertexBuffer7** out, DWORD f) {
   Count(self, 5);
   HRESULT hr = Orig<decltype(&D3D7_CreateVertexBuffer)>(self, 5)(self, d, out, f);
   if (d)
@@ -329,72 +331,72 @@ HRESULT WINAPI D3D7_CreateVertexBuffer(IDirect3D7* self, LPD3DVERTEXBUFFERDESC d
 }
 
 // ---- IDirect3DDevice7 handlers ----
-HRESULT WINAPI Dev_GetRenderTarget(IDirect3DDevice7* self, LPDIRECTDRAWSURFACE7* out) {
+HRESULT WINAPI Dev_GetRenderTarget(d7::Device7* self, LPDIRECTDRAWSURFACE7* out) {
   Count(self, 9);
   HRESULT hr = Orig<decltype(&Dev_GetRenderTarget)>(self, 9)(self, out);
   if (SUCCEEDED(hr) && out) Track(*out, kSurf7);
   return hr;
 }
-HRESULT WINAPI Dev_Clear(IDirect3DDevice7* self, DWORD n, LPD3DRECT r, DWORD f, D3DCOLOR c,
-                         D3DVALUE z, DWORD s) {
+HRESULT WINAPI Dev_Clear(d7::Device7* self, DWORD n, d7::Rect* r, DWORD f, d7::Color c,
+                         d7::Value z, DWORD s) {
   Count(self, 10);
   LogOnce("Clear flags=%lx rects=%lu", f, n);
   return Orig<decltype(&Dev_Clear)>(self, 10)(self, n, r, f, c, z, s);
 }
-HRESULT WINAPI Dev_SetTransform(IDirect3DDevice7* self, D3DTRANSFORMSTATETYPE t,
-                                LPD3DMATRIX m) {
+HRESULT WINAPI Dev_SetTransform(d7::Device7* self, d7::TransformState t,
+                                d7::Matrix* m) {
   Count(self, 11);
   LogOnce("SetTransform type=%d", static_cast<int>(t));
   return Orig<decltype(&Dev_SetTransform)>(self, 11)(self, t, m);
 }
-HRESULT WINAPI Dev_SetViewport(IDirect3DDevice7* self, LPD3DVIEWPORT7 v) {
+HRESULT WINAPI Dev_SetViewport(d7::Device7* self, d7::Viewport7* v) {
   Count(self, 13);
   if (v) LogOnce("SetViewport %lux%lu+%lu+%lu", v->dwWidth, v->dwHeight, v->dwX, v->dwY);
   return Orig<decltype(&Dev_SetViewport)>(self, 13)(self, v);
 }
-HRESULT WINAPI Dev_SetRenderState(IDirect3DDevice7* self, D3DRENDERSTATETYPE s, DWORD v) {
+HRESULT WINAPI Dev_SetRenderState(d7::Device7* self, d7::RenderState s, DWORD v) {
   Count(self, 20);
   LogOnce("SetRenderState %d = %lx", static_cast<int>(s), v);
   return Orig<decltype(&Dev_SetRenderState)>(self, 20)(self, s, v);
 }
-HRESULT WINAPI Dev_DrawPrimitive(IDirect3DDevice7* self, D3DPRIMITIVETYPE p, DWORD fvf, LPVOID v,
+HRESULT WINAPI Dev_DrawPrimitive(d7::Device7* self, d7::PrimitiveType p, DWORD fvf, LPVOID v,
                                  DWORD n, DWORD f) {
   Count(self, 25);
   LogOnce("DrawPrimitive prim=%d fvf=%lx flags=%lx", static_cast<int>(p), fvf, f);
   return Orig<decltype(&Dev_DrawPrimitive)>(self, 25)(self, p, fvf, v, n, f);
 }
-HRESULT WINAPI Dev_DrawIndexedPrimitive(IDirect3DDevice7* self, D3DPRIMITIVETYPE p, DWORD fvf,
+HRESULT WINAPI Dev_DrawIndexedPrimitive(d7::Device7* self, d7::PrimitiveType p, DWORD fvf,
                                         LPVOID v, DWORD nv, LPWORD i, DWORD ni, DWORD f) {
   Count(self, 26);
   LogOnce("DrawIndexedPrimitive prim=%d fvf=%lx flags=%lx", static_cast<int>(p), fvf, f);
   return Orig<decltype(&Dev_DrawIndexedPrimitive)>(self, 26)(self, p, fvf, v, nv, i, ni, f);
 }
-HRESULT WINAPI Dev_DrawPrimitiveVB(IDirect3DDevice7* self, D3DPRIMITIVETYPE p,
-                                   LPDIRECT3DVERTEXBUFFER7 vb, DWORD s, DWORD n, DWORD f) {
+HRESULT WINAPI Dev_DrawPrimitiveVB(d7::Device7* self, d7::PrimitiveType p,
+                                   d7::VertexBuffer7* vb, DWORD s, DWORD n, DWORD f) {
   Count(self, 31);
   LogOnce("DrawPrimitiveVB prim=%d flags=%lx", static_cast<int>(p), f);
   return Orig<decltype(&Dev_DrawPrimitiveVB)>(self, 31)(self, p, vb, s, n, f);
 }
-HRESULT WINAPI Dev_DrawIndexedPrimitiveVB(IDirect3DDevice7* self, D3DPRIMITIVETYPE p,
-                                          LPDIRECT3DVERTEXBUFFER7 vb, DWORD s, DWORD nv,
+HRESULT WINAPI Dev_DrawIndexedPrimitiveVB(d7::Device7* self, d7::PrimitiveType p,
+                                          d7::VertexBuffer7* vb, DWORD s, DWORD nv,
                                           LPWORD i, DWORD ni, DWORD f) {
   Count(self, 32);
   LogOnce("DrawIndexedPrimitiveVB prim=%d flags=%lx", static_cast<int>(p), f);
   return Orig<decltype(&Dev_DrawIndexedPrimitiveVB)>(self, 32)(self, p, vb, s, nv, i, ni, f);
 }
-HRESULT WINAPI Dev_GetTexture(IDirect3DDevice7* self, DWORD st, LPDIRECTDRAWSURFACE7* out) {
+HRESULT WINAPI Dev_GetTexture(d7::Device7* self, DWORD st, LPDIRECTDRAWSURFACE7* out) {
   Count(self, 34);
   HRESULT hr = Orig<decltype(&Dev_GetTexture)>(self, 34)(self, st, out);
   if (SUCCEEDED(hr) && out && *out) Track(*out, kSurf7);
   return hr;
 }
-HRESULT WINAPI Dev_SetTexture(IDirect3DDevice7* self, DWORD st, LPDIRECTDRAWSURFACE7 t) {
+HRESULT WINAPI Dev_SetTexture(d7::Device7* self, DWORD st, LPDIRECTDRAWSURFACE7 t) {
   Count(self, 35);
   LogOnce("SetTexture stage=%lu", st);
   return Orig<decltype(&Dev_SetTexture)>(self, 35)(self, st, t);
 }
-HRESULT WINAPI Dev_SetTextureStageState(IDirect3DDevice7* self, DWORD st,
-                                        D3DTEXTURESTAGESTATETYPE t, DWORD v) {
+HRESULT WINAPI Dev_SetTextureStageState(d7::Device7* self, DWORD st,
+                                        d7::StageState t, DWORD v) {
   Count(self, 37);
   LogOnce("SetTextureStageState stage=%lu %d = %lx", st, static_cast<int>(t), v);
   return Orig<decltype(&Dev_SetTextureStageState)>(self, 37)(self, st, t, v);
