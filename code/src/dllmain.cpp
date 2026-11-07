@@ -13,6 +13,7 @@ void ApplyFileFixes();
 void ApplyDiagnostics();
 void ApplyRegistryTrace();
 void ApplyD3D11Backend();
+void ApplyWidescreenFov();
 
 namespace {
 
@@ -45,6 +46,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
       if (c.files) ApplyFileFixes();
       if (c.reg_log) ApplyRegistryTrace();
       ApplyD3D11Backend();
+      ApplyWidescreenFov();
       if (c.activate_log) ApplyDiagnostics();
     } else {
       patch::Log("not the supported Mcm2.exe; no fixes applied");
