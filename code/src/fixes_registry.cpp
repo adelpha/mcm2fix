@@ -40,11 +40,27 @@ bool Redirect(HKEY root, LPCSTR subkey, std::string* out) {
   return true;
 }
 
+// The game caches a hardware profile per video device under DriverInfo\<guid>
+// and skips its startup tests when it can read one back. On Windows 11 that
+// cached path leaves the renderer stalled (the screen only redraws on focus
+// changes), while the tested path works. Under the old HKLM key Windows'
+// registry virtualization happened to hide the cached profile from reads,
+// so the game re-tested on every launch. Keep that behaviour: report the
+// profile as missing on read-only opens. This goes away with the D3D11
+// renderer in step 3.
+bool IsDriverInfoRead(const std::string& user_key, REGSAM sam) {
+  const char kDriverInfo[] = "\\DriverInfo";
+  return user_key.find(kDriverInfo) != std::string::npos &&
+         (sam & (KEY_SET_VALUE | KEY_CREATE_SUB_KEY)) == 0;
+}
+
 LONG WINAPI HookedRegOpenKeyExA(HKEY root, LPCSTR subkey, DWORD options, REGSAM sam,
                                 PHKEY result) {
   std::string user;
-  if (Redirect(root, subkey, &user))
+  if (Redirect(root, subkey, &user)) {
+    if (IsDriverInfoRead(user, sam)) return ERROR_FILE_NOT_FOUND;
     return g_open(HKEY_CURRENT_USER, user.c_str(), options, sam, result);
+  }
   return g_open(root, subkey, options, sam, result);
 }
 
