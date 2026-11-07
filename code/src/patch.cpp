@@ -1,5 +1,7 @@
 #include "patch.h"
 
+#include "config.h"
+
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -70,6 +72,30 @@ void Log(const char* fmt, ...) {
   msg[n + 1] = 0;
   OutputDebugStringA("[mcm2fix] ");
   OutputDebugStringA(msg);
+  if (!GetConfig().log) return;
+  static HANDLE file = INVALID_HANDLE_VALUE;
+  static bool tried = false;
+  if (!tried) {
+    tried = true;
+    char path[MAX_PATH] = {};
+    DWORD len = GetEnvironmentVariableA("LOCALAPPDATA", path, MAX_PATH);
+    if (len > 0 && len < MAX_PATH - 40) {
+      strncat_s(path, "\\Motocross Madness 2", _TRUNCATE);
+      CreateDirectoryA(path, nullptr);
+      strncat_s(path, "\\mcm2fix.log", _TRUNCATE);
+      file = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS,
+                         FILE_ATTRIBUTE_NORMAL, nullptr);
+    }
+  }
+  if (file != INVALID_HANDLE_VALUE) {
+    char line[600];
+    SYSTEMTIME t;
+    GetLocalTime(&t);
+    int m = std::snprintf(line, sizeof(line), "%02u:%02u:%02u.%03u [%5lu] %s", t.wHour,
+                          t.wMinute, t.wSecond, t.wMilliseconds, GetCurrentThreadId(), msg);
+    DWORD written = 0;
+    if (m > 0) WriteFile(file, line, static_cast<DWORD>(m), &written, nullptr);
+  }
 }
 
 }  // namespace patch

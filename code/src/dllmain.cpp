@@ -3,12 +3,14 @@
 #include <windows.h>
 #include <cstdint>
 
+#include "config.h"
 #include "patch.h"
 
 void ApplyStep1Fixes();
 void ApplyStartupFixes();
 void ApplyRegistryFixes();
 void ApplyFileFixes();
+void ApplyDiagnostics();
 
 namespace {
 
@@ -27,12 +29,14 @@ bool IsSupportedGame() {
 BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
   if (reason == DLL_PROCESS_ATTACH) {
     DisableThreadLibraryCalls(inst);
+    LoadConfig();
     if (IsSupportedGame()) {
       patch::Log("mcm2fix loaded");
       ApplyStep1Fixes();
       ApplyStartupFixes();
       ApplyRegistryFixes();
       ApplyFileFixes();
+      ApplyDiagnostics();
     } else {
       patch::Log("not the supported Mcm2.exe; no fixes applied");
     }

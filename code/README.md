@@ -34,3 +34,13 @@ MinGW cross-compile (Linux):
     python tools/mcm2patch.py Mcm2.exe Mcm2_fixed.exe
 
 Put `Mcm2_fixed.exe` and `mcm2fix.dll` in the game folder.
+
+## mcm2fix.ini (optional, next to Mcm2.exe)
+
+```ini
+[mcm2fix]
+; 1 = pin the game to one CPU core (stopgap for the startup thread race)
+OneCore=1
+; 1 = write %LOCALAPPDATA%\Motocross Madness 2\mcm2fix.log
+Log=1
+```

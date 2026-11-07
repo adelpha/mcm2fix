@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <cstdint>
 
+#include "config.h"
 #include "patch.h"
 
 namespace {
@@ -91,7 +92,12 @@ void ApplyNoAdmin() {
 void ApplyStep1Fixes() {
   // Interim: the game races between its threads on multi-core CPUs. Pinned to
   // one core it starts and plays its movies. To be replaced by a real fix.
-  SetProcessAffinityMask(GetCurrentProcess(), 1);
+  if (GetConfig().one_core) {
+    SetProcessAffinityMask(GetCurrentProcess(), 1);
+    patch::Log("one-core: pinned to CPU 0");
+  } else {
+    patch::Log("one-core: off (mcm2fix.ini OneCore=0)");
+  }
   ApplyFlipRetry();
   ApplyNoAdmin();
 }
