@@ -49,5 +49,6 @@ Files=1        ; send file writes to %LOCALAPPDATA%\Motocross Madness 2
 ActivateLog=1  ; log WM_ACTIVATEAPP
 RegLog=1       ; log every registry call
 D3D11=1        ; draw with mcm2fix's Direct3D 11 renderer (borderless, scaled)
+DDStats=0      ; with D3D11=1: log renderer activity every 2 seconds (for debugging)
 DDLog=0        ; with D3D11=0: log the system DirectDraw / Direct3D 7 calls
 ```

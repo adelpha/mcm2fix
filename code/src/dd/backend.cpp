@@ -10,6 +10,7 @@
 #include <set>
 #include <string>
 
+#include "../config.h"
 #include "../patch.h"
 
 namespace dd {
@@ -428,6 +429,7 @@ std::map<std::string, unsigned> g_readbacks;
 }
 
 void NoteReadback(const char* why, DWORD caps, UINT w, UINT h) {
+  if (!GetConfig().dd_stats) return;
   char key[96];
   std::snprintf(key, sizeof(key), "%s caps=%lx %ux%u", why, caps, w, h);
   ++g_readbacks[key];
@@ -437,6 +439,7 @@ namespace {
 void ReportStats() {
   static DWORD last = GetTickCount();
   static int reports = 0;
+  if (!GetConfig().dd_stats) return;
   DWORD now = GetTickCount();
   if (now - last < 2000 || reports > 200) return;
   Stats& s = Counters();

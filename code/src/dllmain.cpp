@@ -38,8 +38,8 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
       patch::Log("mcm2fix loaded");
       ApplyStep1Fixes();
       const Config& c = GetConfig();
-      patch::Log("config: OneCore=%d Startup=%d Registry=%d Files=%d ActivateLog=%d D3D11=%d",
-                 c.one_core, c.startup, c.registry, c.files, c.activate_log, c.d3d11);
+      patch::Log("config: OneCore=%d Startup=%d Registry=%d Files=%d ActivateLog=%d D3D11=%d DDStats=%d",
+                 c.one_core, c.startup, c.registry, c.files, c.activate_log, c.d3d11, c.dd_stats);
       if (c.startup) ApplyStartupFixes();
       if (c.registry) ApplyRegistryFixes();
       if (c.files) ApplyFileFixes();

@@ -22,6 +22,7 @@ struct Config {
   bool reg_log = true;
   bool dd_log = false;
   bool d3d11 = true;
+  bool dd_stats = false;  // D3D11 renderer: log activity counters every 2 s
 };
 
 const Config& GetConfig();
