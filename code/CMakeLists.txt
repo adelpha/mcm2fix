@@ -29,6 +29,7 @@ add_library(mcm2fix SHARED
 set_target_properties(mcm2fix PROPERTIES PREFIX "" OUTPUT_NAME "mcm2fix")
 
 target_link_libraries(mcm2fix PRIVATE d3d11 dxgi dxguid gdi32 user32)
+target_compile_definitions(mcm2fix PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 
 if(MSVC)
   # Static CRT so the DLL needs no Visual C++ redistributable.
