@@ -310,6 +310,13 @@ bool ResizeSwapchain() {
   }
   b.swap_w = w;
   b.swap_h = h;
+  // Show black straight away rather than whatever was behind the window
+  // until the game's first frame arrives.
+  if (b.swap_rtv) {
+    const float black[4] = {0, 0, 0, 1};
+    b.ctx->ClearRenderTargetView(b.swap_rtv, black);
+    b.swapchain->Present(0, 0);
+  }
   LogOnce("swap chain %ux%u", w, h);
   return b.swap_rtv != nullptr;
 }

@@ -10,6 +10,7 @@ struct Config {
   bool activate_log = false;  // ActivateLog: log window activation
   bool reg_log = false;       // RegLog: log every registry call
   bool dd_stats = false;      // DDStats: log renderer activity every 2 seconds
+  bool wide_fov = true;       // WideFov: wide modes show more to the sides instead of cropping
   int alpha_cut = 128;        // AlphaCut: alpha-tested blended pixels below this (0-255) are dropped
 };
 

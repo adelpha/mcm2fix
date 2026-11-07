@@ -786,7 +786,21 @@ const float* Device::Wvp() {
   if (wvp_dirty_) {
     float wv[16];
     MatMul(&world_.m[0][0], &view_.m[0][0], wv);
-    MatMul(wv, &proj_.m[0][0], wvp_);
+    D3DMATRIX proj = proj_;
+    // The game keeps its horizontal field of view and crops the top and
+    // bottom in wide modes. Widen the view instead (keep the 4:3 vertical
+    // field of view): scale x and y so y matches what 4:3 would use.
+    const float aspect = viewport_.dwHeight ? static_cast<float>(viewport_.dwWidth) / viewport_.dwHeight : 0;
+    if (GetConfig().wide_fov && aspect > 4.0f / 3.0f + 0.01f && proj.m[2][3] != 0 && proj.m[3][3] == 0 &&
+        proj.m[0][0] != 0) {
+      const float k = proj.m[0][0] * (4.0f / 3.0f) / proj.m[1][1];  // new y scale / old y scale
+      const float kx = proj.m[0][0] * (4.0f / 3.0f) / aspect / proj.m[0][0];
+      for (int r = 0; r < 4; ++r) {
+        proj.m[r][0] *= kx;
+        proj.m[r][1] *= k;
+      }
+    }
+    MatMul(wv, &proj.m[0][0], wvp_);
     wvp_dirty_ = false;
   }
   return wvp_;
@@ -794,6 +808,7 @@ const float* Device::Wvp() {
 
 HRESULT Device::SetViewport(D3DVIEWPORT7* vp) {
   if (!vp) return DDERR_INVALIDPARAMS;
+  if (vp->dwWidth != viewport_.dwWidth || vp->dwHeight != viewport_.dwHeight) wvp_dirty_ = true;
   viewport_ = *vp;
   return D3D_OK;
 }

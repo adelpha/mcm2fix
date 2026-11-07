@@ -57,6 +57,7 @@ Registry=1     ; keep settings in HKCU instead of HKLM
 Files=1        ; send file writes to %LOCALAPPDATA%\Motocross Madness 2
 AlphaCut=128   ; trees and flags: drop pixels less opaque than this (0-255), which
                ; removes the fringe where trees hide flags behind them (0 = original look)
+WideFov=1      ; widescreen modes show more to the sides (0 = crop top and bottom like the original)
 OneCore=0      ; 1 = pin the game to one CPU core (old stopgap)
 ActivateLog=0  ; debugging: log window activation
 RegLog=0       ; debugging: log every registry call
