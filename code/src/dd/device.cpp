@@ -1285,7 +1285,10 @@ void Device::ApplyState(bool tl, bool depth_clip, bool has_depth) {
   // original game shows a stair-step fringe there. Drop those pixels.
   if (rs_[RS_ALPHABLENDENABLE] && rs_[RS_ZWRITEENABLE] && rs_[RS_ZENABLE] &&
       (rs_[RS_SRCBLEND] == 5 || rs_[RS_SRCBLEND] == 12) &&  // SRCALPHA, BOTHSRCALPHA
-      tex_[0] && tex_[0]->IsCutout())
+      // The game marks its cut-outs with alpha test GREATER 0, which lets
+      // every filtered edge pixel through; soft layers (terrain detail,
+      // shadows) have alpha test off and are left alone.
+      rs_[RS_ALPHATESTENABLE] && (rs_[RS_ALPHAFUNC] == 5 || rs_[RS_ALPHAFUNC] == 7))
     pc.cut[0] = static_cast<float>(GetConfig().alpha_cut) / 255.0f;
   b.ctx->UpdateSubresource(ps_cb_, 0, nullptr, &pc, 0, 0);
 
