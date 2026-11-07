@@ -117,6 +117,9 @@ void SeedUserKey() {
   // Reuse the last input device instead of asking on every launch (the
   // game's own "show controller picker" option, unset on most installs).
   if (!HasValue(key, "UseLastController")) SetDword(key, "UseLastController", 1);
+  // mcm2fix always picks the video card itself, so keep the game's "Show 3-D
+  // Renderer Selector at Startup" option off; it would do nothing.
+  SetDword(key, "UseLastVideoCard", 1);
 
   // The game tests the video card once and caches the result, including the
   // list of display modes, under DriverInfo. mcm2fix's renderer provides
