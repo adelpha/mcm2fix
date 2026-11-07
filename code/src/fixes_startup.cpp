@@ -36,7 +36,9 @@ void ApplyNoHardwareChangeBox() {
 // also in the list. Replace it: return the first hardware device (flag bit
 // 0 at +0x1b8), else the first device. The device list is at 690894 (4
 // pointers) with its count at 6908a4; each device's name is at +0x4bc.
-void* __cdecl PickRenderDevice(int, int, void*) {
+// The window writes the third argument (game+0x2d0): 1 when the "Software
+// Renderer" entry was chosen, 0 for a hardware card. Always choose hardware.
+void* __cdecl PickRenderDevice(int, int, void* use_software) {
   auto** devices = reinterpret_cast<uint8_t**>(0x690894);
   int count = *reinterpret_cast<int*>(0x6908A4);
   if (count > 4) count = 4;
@@ -50,6 +52,11 @@ void* __cdecl PickRenderDevice(int, int, void*) {
     if (!pick && hardware) pick = d;
   }
   if (!pick && count > 0) pick = devices[0];
+  if (use_software) {
+    auto* flag = static_cast<int*>(use_software);
+    patch::Log("software-renderer flag was %d, set to 0", *flag);
+    *flag = 0;
+  }
   patch::Log("picked device %p", pick);
   return pick;
 }
