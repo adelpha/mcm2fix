@@ -271,6 +271,40 @@ Surface* Surface::From(IDirectDrawSurface7* s) {
   return static_cast<Surface*>(s);
 }
 
+Surface* Surface::CopyForeign(DirectDraw* dd, IUnknown* in) {
+  // A surface from Windows' own DirectDraw (the video player's): copy its
+  // pixels into a temporary surface of ours.
+  static const GUID kIID_Surface7 = {0x06675a80, 0x3b9b, 0x11d2,
+                                     {0xb9, 0x2f, 0x00, 0x60, 0x97, 0x97, 0xea, 0x5b}};
+  IDirectDrawSurface7* s7 = nullptr;
+  if (FAILED(in->QueryInterface(kIID_Surface7, reinterpret_cast<void**>(&s7))) || !s7) {
+    LogOnce("Blt from an unknown surface type");
+    return nullptr;
+  }
+  DDSURFACEDESC2 d{};
+  d.dwSize = sizeof(d);
+  Surface* out = nullptr;
+  if (SUCCEEDED(s7->Lock(nullptr, &d, DDLOCK_WAIT | DDLOCK_READONLY, nullptr))) {
+    DDSURFACEDESC2 nd{};
+    nd.dwSize = sizeof(nd);
+    nd.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT | DDSD_PIXELFORMAT;
+    nd.dwWidth = d.dwWidth;
+    nd.dwHeight = d.dwHeight;
+    nd.ddpfPixelFormat = d.ddpfPixelFormat;
+    nd.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN | DDSCAPS_SYSTEMMEMORY;
+    out = new Surface(dd, nd, nullptr);
+    size_t row = std::min<size_t>(static_cast<size_t>(out->Pitch()), static_cast<size_t>(d.lPitch));
+    for (DWORD y = 0; y < d.dwHeight; ++y)
+      std::memcpy(out->mem_.data() + static_cast<size_t>(y) * out->Pitch(),
+                  static_cast<const uint8_t*>(d.lpSurface) + static_cast<size_t>(y) * d.lPitch, row);
+    s7->Unlock(nullptr);
+    LogOnce("copying from a system DirectDraw surface %lux%lu (%lu bpp)", d.dwWidth, d.dwHeight,
+            d.ddpfPixelFormat.dwRGBBitCount);
+  }
+  s7->Release();
+  return out;
+}
+
 bool Surface::IsRenderTargetKind() const {
   return rt_used_ || (desc_.ddsCaps.dwCaps & (DDSCAPS_3DDEVICE | DDSCAPS_PRIMARYSURFACE |
                                               DDSCAPS_BACKBUFFER | DDSCAPS_FRONTBUFFER |
@@ -627,10 +661,18 @@ HRESULT Surface::Blt(LPRECT dr_in, LPDIRECTDRAWSURFACE7 src_in, LPRECT sr_in, DW
     return DD_OK;
   }
   Surface* src = From(src_in);
+  Surface* foreign = nullptr;
+  if (!src && src_in) src = foreign = CopyForeign(dd_, src_in);
   if (!src) {
     LogOnce("Blt flags %08lx without a usable source", flags);
     return src_in ? DDERR_INVALIDPARAMS : DD_OK;
   }
+  struct Drop {
+    Surface* s;
+    ~Drop() {
+      if (s) s->Release();
+    }
+  } drop{foreign};
   if (flags & (DDBLT_KEYDEST | DDBLT_KEYDESTOVERRIDE | DDBLT_ROP | DDBLT_DDFX | DDBLT_ALPHADEST |
                DDBLT_ALPHASRC | DDBLT_ZBUFFER))
     LogOnce("Blt flags %08lx partly unsupported", flags);
@@ -662,8 +704,18 @@ HRESULT Surface::BltBatch(LPDDBLTBATCH, DWORD, DWORD) {
 }
 
 HRESULT Surface::BltFast(DWORD x, DWORD y, LPDIRECTDRAWSURFACE7 src_in, LPRECT sr_in, DWORD flags) {
+  DD_LOCK;
   Surface* src = From(src_in);
+  Surface* foreign = nullptr;
+  if (!src && src_in) src = foreign = CopyForeign(dd_, src_in);
   if (!src) return DDERR_INVALIDPARAMS;
+  if (foreign) src_in = foreign;
+  struct Drop {
+    Surface* s;
+    ~Drop() {
+      if (s) s->Release();
+    }
+  } drop{foreign};
   RECT sr = sr_in ? *sr_in : RECT{0, 0, static_cast<LONG>(src->Width()), static_cast<LONG>(src->Height())};
   RECT dr{static_cast<LONG>(x), static_cast<LONG>(y), static_cast<LONG>(x) + sr.right - sr.left,
           static_cast<LONG>(y) + sr.bottom - sr.top};

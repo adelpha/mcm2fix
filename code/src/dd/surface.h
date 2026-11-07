@@ -96,6 +96,8 @@ class Surface : public IDirectDrawSurface7 {
 
   // ---- backend helpers ----
   static Surface* From(IDirectDrawSurface7* s);  // nullptr if not ours
+  // A temporary copy of a surface from the system DirectDraw (caller releases).
+  static Surface* CopyForeign(DirectDraw* dd, IUnknown* s);
   UINT Width() const { return desc_.dwWidth; }
   UINT Height() const { return desc_.dwHeight; }
   DWORD Caps() const { return desc_.ddsCaps.dwCaps; }
