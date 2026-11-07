@@ -4,6 +4,7 @@
 #include <cstring>
 #include <map>
 
+#include "../config.h"
 #include "directdraw.h"
 
 namespace dd {
@@ -470,6 +471,17 @@ void Surface::Upload() {
         for (UINT x = 0; x < w; ++x) layout_.ToBGRA(ReadPx(src + x * bytes, layout_.bpp), dst + x * 4);
       }
     }
+    if (layout_.mask[3] && GetConfig().dd_stats) {
+      size_t clear = 0, partial = 0, n = static_cast<size_t>(w) * h;
+      for (size_t i = 0; i < n; ++i) {
+        uint8_t a = bgra[i * 4 + 3];
+        if (a == 0) ++clear;
+        else if (a >= 16 && a < 240) ++partial;
+      }
+      LogOnce("alpha texture %ux%u level %u (of %u) amask %lx: %d%% clear, %d%% partial", w, h,
+              level, gpu_.levels, layout_.mask[3], static_cast<int>(clear * 100 / n),
+              static_cast<int>(partial * 100 / n));
+    }
     if (layout_.mask[3] && level == 0) {
       // A cut-out texture has a good share of fully clear texels and few
       // partly clear ones; soft textures (detail layers, smoke) do not.
@@ -480,6 +492,8 @@ void Surface::Upload() {
         else if (a >= 16 && a < 240) ++partial;
       }
       cutout_ = clear * 20 >= n && partial * 10 < n;
+      clear_pct_ = static_cast<int>(clear * 100 / n);
+      partial_pct_ = static_cast<int>(partial * 100 / n);
     }
     if (layout_.mask[3] && uploads_ < 4) BleedIntoTransparent(bgra.data(), w, h);
     B().ctx->UpdateSubresource(gpu_.tex, level, nullptr, bgra.data(), w * 4, 0);
