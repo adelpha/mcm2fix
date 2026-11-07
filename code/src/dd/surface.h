@@ -165,6 +165,7 @@ class Surface : public IDirectDrawSurface7 {
   HBITMAP dib_ = nullptr;
   HGDIOBJ old_bitmap_ = nullptr;
   void* dib_bits_ = nullptr;
+  unsigned uploads_ = 0;  // texture uploads so far (edge fix-up is skipped for streaming textures)
   IDXGISurface1* gdi_surface_ = nullptr;  // set while GDI draws on the GPU copy
   bool GetGpuDC(HDC* out);
   void ReleaseGpuDC();

@@ -401,8 +401,53 @@ void Surface::MarkCpuWritten() {
   ++uniqueness_;
 }
 
+namespace {
+// Fully transparent texels keep whatever colour the artist left there (often
+// grey or black). Filtering and the game's own mip levels mix that colour
+// into the visible edge, which shows as a grey halo around leaves. Give
+// each transparent texel the average colour of its visible neighbours
+// (a few passes, so the colour spreads a little way in); alpha is unchanged.
+void BleedIntoTransparent(uint8_t* px, UINT w, UINT h) {
+  const size_t n = static_cast<size_t>(w) * h;
+  std::vector<uint8_t> known(n);
+  size_t unknown = 0;
+  for (size_t i = 0; i < n; ++i) {
+    known[i] = px[i * 4 + 3] != 0;
+    if (!known[i]) ++unknown;
+  }
+  if (!unknown || unknown == n) return;
+  std::vector<uint8_t> next;
+  for (int pass = 0; pass < 4 && unknown; ++pass) {
+    next = known;
+    for (UINT y = 0; y < h; ++y) {
+      for (UINT x = 0; x < w; ++x) {
+        size_t i = static_cast<size_t>(y) * w + x;
+        if (known[i]) continue;
+        unsigned sum[3] = {}, count = 0;
+        for (int dy = -1; dy <= 1; ++dy) {
+          for (int dx = -1; dx <= 1; ++dx) {
+            int nx = static_cast<int>(x) + dx, ny = static_cast<int>(y) + dy;
+            if (nx < 0 || ny < 0 || nx >= static_cast<int>(w) || ny >= static_cast<int>(h)) continue;
+            size_t j = static_cast<size_t>(ny) * w + nx;
+            if (!known[j]) continue;
+            for (int c = 0; c < 3; ++c) sum[c] += px[j * 4 + c];
+            ++count;
+          }
+        }
+        if (!count) continue;
+        for (int c = 0; c < 3; ++c) px[i * 4 + c] = static_cast<uint8_t>(sum[c] / count);
+        next[i] = 1;
+        --unknown;
+      }
+    }
+    known.swap(next);
+  }
+}
+}  // namespace
+
 void Surface::Upload() {
   if (!gpu_.tex || layout_.depth) return;
+  ++uploads_;
   uint8_t pal[256][4];
   if (layout_.palette) PaletteBGRA(pal);
   std::vector<uint8_t> bgra;
@@ -425,6 +470,7 @@ void Surface::Upload() {
         for (UINT x = 0; x < w; ++x) layout_.ToBGRA(ReadPx(src + x * bytes, layout_.bpp), dst + x * 4);
       }
     }
+    if (layout_.mask[3] && uploads_ < 4) BleedIntoTransparent(bgra.data(), w, h);
     B().ctx->UpdateSubresource(gpu_.tex, level, nullptr, bgra.data(), w * 4, 0);
   }
 }
