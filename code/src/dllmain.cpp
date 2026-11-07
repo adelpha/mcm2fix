@@ -12,8 +12,6 @@ void ApplyRegistryFixes();
 void ApplyFileFixes();
 void ApplyDiagnostics();
 void ApplyRegistryTrace();
-void ApplyDirectDrawTrace();
-void DumpDirectDrawTrace();
 void ApplyD3D11Backend();
 
 namespace {
@@ -38,23 +36,19 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
       patch::Log("mcm2fix loaded");
       ApplyStep1Fixes();
       const Config& c = GetConfig();
-      patch::Log("config: OneCore=%d Startup=%d Registry=%d Files=%d ActivateLog=%d D3D11=%d DDStats=%d AlphaCut=%d",
-                 c.one_core, c.startup, c.registry, c.files, c.activate_log, c.d3d11, c.dd_stats, c.alpha_cut);
+      patch::Log("config: OneCore=%d Startup=%d Registry=%d Files=%d ActivateLog=%d RegLog=%d DDStats=%d "
+                 "AlphaCut=%d",
+                 c.one_core, c.startup, c.registry, c.files, c.activate_log, c.reg_log, c.dd_stats,
+                 c.alpha_cut);
       if (c.startup) ApplyStartupFixes();
       if (c.registry) ApplyRegistryFixes();
       if (c.files) ApplyFileFixes();
       if (c.reg_log) ApplyRegistryTrace();
-      if (c.d3d11) {
-        ApplyD3D11Backend();
-      } else if (c.dd_log) {
-        ApplyDirectDrawTrace();
-      }
+      ApplyD3D11Backend();
       if (c.activate_log) ApplyDiagnostics();
     } else {
       patch::Log("not the supported Mcm2.exe; no fixes applied");
     }
   }
-  if (reason == DLL_PROCESS_DETACH && GetConfig().dd_log && !GetConfig().d3d11 && IsSupportedGame())
-    DumpDirectDrawTrace();
   return TRUE;
 }

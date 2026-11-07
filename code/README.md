@@ -6,14 +6,24 @@ d3drm, and patches the game's code in memory from `DllMain`, before the
 game's entry point runs. It does nothing unless it finds the supported exe
 (image base 0x400000, entry 0x13d6f5, image size 0x296000).
 
-Current fixes (`src/fixes_step1.cpp`):
-- flip-retry: restore and retry `Flip` on `DDERR_SURFACELOST` during the
-  refresh-rate timing loop after the mode switch.
-- one-core: `SetProcessAffinityMask(..., 1)` (stopgap for a thread race).
-- no-admin: skip the startup administrator probe.
+What it does:
+- Startup (`src/fixes_step1.cpp`, `src/fixes_startup.cpp`): retries `Flip`
+  on `DDERR_SURFACELOST`, skips the administrator probe, auto-picks the
+  video card and skips the "hardware changed" box.
+- Per-user writes (`src/fixes_registry.cpp`, `src/fixes_files.cpp`): settings
+  in `HKCU\Software\mcm2fix\Motocross Madness 2`, saved files in
+  `%LOCALAPPDATA%\Motocross Madness 2`. Nothing is written to HKLM or the
+  game folder.
+- Renderer (`src/dd/`): the game's `DirectDrawCreateEx` import is pointed at
+  mcm2fix's own DirectDraw 7 / Direct3D 7 implementation on Direct3D 11. The
+  game keeps its 640x480 / 1280x1024 (etc.) modes virtually; the real window
+  stays borderless at desktop resolution and the picture is scaled with the
+  aspect ratio kept. No display mode change, no exclusive fullscreen, no
+  d3drm.dll, no Windows DirectDraw for drawing. See `docs/step3-renderer.md`.
+- Intro videos still play through Windows' DirectShow (amstream) and the
+  Indeo codec; `src/dd/hook.cpp` makes that path work with the new renderer.
 
-Diagnostics go to `OutputDebugString` with a `[mcm2fix]` prefix (visible in
-DebugView or a debugger).
+The log is `%LOCALAPPDATA%\Motocross Madness 2\mcm2fix.log`.
 
 ## Building
 
@@ -41,16 +51,14 @@ All settings default to the values shown; set one to 0 or 1 to change it.
 
 ```ini
 [mcm2fix]
-OneCore=0      ; 1 = pin the game to one CPU core (old stopgap)
 Log=1          ; write %LOCALAPPDATA%\Motocross Madness 2\mcm2fix.log
 Startup=1      ; auto-pick the video card, skip the "detected a change" box
 Registry=1     ; keep settings in HKCU instead of HKLM
 Files=1        ; send file writes to %LOCALAPPDATA%\Motocross Madness 2
-ActivateLog=1  ; log WM_ACTIVATEAPP
-RegLog=1       ; log every registry call
-D3D11=1        ; draw with mcm2fix's Direct3D 11 renderer (borderless, scaled)
-AlphaCut=128   ; with D3D11=1: blended pixels less opaque than this (0-255) are dropped, which
-               ; removes the fringe around trees in front of flags (0 = as the original game)
-DDStats=0      ; with D3D11=1: log renderer activity every 2 seconds (for debugging)
-DDLog=0        ; with D3D11=0: log the system DirectDraw / Direct3D 7 calls
+AlphaCut=128   ; trees and flags: drop pixels less opaque than this (0-255), which
+               ; removes the fringe where trees hide flags behind them (0 = original look)
+OneCore=0      ; 1 = pin the game to one CPU core (old stopgap)
+ActivateLog=0  ; debugging: log window activation
+RegLog=0       ; debugging: log every registry call
+DDStats=0      ; debugging: log renderer activity every 2 seconds
 ```

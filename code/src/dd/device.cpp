@@ -1270,16 +1270,6 @@ void Device::ApplyState(bool tl, bool depth_clip, bool has_depth) {
     tex_[0]->KeyColor(pc.key0);
     pc.key0[3] = 1;
   }
-  if (GetConfig().dd_stats && rs_[RS_ALPHABLENDENABLE] && rs_[RS_ZWRITEENABLE]) {
-    Surface* t = tex_[0];
-    LogOnce("blend+zwrite draw: tex %ux%u amask %lx cutout %d (%d%% clear %d%% partial) src %lu dst %lu "
-            "atest %lu func %lu ref %lu zfunc %lu colorop %lu/%lu/%lu alphaop %lu/%lu/%lu stage1 %lu",
-            t ? t->Width() : 0, t ? t->Height() : 0, t ? t->AlphaMask() : 0, t ? t->IsCutout() : 0,
-            t ? t->ClearPct() : 0, t ? t->PartialPct() : 0, rs_[RS_SRCBLEND], rs_[RS_DESTBLEND],
-            rs_[RS_ALPHATESTENABLE], rs_[RS_ALPHAFUNC], rs_[RS_ALPHAREF], rs_[RS_ZFUNC],
-            tss_[0][TSS_COLOROP], tss_[0][TSS_COLORARG1], tss_[0][TSS_COLORARG2], tss_[0][TSS_ALPHAOP],
-            tss_[0][TSS_ALPHAARG1], tss_[0][TSS_ALPHAARG2], tss_[1][TSS_COLOROP]);
-  }
   // Blended cut-outs (leaves, flags) that also write depth hide whatever is
   // drawn behind them later, even where they are nearly transparent; the
   // original game shows a stair-step fringe there. Drop those pixels.

@@ -1,29 +1,16 @@
-// Settings from mcm2fix.ini next to the exe (all optional).
-//
-//   [mcm2fix]
-//   OneCore=0     ; 1 = pin the game to one CPU core (old stopgap, default off)
-//   Log=1         ; write %LOCALAPPDATA%\Motocross Madness 2\mcm2fix.log
-//   Startup=1     ; auto-pick the video card, skip the "detected a change" box
-//   Registry=1    ; keep settings in HKCU instead of HKLM
-//   Files=1       ; send file writes to %LOCALAPPDATA%\Motocross Madness 2
-//   ActivateLog=1 ; log WM_ACTIVATEAPP
-//   RegLog=1      ; log every registry call
-//   DDLog=0       ; log the system DirectDraw / Direct3D 7 usage (D3D11=0 only)
-//   D3D11=1       ; draw with mcm2fix's Direct3D 11 renderer
+// Settings from mcm2fix.ini next to the exe (all optional; see README.md).
 #pragma once
 
 struct Config {
-  bool one_core = false;
-  bool log = true;
-  bool startup = true;
-  bool registry = true;
-  bool files = true;
-  bool activate_log = true;
-  bool reg_log = true;
-  bool dd_log = false;
-  bool d3d11 = true;
-  bool dd_stats = false;
-  int alpha_cut = 128;  // D3D11: blended pixels below this alpha (0-255) do not write depth  // D3D11 renderer: log activity counters every 2 s
+  bool one_core = false;      // OneCore: pin the game to one CPU core (old stopgap)
+  bool log = true;            // Log: write mcm2fix.log
+  bool startup = true;        // Startup: auto-pick the video card, skip the hardware-change box
+  bool registry = true;       // Registry: keep settings in HKCU instead of HKLM
+  bool files = true;          // Files: send file writes to the per-user folder
+  bool activate_log = false;  // ActivateLog: log window activation
+  bool reg_log = false;       // RegLog: log every registry call
+  bool dd_stats = false;      // DDStats: log renderer activity every 2 seconds
+  int alpha_cut = 128;        // AlphaCut: alpha-tested blended pixels below this (0-255) are dropped
 };
 
 const Config& GetConfig();

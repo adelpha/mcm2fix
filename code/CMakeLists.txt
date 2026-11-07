@@ -18,7 +18,6 @@ add_library(mcm2fix SHARED
   src/fixes_files.cpp
   src/diagnostics.cpp
   src/regtrace.cpp
-  src/ddtrace.cpp
   src/config.cpp
   src/dd/backend.cpp
   src/dd/surface.cpp
