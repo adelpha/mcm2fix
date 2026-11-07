@@ -11,6 +11,7 @@ void ApplyStartupFixes();
 void ApplyRegistryFixes();
 void ApplyFileFixes();
 void ApplyDiagnostics();
+void ApplyRegistryTrace();
 
 namespace {
 
@@ -39,6 +40,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
       if (c.startup) ApplyStartupFixes();
       if (c.registry) ApplyRegistryFixes();
       if (c.files) ApplyFileFixes();
+      if (c.reg_log) ApplyRegistryTrace();
       if (c.activate_log) ApplyDiagnostics();
     } else {
       patch::Log("not the supported Mcm2.exe; no fixes applied");

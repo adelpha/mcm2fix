@@ -7,6 +7,7 @@
 //   Registry=1    ; keep settings in HKCU instead of HKLM
 //   Files=1       ; send file writes to %LOCALAPPDATA%\Motocross Madness 2
 //   ActivateLog=1 ; log WM_ACTIVATEAPP
+//   RegLog=1      ; log every registry call
 #pragma once
 
 struct Config {
@@ -16,6 +17,7 @@ struct Config {
   bool registry = true;
   bool files = true;
   bool activate_log = true;
+  bool reg_log = true;
 };
 
 const Config& GetConfig();
