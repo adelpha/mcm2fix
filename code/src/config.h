@@ -8,7 +8,8 @@
 //   Files=1       ; send file writes to %LOCALAPPDATA%\Motocross Madness 2
 //   ActivateLog=1 ; log WM_ACTIVATEAPP
 //   RegLog=1      ; log every registry call
-//   DDLog=1       ; log DirectDraw / Direct3D 7 usage
+//   DDLog=0       ; log the system DirectDraw / Direct3D 7 usage (D3D11=0 only)
+//   D3D11=1       ; draw with mcm2fix's Direct3D 11 renderer
 #pragma once
 
 struct Config {
@@ -19,7 +20,8 @@ struct Config {
   bool files = true;
   bool activate_log = true;
   bool reg_log = true;
-  bool dd_log = true;
+  bool dd_log = false;
+  bool d3d11 = true;
 };
 
 const Config& GetConfig();

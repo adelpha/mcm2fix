@@ -20,8 +20,15 @@ add_library(mcm2fix SHARED
   src/regtrace.cpp
   src/ddtrace.cpp
   src/config.cpp
+  src/dd/backend.cpp
+  src/dd/surface.cpp
+  src/dd/directdraw.cpp
+  src/dd/device.cpp
+  src/dd/hook.cpp
   mcm2fix.def)
 set_target_properties(mcm2fix PROPERTIES PREFIX "" OUTPUT_NAME "mcm2fix")
+
+target_link_libraries(mcm2fix PRIVATE d3d11 dxgi dxguid gdi32 user32)
 
 if(MSVC)
   # Static CRT so the DLL needs no Visual C++ redistributable.
