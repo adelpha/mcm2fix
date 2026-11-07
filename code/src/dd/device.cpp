@@ -1274,7 +1274,8 @@ void Device::ApplyState(bool tl, bool depth_clip, bool has_depth) {
   // drawn behind them later, even where they are nearly transparent; the
   // original game shows a stair-step fringe there. Drop those pixels.
   if (rs_[RS_ALPHABLENDENABLE] && rs_[RS_ZWRITEENABLE] && rs_[RS_ZENABLE] &&
-      (rs_[RS_SRCBLEND] == 5 || rs_[RS_SRCBLEND] == 12))  // SRCALPHA, BOTHSRCALPHA
+      (rs_[RS_SRCBLEND] == 5 || rs_[RS_SRCBLEND] == 12) &&  // SRCALPHA, BOTHSRCALPHA
+      tex_[0] && tex_[0]->IsCutout())
     pc.cut[0] = static_cast<float>(GetConfig().alpha_cut) / 255.0f;
   b.ctx->UpdateSubresource(ps_cb_, 0, nullptr, &pc, 0, 0);
 

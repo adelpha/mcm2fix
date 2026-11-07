@@ -107,6 +107,7 @@ class Surface : public IDirectDrawSurface7 {
   void SetUsedAsRenderTarget() { rt_used_ = true; }
   const PixelLayout& Layout() const { return layout_; }
   bool HasColorKey() const { return has_key_; }
+  bool IsCutout() const { return (level_ > 0 ? root_ : this)->cutout_; }
   void KeyColor(float out[3]) const;
   Surface* ZBuffer() const { return zbuffer_; }
 
@@ -165,6 +166,7 @@ class Surface : public IDirectDrawSurface7 {
   HBITMAP dib_ = nullptr;
   HGDIOBJ old_bitmap_ = nullptr;
   void* dib_bits_ = nullptr;
+  bool cutout_ = false;   // alpha is mostly fully clear or fully solid (leaves, flags)
   unsigned uploads_ = 0;  // texture uploads so far (edge fix-up is skipped for streaming textures)
   IDXGISurface1* gdi_surface_ = nullptr;  // set while GDI draws on the GPU copy
   bool GetGpuDC(HDC* out);
