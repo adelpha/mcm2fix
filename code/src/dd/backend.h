@@ -36,6 +36,7 @@ struct GpuTexture {
   ID3D11DepthStencilView* dsv = nullptr;
   UINT width = 0, height = 0, levels = 0;
   bool depth = false;
+  bool gdi = false;  // created GDI-compatible (IDXGISurface1::GetDC works)
   void Reset();
 };
 
@@ -58,6 +59,7 @@ struct Backend {
   ID3D11RasterizerState* blit_raster = nullptr;
   ID3D11DepthStencilState* no_depth = nullptr;
   ID3D11BlendState* no_blend = nullptr;
+  ID3D11BlendState* alpha_only = nullptr;
 };
 
 Backend& B();
@@ -91,6 +93,7 @@ struct BlitParams {
   bool linear = false;
   float fill[4] = {0, 0, 0, 1};
   bool opaque = true;  // write alpha 1 (destination format has no alpha)
+  bool alpha_only = false;  // write only the alpha channel
 };
 void Blit(const BlitParams& p);
 

@@ -87,6 +87,7 @@ void GpuTexture::Reset() {
   SafeRelease(tex);
   width = height = levels = 0;
   depth = false;
+  gdi = false;
 }
 
 Backend& B() { return g_backend; }
@@ -175,6 +176,8 @@ bool CreatePipeline() {
   D3D11_BLEND_DESC bd{};
   bd.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
   b.device->CreateBlendState(&bd, &b.no_blend);
+  bd.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALPHA;
+  b.device->CreateBlendState(&bd, &b.alpha_only);
   return b.blit_vs && b.blit_ps && b.blit_cb;
 }
 
@@ -347,8 +350,16 @@ bool CreateGpuTexture(GpuTexture& t, UINT w, UINT h, UINT levels, bool render_ta
   } else {
     td.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
     td.BindFlags = D3D11_BIND_SHADER_RESOURCE | (render_target ? D3D11_BIND_RENDER_TARGET : 0);
+    // Single-level render targets can take GDI drawing directly
+    // (IDXGISurface1::GetDC), so GetDC needs no readback to the CPU.
+    if (render_target && td.MipLevels == 1) td.MiscFlags = D3D11_RESOURCE_MISC_GDI_COMPATIBLE;
   }
-  if (FAILED(b.device->CreateTexture2D(&td, nullptr, &t.tex))) {
+  HRESULT hr = b.device->CreateTexture2D(&td, nullptr, &t.tex);
+  if (FAILED(hr) && td.MiscFlags) {
+    td.MiscFlags = 0;
+    hr = b.device->CreateTexture2D(&td, nullptr, &t.tex);
+  }
+  if (FAILED(hr)) {
     Log("CreateTexture2D %ux%u levels %u failed", w, h, levels);
     return false;
   }
@@ -362,6 +373,7 @@ bool CreateGpuTexture(GpuTexture& t, UINT w, UINT h, UINT levels, bool render_ta
   t.height = td.Height;
   t.levels = td.MipLevels;
   t.depth = depth;
+  t.gdi = td.MiscFlags != 0;
   return true;
 }
 
@@ -391,7 +403,8 @@ void Blit(const BlitParams& p) {
   b.ctx->RSSetViewports(1, &vp);
   b.ctx->RSSetState(b.blit_raster);
   b.ctx->OMSetDepthStencilState(b.no_depth, 0);
-  b.ctx->OMSetBlendState(b.no_blend, nullptr, 0xffffffff);
+  b.ctx->OMSetBlendState(p.alpha_only && b.alpha_only ? b.alpha_only : b.no_blend, nullptr,
+                         0xffffffff);
   b.ctx->IASetInputLayout(nullptr);
   b.ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
   b.ctx->VSSetShader(b.blit_vs, nullptr, 0);

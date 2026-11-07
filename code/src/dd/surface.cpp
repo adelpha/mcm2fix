@@ -206,7 +206,9 @@ Surface::Surface(DirectDraw* dd, const DDSURFACEDESC2& desc, Surface* root)
 }
 
 Surface::~Surface() {
-  if (dc_) {
+  if (gdi_surface_) {
+    ReleaseGpuDC();
+  } else if (dc_) {
     SelectObject(dc_, old_bitmap_);
     DeleteDC(dc_);
   }
@@ -850,6 +852,7 @@ HRESULT Surface::GetDC(HDC* out) {
   if (!out) return DDERR_INVALIDPARAMS;
   if (dc_) return DDERR_DCALREADYCREATED;
   if (layout_.depth) return DDERR_CANTCREATEDC;
+  if (GetGpuDC(out)) return DD_OK;
   SyncToCpu("GetDC");
   struct {
     BITMAPINFOHEADER h;
@@ -893,6 +896,12 @@ HRESULT Surface::GetDC(HDC* out) {
 HRESULT Surface::ReleaseDC(HDC dc) {
   DD_LOCK;
   if (!dc_ || dc != dc_) return DDERR_INVALIDPARAMS;
+  if (gdi_surface_) {
+    ReleaseGpuDC();
+    MarkGpuWritten();
+    if (IsVisible()) PresentFront(0);
+    return DD_OK;
+  }
   GdiFlush();
   std::memcpy(mem_.data(), dib_bits_, mem_.size());
   SelectObject(dc_, old_bitmap_);
@@ -904,6 +913,53 @@ HRESULT Surface::ReleaseDC(HDC dc) {
   MarkCpuWritten();
   if (IsVisible()) PresentFront(0);
   return DD_OK;
+}
+
+// GDI drawing straight onto the GPU texture (no readback). Used for render
+// targets whose newest copy is on the GPU: the game draws its HUD and menu
+// text with GDI onto the 3D back buffer every frame.
+bool Surface::GetGpuDC(HDC* out) {
+  Surface* o = SyncOwner();
+  if (o != this || layout_.palette || has_key_ || !mips_.empty()) return false;
+  if (!(o->sync_ == kGpuNewer || (o->sync_ == kInSync && IsRenderTargetKind()))) return false;
+  if (!Ready()) return false;
+  GpuTexture* g = Gpu();
+  if (!g->tex || !g->gdi) return false;
+  IDXGISurface1* s = nullptr;
+  if (FAILED(g->tex->QueryInterface(__uuidof(IDXGISurface1), reinterpret_cast<void**>(&s))))
+    return false;
+  // The texture must not be bound while GDI owns it; the device and the
+  // blitter bind their targets again before every draw.
+  ID3D11ShaderResourceView* null_srv[8] = {};
+  B().ctx->PSSetShaderResources(0, 8, null_srv);
+  B().ctx->OMSetRenderTargets(0, nullptr, nullptr);
+  HDC dc = nullptr;
+  if (FAILED(s->GetDC(FALSE, &dc)) || !dc) {
+    LogOnce("IDXGISurface1::GetDC failed; using CPU copies for GDI");
+    s->Release();
+    return false;
+  }
+  gdi_surface_ = s;
+  dc_ = dc;
+  *out = dc;
+  return true;
+}
+
+void Surface::ReleaseGpuDC() {
+  gdi_surface_->ReleaseDC(nullptr);
+  gdi_surface_->Release();
+  gdi_surface_ = nullptr;
+  dc_ = nullptr;
+  // GDI leaves alpha undefined; formats without alpha must read as opaque.
+  if (!layout_.mask[3] && gpu_.rtv) {
+    BlitParams p;
+    p.dst = gpu_.rtv;
+    p.dst_w = gpu_.width;
+    p.dst_h = gpu_.height;
+    p.dst_rect = {0, 0, static_cast<LONG>(gpu_.width), static_cast<LONG>(gpu_.height)};
+    p.alpha_only = true;
+    Blit(p);
+  }
 }
 
 HRESULT Surface::GetFlipStatus(DWORD) { return DD_OK; }

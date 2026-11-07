@@ -165,6 +165,9 @@ class Surface : public IDirectDrawSurface7 {
   HBITMAP dib_ = nullptr;
   HGDIOBJ old_bitmap_ = nullptr;
   void* dib_bits_ = nullptr;
+  IDXGISurface1* gdi_surface_ = nullptr;  // set while GDI draws on the GPU copy
+  bool GetGpuDC(HDC* out);
+  void ReleaseGpuDC();
   bool locked_ = false;
   bool lock_readonly_ = false;
   bool rt_used_ = false;
