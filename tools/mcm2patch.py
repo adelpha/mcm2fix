@@ -14,7 +14,13 @@ Patches (step 1: get the game to start on Windows 11):
                   Flip returns DDERR_SURFACELOST and the game quits silently
                   (WinMain returns 1). The three Flip calls in that loop now go
                   through a helper that restores the surface and retries.
-  2. no-admin     Remove the startup "administrator" probe (writes
+  2. one-core     The game is not safe on multi-core CPUs: startup and movie
+                  playback race between its threads (the flip failure above
+                  and a hang on the Microsoft logo). Pinned to one core it
+                  reaches the menu. The entry point now calls
+                  SetProcessAffinityMask(GetCurrentProcess(), 1) before the
+                  CRT starts. Interim fix until the race is found in step 2.
+  3. no-admin     Remove the startup "administrator" probe (writes
                   HKLM\\...\\IsAdmin and a temp file in the current directory),
                   which fails for standard users when Windows registry
                   virtualization does not apply.
@@ -33,6 +39,13 @@ TEXT_VSIZE_OLD, TEXT_RAWSIZE = 0x153A7E, 0x154000
 CAVE = 0x554A80
 
 IAT_SLEEP = 0x5551AC  # KERNEL32!Sleep
+IAT_GETMODULEHANDLEA = 0x555180
+IAT_GETPROCADDRESS = 0x555270
+IAT_GETCURRENTPROCESS = 0x555210
+ENTRY = 0x53D6F5
+CAVE2 = 0x554AC0          # one-core stub
+CAVE2_STR_K32 = 0x554B00  # "KERNEL32.DLL"
+CAVE2_STR_SPAM = 0x554B10 # "SetProcessAffinityMask"
 DDERR_SURFACELOST = 0x887601C2
 
 
@@ -46,6 +59,10 @@ PREBUILT = {
         bytes.fromhex('e879620800'),
     (0x4ce814, 'call 0x554a80'):
         bytes.fromhex('e867620800'),
+    (0x554ac0, 'pushad push 0x554b00 call dword ptr [0x555180] test eax, eax jz skip push 0x554b10 push eax call dword ptr [0x555270] test eax, eax jz skip mov esi, eax push 1 call dword ptr [0x555210] push eax call esi skip: popad push ebp mov ebp, esp push -1 jmp 0x53d6fa'):
+        bytes.fromhex('6068004b5500ff158051550085c0741d68104b550050ff157052550085c0740d89c66a01ff151052550050ffd6615589e56affe9028cfeff'),
+    (0x53d6f5, 'jmp 0x554ac0'):
+        bytes.fromhex('e9c6730100'),
     (0x4a1f14, 'jmp 0x4a2005'):
         bytes.fromhex('e9ec000000'),
 }
@@ -144,6 +161,45 @@ def main():
     }
     for va, old in sites.items():
         patch(buf, va, bytes.fromhex(old), asm(f"call {CAVE:#x}", va), f"flip-retry {va:#x}")
+
+    # --- one-core ----------------------------------------------------------
+    strings = {CAVE2_STR_K32: b"KERNEL32.DLL\0", CAVE2_STR_SPAM: b"SetProcessAffinityMask\0"}
+    for va, data in strings.items():
+        o = off(va)
+        if bytes(buf[o:o + len(data)]) not in (b"\0" * len(data), data):
+            sys.exit("code cave (strings) is not empty")
+        buf[o:o + len(data)] = data
+    stub = asm(f"""
+        pushad
+        push {CAVE2_STR_K32:#x}
+        call dword ptr [{IAT_GETMODULEHANDLEA:#x}]
+        test eax, eax
+        jz skip
+        push {CAVE2_STR_SPAM:#x}
+        push eax
+        call dword ptr [{IAT_GETPROCADDRESS:#x}]
+        test eax, eax
+        jz skip
+        mov esi, eax
+        push 1
+        call dword ptr [{IAT_GETCURRENTPROCESS:#x}]
+        push eax
+        call esi
+    skip:
+        popad
+        push ebp
+        mov ebp, esp
+        push -1
+        jmp {ENTRY + 5:#x}
+    """, CAVE2)
+    assert CAVE2 + len(stub) <= CAVE2_STR_K32
+    o = off(CAVE2)
+    if bytes(buf[o:o + len(stub)]) not in (b"\0" * len(stub), stub):
+        sys.exit("code cave (one-core) is not empty")
+    buf[o:o + len(stub)] = stub
+    print(f"  one-core stub at {CAVE2:#x} ({len(stub)} bytes)")
+    # entry: push ebp; mov ebp,esp; push -1  ->  jmp stub
+    patch(buf, ENTRY, bytes.fromhex("558bec6aff"), asm(f"jmp {CAVE2:#x}", ENTRY), "one-core entry")
 
     # --- no-admin ----------------------------------------------------------
     # 4a1f14: cmp eax,2 ; jne 4a2005  ->  jmp 4a2005
