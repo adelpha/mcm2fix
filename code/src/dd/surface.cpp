@@ -363,9 +363,10 @@ void Surface::MarkGpuWritten() {
   ++uniqueness_;
 }
 
-void Surface::SyncToCpu() {
+void Surface::SyncToCpu(const char* why) {
   Surface* o = SyncOwner();
   if (o->sync_ == kGpuNewer) {
+    NoteReadback(why, o->desc_.ddsCaps.dwCaps, o->Width(), o->Height());
     o->Download();
     o->sync_ = kInSync;
   }
@@ -505,8 +506,8 @@ void Surface::BltGpu(const RECT& dr, Surface* src, const RECT& sr, bool key, DWO
 }
 
 void Surface::BltCpu(const RECT& dr, Surface* src, const RECT& sr, bool key, DWORD key_value) {
-  src->SyncToCpu();
-  SyncToCpu();
+  src->SyncToCpu("blt-src");
+  SyncToCpu("blt-dst");
   std::vector<uint8_t> copy;
   const uint8_t* sbase = src->mem_.data();
   LONG spitch = src->Pitch();
@@ -567,7 +568,7 @@ void Surface::FillGpu(const RECT& dr, DWORD color) {
 }
 
 void Surface::FillCpu(const RECT& dr, DWORD color) {
-  SyncToCpu();
+  SyncToCpu("FillCpu");
   for (LONG y = dr.top; y < dr.bottom; ++y)
     for (LONG x = dr.left; x < dr.right; ++x) WritePx(Pixel(x, y), layout_.bpp, color);
   MarkCpuWritten();
@@ -819,7 +820,7 @@ HRESULT Surface::GetDC(HDC* out) {
   if (!out) return DDERR_INVALIDPARAMS;
   if (dc_) return DDERR_DCALREADYCREATED;
   if (layout_.depth) return DDERR_CANTCREATEDC;
-  SyncToCpu();
+  SyncToCpu("GetDC");
   struct {
     BITMAPINFOHEADER h;
     DWORD colors[256];
@@ -909,7 +910,7 @@ HRESULT Surface::Lock(LPRECT rect, LPDDSURFACEDESC2 desc, DWORD flags, HANDLE) {
   if (!desc) return DDERR_INVALIDPARAMS;
   if (layout_.depth) LogOnce("Lock of a Z-buffer (contents not kept)");
   ++Counters().locks;
-  SyncToCpu();
+  SyncToCpu("Lock");
   GetSurfaceDesc(desc);
   LONG x = rect ? rect->left : 0, y = rect ? rect->top : 0;
   desc->lpSurface = Pixel(x, y);

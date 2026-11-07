@@ -6,6 +6,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <map>
 #include <set>
 #include <string>
 
@@ -410,6 +411,16 @@ Stats& Counters() {
 }
 
 namespace {
+std::map<std::string, unsigned> g_readbacks;
+}
+
+void NoteReadback(const char* why, DWORD caps, UINT w, UINT h) {
+  char key[96];
+  std::snprintf(key, sizeof(key), "%s caps=%lx %ux%u", why, caps, w, h);
+  ++g_readbacks[key];
+}
+
+namespace {
 void ReportStats() {
   static DWORD last = GetTickCount();
   static int reports = 0;
@@ -420,6 +431,16 @@ void ReportStats() {
       "%u locks, %u readbacks",
       s.flips, s.presents, s.draws, s.blts, s.foreign, s.foreign_sum, s.front_writes, s.locks,
       s.downloads);
+  if (!g_readbacks.empty()) {
+    std::string line;
+    for (const auto& kv : g_readbacks) {
+      char part[128];
+      std::snprintf(part, sizeof(part), "%s%s x%u", line.empty() ? "" : "; ", kv.first.c_str(), kv.second);
+      line += part;
+    }
+    Log("   readbacks: %.400s", line.c_str());
+    g_readbacks.clear();
+  }
   unsigned sum = s.foreign_sum;
   s = Stats{};
   s.foreign_sum = sum;

@@ -115,7 +115,7 @@ class Surface : public IDirectDrawSurface7 {
   // The caller is about to draw into this surface on the GPU.
   void MarkGpuWritten();
   // Make the CPU copy current (reading back GPU changes).
-  void SyncToCpu();
+  void SyncToCpu(const char* why = "other");
   void MarkCpuWritten();
 
   // Copy pixel data (all mip levels when both have them) for Device::Load.

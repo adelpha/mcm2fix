@@ -103,6 +103,8 @@ struct Stats {
   unsigned foreign_sum;  // checksum of the last copied video frame
 };
 Stats& Counters();
+// Record why a surface had to be read back from the GPU.
+void NoteReadback(const char* why, DWORD caps, UINT w, UINT h);
 
 // Block until the next vertical blank of the game's monitor.
 void WaitVBlank();
