@@ -1,213 +1,66 @@
 #!/usr/bin/env python3
-"""Binary patcher for the no-CD Mcm2.exe (1,577,005 bytes).
+"""Make Mcm2.exe load mcm2fix.dll instead of d3drm.dll.
 
 Usage:  python mcm2patch.py <original Mcm2.exe> <output exe>
 
-The input is never modified. Every patch checks the original bytes first and
-refuses to run on an unexpected file.
+The input is never modified. The only change to the exe is the name of one
+imported DLL: d3drm.dll (not shipped with Windows 11; the game used just
+D3DRMVectorRotate from it) becomes mcm2fix.dll, which provides that function
+and applies every other fix in memory when the game starts. See
+code/README.md.
 
-Patches (step 1: get the game to start on Windows 11):
-
-  1. flip-retry   Startup measures the refresh rate by flipping the primary
-                  surface ~10 times right after SetDisplayMode(640x480x16).
-                  On Windows 10/11 the mode change is not always finished, so
-                  Flip returns DDERR_SURFACELOST and the game quits silently
-                  (WinMain returns 1). The three Flip calls in that loop now go
-                  through a helper that restores the surface and retries.
-  2. one-core     The game is not safe on multi-core CPUs: startup and movie
-                  playback race between its threads (the flip failure above
-                  and a hang on the Microsoft logo). Pinned to one core it
-                  reaches the menu. The entry point now calls
-                  SetProcessAffinityMask(GetCurrentProcess(), 1) before the
-                  CRT starts. Interim fix until the race is found in step 2.
-  3. no-admin     Remove the startup "administrator" probe (writes
-                  HKLM\\...\\IsAdmin and a temp file in the current directory),
-                  which fails for standard users when Windows registry
-                  virtualization does not apply.
+Supported input: the no-CD Mcm2.exe, 1,577,005 bytes,
+SHA-256 345e4f644fe2237108472acbcde3123b186d2475dd5a23480321c78084746f9e.
 """
+import hashlib
 import struct
 import sys
 
+ORIGINAL_SHA256 = "345e4f644fe2237108472acbcde3123b186d2475dd5a23480321c78084746f9e"
 
-IMAGE_BASE = 0x400000
-EXPECTED_SIZE = 1577005
-
-# .text section: VA 0x1000, raw offset 0x1000, VirtualSize 0x153a7e, raw size
-# 0x154000. The zero-filled tail of the raw data is used as a code cave.
-TEXT_VA, TEXT_RAW = 0x1000, 0x1000
+# .text section header values in the original file.
 TEXT_VSIZE_OLD, TEXT_RAWSIZE = 0x153A7E, 0x154000
-CAVE = 0x554A80
+TEXT_VA, TEXT_RAW = 0x1000, 0x1000
 
-IAT_SLEEP = 0x5551AC  # KERNEL32!Sleep
-IAT_GETMODULEHANDLEA = 0x555180
-IAT_GETPROCADDRESS = 0x555270
-IAT_GETCURRENTPROCESS = 0x555210
-ENTRY = 0x53D6F5
-CAVE2 = 0x554AC0          # one-core stub
-CAVE2_STR_K32 = 0x554B00  # "KERNEL32.DLL"
-CAVE2_STR_SPAM = 0x554B10 # "SetProcessAffinityMask"
-DDERR_SURFACELOST = 0x887601C2
+# Import descriptor for d3drm.dll (file offset) and its Name RVA.
+# .rdata has raw offset == RVA, so the RVA is also the file offset.
+D3DRM_DESCRIPTOR = 0x169EE4
+D3DRM_NAME_RVA = 0x16AE0E
 
-
-# Assembled bytes for each asm() call below, so keystone is optional.
-PREBUILT = {
-    (0x554a80, 'push edi mov edi, 300 retry: mov eax, dword ptr [ebx] push 1 push 0 push eax mov ecx, dword ptr [eax] call dword ptr [ecx + 0x2c] cmp eax, 0x887601c2 jne done mov eax, dword ptr [ebx] push eax mov ecx, dword ptr [eax] call dword ptr [ecx + 0x6c] push 10 call dword ptr [0x5551ac] dec edi jnz retry mov eax, 0x887601c2 done: pop edi ret'):
-        bytes.fromhex('57bf2c0100008b036a016a00508b08ff512c3dc201768875188b03508b08ff516c6a0aff15ac5155004f75dab8c20176885fc3'),
-    (0x4ce7d4, 'call 0x554a80'):
-        bytes.fromhex('e8a7620800'),
-    (0x4ce802, 'call 0x554a80'):
-        bytes.fromhex('e879620800'),
-    (0x4ce814, 'call 0x554a80'):
-        bytes.fromhex('e867620800'),
-    (0x554ac0, 'pushad push 0x554b00 call dword ptr [0x555180] test eax, eax jz skip push 0x554b10 push eax call dword ptr [0x555270] test eax, eax jz skip mov esi, eax push 1 call dword ptr [0x555210] push eax call esi skip: popad push ebp mov ebp, esp push -1 jmp 0x53d6fa'):
-        bytes.fromhex('6068004b5500ff158051550085c0741d68104b550050ff157052550085c0740d89c66a01ff151052550050ffd6615589e56affe9028cfeff'),
-    (0x53d6f5, 'jmp 0x554ac0'):
-        bytes.fromhex('e9c6730100'),
-    (0x4a1f14, 'jmp 0x4a2005'):
-        bytes.fromhex('e9ec000000'),
-}
-
-
-def off(va):
-    return va - IMAGE_BASE - TEXT_VA + TEXT_RAW
-
-
-def asm(code, addr):
-    """Assemble with keystone if it's installed, else use the stored bytes."""
-    try:
-        from keystone import Ks, KS_ARCH_X86, KS_MODE_32
-    except ImportError:
-        return PREBUILT[(addr, " ".join(code.split()))]
-    enc, _ = Ks(KS_ARCH_X86, KS_MODE_32).asm(code, addr)
-    return bytes(enc)
-
-
-def patch(buf, va, old, new, name):
-    o = off(va)
-    cur = bytes(buf[o:o + len(old)])
-    if cur == new.ljust(len(old), b"\x90")[: len(old)] and len(new) <= len(old):
-        print(f"  {name}: already applied")
-        return
-    if cur != old:
-        sys.exit(f"{name}: unexpected bytes at {va:#x}: {cur.hex()} (want {old.hex()})")
-    if len(new) > len(old):
-        sys.exit(f"{name}: replacement longer than original")
-    buf[o:o + len(old)] = new.ljust(len(old), b"\x90")
-    print(f"  {name}: patched {va:#x}")
+# New DLL name goes in the zero-filled tail of .text (raw data already there).
+NEW_NAME_RVA = 0x154A80
+NEW_NAME = b"mcm2fix.dll\0"
 
 
 def main():
     if len(sys.argv) != 3:
         sys.exit(__doc__)
     src, dst = sys.argv[1], sys.argv[2]
-    buf = bytearray(open(src, "rb").read())
-    if len(buf) != EXPECTED_SIZE:
-        sys.exit(f"unexpected file size {len(buf)}, want {EXPECTED_SIZE}")
+    data = open(src, "rb").read()
+    digest = hashlib.sha256(data).hexdigest()
+    if digest != ORIGINAL_SHA256:
+        sys.exit(f"unsupported Mcm2.exe (SHA-256 {digest}); expected the original no-CD exe")
+    buf = bytearray(data)
 
-    # Grow .text VirtualSize to cover the cave (it is already in the raw data).
+    # Grow .text VirtualSize so the new string is inside the mapped section.
     e_lfanew = struct.unpack_from("<I", buf, 0x3C)[0]
-    nsec_off = e_lfanew + 6
     opt_size = struct.unpack_from("<H", buf, e_lfanew + 20)[0]
     sec0 = e_lfanew + 24 + opt_size
     assert buf[sec0:sec0 + 5] == b".text"
-    vsize = struct.unpack_from("<I", buf, sec0 + 8)[0]
-    if vsize == TEXT_VSIZE_OLD:
-        struct.pack_into("<I", buf, sec0 + 8, TEXT_RAWSIZE)
-        print("  .text VirtualSize -> 0x154000")
-    elif vsize != TEXT_RAWSIZE:
-        sys.exit(f"unexpected .text VirtualSize {vsize:#x}")
+    assert struct.unpack_from("<I", buf, sec0 + 8)[0] == TEXT_VSIZE_OLD
+    struct.pack_into("<I", buf, sec0 + 8, TEXT_RAWSIZE)
 
-    # --- flip-retry helper in the cave -------------------------------------
-    # In: ebx = pointer to the IDirectDrawSurface7* of the primary surface.
-    # Out: eax = HRESULT of the last Flip. Preserves ebx, esi, edi, ebp.
-    flip_helper = asm(f"""
-        push edi
-        mov edi, 300
-    retry:
-        mov eax, dword ptr [ebx]
-        push 1
-        push 0
-        push eax
-        mov ecx, dword ptr [eax]
-        call dword ptr [ecx + 0x2c]
-        cmp eax, {DDERR_SURFACELOST:#x}
-        jne done
-        mov eax, dword ptr [ebx]
-        push eax
-        mov ecx, dword ptr [eax]
-        call dword ptr [ecx + 0x6c]
-        push 10
-        call dword ptr [{IAT_SLEEP:#x}]
-        dec edi
-        jnz retry
-        mov eax, {DDERR_SURFACELOST:#x}
-    done:
-        pop edi
-        ret
-    """, CAVE)
-    o = off(CAVE)
-    existing = bytes(buf[o:o + len(flip_helper)])
-    if existing not in (b"\0" * len(flip_helper), flip_helper):
-        sys.exit("code cave is not empty")
-    buf[o:o + len(flip_helper)] = flip_helper
-    print(f"  flip-retry helper at {CAVE:#x} ({len(flip_helper)} bytes)")
+    name_off = NEW_NAME_RVA - TEXT_VA + TEXT_RAW
+    assert buf[name_off:name_off + len(NEW_NAME)] == b"\0" * len(NEW_NAME)
+    buf[name_off:name_off + len(NEW_NAME)] = NEW_NAME
 
-    # Each site: mov eax,[ebx]; push 1; push 0; (push eax; mov ecx,[eax] |
-    # mov edx,[eax]; push eax); call [reg+0x2c]  = 12 bytes -> call helper.
-    sites = {
-        0x4CE7D4: "8b036a016a00508b08ff512c",
-        0x4CE802: "8b036a016a008b1050ff522c",
-        0x4CE814: "8b036a016a00508b08ff512c",
-    }
-    for va, old in sites.items():
-        patch(buf, va, bytes.fromhex(old), asm(f"call {CAVE:#x}", va), f"flip-retry {va:#x}")
-
-    # --- one-core ----------------------------------------------------------
-    strings = {CAVE2_STR_K32: b"KERNEL32.DLL\0", CAVE2_STR_SPAM: b"SetProcessAffinityMask\0"}
-    for va, data in strings.items():
-        o = off(va)
-        if bytes(buf[o:o + len(data)]) not in (b"\0" * len(data), data):
-            sys.exit("code cave (strings) is not empty")
-        buf[o:o + len(data)] = data
-    stub = asm(f"""
-        pushad
-        push {CAVE2_STR_K32:#x}
-        call dword ptr [{IAT_GETMODULEHANDLEA:#x}]
-        test eax, eax
-        jz skip
-        push {CAVE2_STR_SPAM:#x}
-        push eax
-        call dword ptr [{IAT_GETPROCADDRESS:#x}]
-        test eax, eax
-        jz skip
-        mov esi, eax
-        push 1
-        call dword ptr [{IAT_GETCURRENTPROCESS:#x}]
-        push eax
-        call esi
-    skip:
-        popad
-        push ebp
-        mov ebp, esp
-        push -1
-        jmp {ENTRY + 5:#x}
-    """, CAVE2)
-    assert CAVE2 + len(stub) <= CAVE2_STR_K32
-    o = off(CAVE2)
-    if bytes(buf[o:o + len(stub)]) not in (b"\0" * len(stub), stub):
-        sys.exit("code cave (one-core) is not empty")
-    buf[o:o + len(stub)] = stub
-    print(f"  one-core stub at {CAVE2:#x} ({len(stub)} bytes)")
-    # entry: push ebp; mov ebp,esp; push -1  ->  jmp stub
-    patch(buf, ENTRY, bytes.fromhex("558bec6aff"), asm(f"jmp {CAVE2:#x}", ENTRY), "one-core entry")
-
-    # --- no-admin ----------------------------------------------------------
-    # 4a1f14: cmp eax,2 ; jne 4a2005  ->  jmp 4a2005
-    patch(buf, 0x4A1F14, bytes.fromhex("83f8020f85e8000000"),
-          asm("jmp 0x4a2005", 0x4A1F14), "no-admin")
+    # IMAGE_IMPORT_DESCRIPTOR.Name is at +12.
+    assert struct.unpack_from("<I", buf, D3DRM_DESCRIPTOR + 12)[0] == D3DRM_NAME_RVA
+    assert buf[D3DRM_NAME_RVA:D3DRM_NAME_RVA + 10] == b"d3drm.dll\0"
+    struct.pack_into("<I", buf, D3DRM_DESCRIPTOR + 12, NEW_NAME_RVA)
 
     open(dst, "wb").write(buf)
-    print(f"wrote {dst}")
+    print(f"wrote {dst} (imports mcm2fix.dll instead of d3drm.dll)")
 
 
 if __name__ == "__main__":
