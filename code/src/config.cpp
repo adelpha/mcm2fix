@@ -16,4 +16,8 @@ void LoadConfig() {
   strncat_s(ini, "mcm2fix.ini", _TRUNCATE);
   g_config.one_core = GetPrivateProfileIntA("mcm2fix", "OneCore", 1, ini) != 0;
   g_config.log = GetPrivateProfileIntA("mcm2fix", "Log", 1, ini) != 0;
+  g_config.startup = GetPrivateProfileIntA("mcm2fix", "Startup", 1, ini) != 0;
+  g_config.registry = GetPrivateProfileIntA("mcm2fix", "Registry", 1, ini) != 0;
+  g_config.files = GetPrivateProfileIntA("mcm2fix", "Files", 1, ini) != 0;
+  g_config.activate_log = GetPrivateProfileIntA("mcm2fix", "ActivateLog", 1, ini) != 0;
 }

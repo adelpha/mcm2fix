@@ -33,10 +33,13 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
     if (IsSupportedGame()) {
       patch::Log("mcm2fix loaded");
       ApplyStep1Fixes();
-      ApplyStartupFixes();
-      ApplyRegistryFixes();
-      ApplyFileFixes();
-      ApplyDiagnostics();
+      const Config& c = GetConfig();
+      patch::Log("config: OneCore=%d Startup=%d Registry=%d Files=%d ActivateLog=%d",
+                 c.one_core, c.startup, c.registry, c.files, c.activate_log);
+      if (c.startup) ApplyStartupFixes();
+      if (c.registry) ApplyRegistryFixes();
+      if (c.files) ApplyFileFixes();
+      if (c.activate_log) ApplyDiagnostics();
     } else {
       patch::Log("not the supported Mcm2.exe; no fixes applied");
     }
