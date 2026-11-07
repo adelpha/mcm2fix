@@ -146,9 +146,9 @@ float4 ps_main(VSOut i) : SV_Target {
   if (func != 8 && func != 0) {
     int a8 = (int)round(cur.a * 255);
     int ref = (int)atest.x;
-    bool pass = func == 2 ? a8 < ref : func == 3 ? a8 == ref : func == 4 ? a8 <= ref :
+    bool ok = func == 2 ? a8 < ref : func == 3 ? a8 == ref : func == 4 ? a8 <= ref :
                 func == 5 ? a8 > ref : func == 6 ? a8 != ref : func == 7 ? a8 >= ref : false;
-    if (!pass) discard;
+    if (!ok) discard;
   }
   return cur;
 }
