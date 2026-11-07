@@ -37,10 +37,15 @@ Put `Mcm2_fixed.exe` and `mcm2fix.dll` in the game folder.
 
 ## mcm2fix.ini (optional, next to Mcm2.exe)
 
+All settings default to the values shown; set one to 0 or 1 to change it.
+
 ```ini
 [mcm2fix]
-; 1 = pin the game to one CPU core (stopgap for the startup thread race)
-OneCore=1
-; 1 = write %LOCALAPPDATA%\Motocross Madness 2\mcm2fix.log
-Log=1
+OneCore=0      ; 1 = pin the game to one CPU core (old stopgap)
+Log=1          ; write %LOCALAPPDATA%\Motocross Madness 2\mcm2fix.log
+Startup=1      ; auto-pick the video card, skip the "detected a change" box
+Registry=1     ; keep settings in HKCU instead of HKLM
+Files=1        ; send file writes to %LOCALAPPDATA%\Motocross Madness 2
+ActivateLog=1  ; log WM_ACTIVATEAPP
+RegLog=1       ; log every registry call
 ```
