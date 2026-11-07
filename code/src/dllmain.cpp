@@ -6,6 +6,8 @@
 #include "patch.h"
 
 void ApplyStep1Fixes();
+void ApplyStartupFixes();
+void ApplyRegistryFixes();
 
 namespace {
 
@@ -27,6 +29,8 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
     if (IsSupportedGame()) {
       patch::Log("mcm2fix loaded");
       ApplyStep1Fixes();
+      ApplyStartupFixes();
+      ApplyRegistryFixes();
     } else {
       patch::Log("not the supported Mcm2.exe; no fixes applied");
     }

@@ -22,6 +22,10 @@ void Jump(uintptr_t addr, uintptr_t target, size_t total_len);
 bool Replace(const char* name, uintptr_t addr, const void* original, size_t len,
              const void* replacement, size_t replacement_len);
 
+// Replace the function pointer in one of Mcm2.exe's import address table
+// slots. Returns the previous pointer.
+void* HookIat(uintptr_t slot, void* replacement);
+
 void Log(const char* fmt, ...);
 
 }  // namespace patch

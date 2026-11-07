@@ -52,6 +52,12 @@ bool Replace(const char* name, uintptr_t addr, const void* original, size_t len,
   return true;
 }
 
+void* HookIat(uintptr_t slot, void* replacement) {
+  void* previous = *reinterpret_cast<void**>(slot);
+  Write(slot, &replacement, sizeof(replacement));
+  return previous;
+}
+
 void Log(const char* fmt, ...) {
   char msg[512];
   va_list ap;
