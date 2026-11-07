@@ -1382,6 +1382,7 @@ void Device::Submit(const Draw& d) {
     b.ctx->Draw(d.count, 0);
   }
   rt_->MarkGpuWritten();
+  ++Counters().draws;
 }
 
 }  // namespace dd

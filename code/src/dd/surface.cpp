@@ -298,6 +298,10 @@ Surface* Surface::CopyForeign(DirectDraw* dd, IUnknown* in) {
       std::memcpy(out->mem_.data() + static_cast<size_t>(y) * out->Pitch(),
                   static_cast<const uint8_t*>(d.lpSurface) + static_cast<size_t>(y) * d.lPitch, row);
     s7->Unlock(nullptr);
+    ++Counters().foreign;
+    unsigned sum = 0;
+    for (size_t i = 0; i < out->mem_.size(); i += 4) sum = sum * 31 + out->mem_[i];
+    Counters().foreign_sum = sum;
     LogOnce("copying from a system DirectDraw surface %lux%lu (%lu bpp)", d.dwWidth, d.dwHeight,
             d.ddpfPixelFormat.dwRGBBitCount);
   }
@@ -403,6 +407,7 @@ void Surface::Upload() {
 
 void Surface::Download() {
   if (!gpu_.tex || layout_.depth) return;
+  ++Counters().downloads;
   if (!mips_.empty()) LogOnce("reading back a mipmapped surface (top level only)");
   Backend& b = B();
   D3D11_TEXTURE2D_DESC td{};
@@ -569,6 +574,7 @@ void Surface::FillCpu(const RECT& dr, DWORD color) {
 }
 
 void Surface::PresentFront(UINT interval) {
+  if (interval == 0) ++Counters().front_writes;
   GpuTexture* t = Gpu();
   if (t->srv) dd::Present(t->srv, Width(), Height(), interval);
 }
@@ -662,6 +668,7 @@ HRESULT Surface::Blt(LPRECT dr_in, LPDIRECTDRAWSURFACE7 src_in, LPRECT sr_in, DW
   }
   Surface* src = From(src_in);
   Surface* foreign = nullptr;
+  ++Counters().blts;
   if (!src && src_in) src = foreign = CopyForeign(dd_, src_in);
   if (!src) {
     LogOnce("Blt flags %08lx without a usable source", flags);
@@ -755,6 +762,7 @@ HRESULT Surface::EnumOverlayZOrders(DWORD, LPVOID, LPDDENUMSURFACESCALLBACK7) {
 HRESULT Surface::Flip(LPDIRECTDRAWSURFACE7, DWORD flags) {
   DD_LOCK;
   if (!back_) return DDERR_NOTFLIPPABLE;
+  ++Counters().flips;
   Surface* cur = this;
   while (cur->back_) {
     cur->SwapContents(cur->back_);
@@ -900,6 +908,7 @@ HRESULT Surface::Lock(LPRECT rect, LPDDSURFACEDESC2 desc, DWORD flags, HANDLE) {
   DD_LOCK;
   if (!desc) return DDERR_INVALIDPARAMS;
   if (layout_.depth) LogOnce("Lock of a Z-buffer (contents not kept)");
+  ++Counters().locks;
   SyncToCpu();
   GetSurfaceDesc(desc);
   LONG x = rect ? rect->left : 0, y = rect ? rect->top : 0;

@@ -97,6 +97,13 @@ void Blit(const BlitParams& p);
 // Scale src (game resolution) into the window, keeping its aspect ratio,
 // and present.
 void Present(ID3D11ShaderResourceView* src, UINT src_w, UINT src_h, UINT interval);
+// Per-second activity counters, written to the log (helps debugging).
+struct Stats {
+  unsigned flips, presents, draws, blts, foreign, front_writes, locks, downloads;
+  unsigned foreign_sum;  // checksum of the last copied video frame
+};
+Stats& Counters();
+
 // Block until the next vertical blank of the game's monitor.
 void WaitVBlank();
 

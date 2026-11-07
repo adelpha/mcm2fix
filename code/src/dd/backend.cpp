@@ -404,9 +404,35 @@ void Blit(const BlitParams& p) {
   if (p.src) b.ctx->PSSetShaderResources(0, 1, null_srv);
 }
 
+Stats& Counters() {
+  static Stats s{};
+  return s;
+}
+
+namespace {
+void ReportStats() {
+  static DWORD last = GetTickCount();
+  static int reports = 0;
+  DWORD now = GetTickCount();
+  if (now - last < 2000 || reports > 200) return;
+  Stats& s = Counters();
+  Log("2s: %u flips, %u presents, %u draws, %u blts, %u video frames (sum %08x), %u front writes, "
+      "%u locks, %u readbacks",
+      s.flips, s.presents, s.draws, s.blts, s.foreign, s.foreign_sum, s.front_writes, s.locks,
+      s.downloads);
+  unsigned sum = s.foreign_sum;
+  s = Stats{};
+  s.foreign_sum = sum;
+  last = now;
+  ++reports;
+}
+}  // namespace
+
 void Present(ID3D11ShaderResourceView* src, UINT src_w, UINT src_h, UINT interval) {
   DD_LOCK;
   Backend& b = g_backend;
+  ++Counters().presents;
+  ReportStats();
   if (!b.hwnd || IsIconic(b.hwnd)) return;
   KeepBorderless();
   if (!ResizeSwapchain()) return;
