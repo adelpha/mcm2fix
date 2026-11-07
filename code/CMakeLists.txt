@@ -18,6 +18,7 @@ add_library(mcm2fix SHARED
   src/fixes_files.cpp
   src/diagnostics.cpp
   src/regtrace.cpp
+  src/ddtrace.cpp
   src/config.cpp
   mcm2fix.def)
 set_target_properties(mcm2fix PROPERTIES PREFIX "" OUTPUT_NAME "mcm2fix")

@@ -12,6 +12,8 @@ void ApplyRegistryFixes();
 void ApplyFileFixes();
 void ApplyDiagnostics();
 void ApplyRegistryTrace();
+void ApplyDirectDrawTrace();
+void DumpDirectDrawTrace();
 
 namespace {
 
@@ -41,10 +43,13 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
       if (c.registry) ApplyRegistryFixes();
       if (c.files) ApplyFileFixes();
       if (c.reg_log) ApplyRegistryTrace();
+      if (c.dd_log) ApplyDirectDrawTrace();
       if (c.activate_log) ApplyDiagnostics();
     } else {
       patch::Log("not the supported Mcm2.exe; no fixes applied");
     }
   }
+  if (reason == DLL_PROCESS_DETACH && GetConfig().dd_log && IsSupportedGame())
+    DumpDirectDrawTrace();
   return TRUE;
 }
