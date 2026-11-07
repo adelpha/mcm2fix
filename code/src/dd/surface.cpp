@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <map>
 
 #include "directdraw.h"
 
@@ -105,17 +106,37 @@ PixelLayout PixelLayout::From(const DDPIXELFORMAT& pf) {
   return l;
 }
 
+namespace {
+// expand[b][v]: a b-bit channel value widened to 8 bits; compress[b][c]: back.
+struct ChannelTables {
+  uint8_t expand[9][256];
+  uint8_t compress[9][256];
+  ChannelTables() {
+    for (int b = 1; b <= 8; ++b) {
+      unsigned max = (1u << b) - 1;
+      for (unsigned v = 0; v < 256; ++v) {
+        expand[b][v] = static_cast<uint8_t>(v <= max ? (v * 255 + max / 2) / max : 255);
+        compress[b][v] = static_cast<uint8_t>((v * max + 127) / 255);
+      }
+    }
+  }
+};
+const ChannelTables& Tables() {
+  static ChannelTables t;
+  return t;
+}
+}  // namespace
+
 void PixelLayout::ToBGRA(DWORD px, uint8_t out[4]) const {
   static const int order[4] = {2, 1, 0, 3};  // r g b a -> B G R A slots
+  const ChannelTables& t = Tables();
   for (int c = 0; c < 4; ++c) {
     uint8_t v;
     if (!bits[c]) {
       v = c == 3 ? 255 : 0;
     } else {
       DWORD raw = (px & mask[c]) >> shift[c];
-      DWORD max = (bits[c] >= 32) ? 0xffffffffu : ((1u << bits[c]) - 1);
-      v = bits[c] >= 8 ? static_cast<uint8_t>(raw >> (bits[c] - 8))
-                       : static_cast<uint8_t>((raw * 255 + max / 2) / max);
+      v = bits[c] >= 8 ? static_cast<uint8_t>(raw >> (bits[c] - 8)) : t.expand[bits[c]][raw];
     }
     out[order[c]] = v;
   }
@@ -123,12 +144,12 @@ void PixelLayout::ToBGRA(DWORD px, uint8_t out[4]) const {
 
 DWORD PixelLayout::FromBGRA(const uint8_t in[4]) const {
   static const int order[4] = {2, 1, 0, 3};
+  const ChannelTables& t = Tables();
   DWORD px = 0;
   for (int c = 0; c < 4; ++c) {
     if (!bits[c]) continue;
     DWORD v = in[order[c]];
-    DWORD raw = bits[c] >= 8 ? (v << (bits[c] - 8))
-                             : (v * ((1u << bits[c]) - 1) + 127) / 255;
+    DWORD raw = bits[c] >= 8 ? (v << (bits[c] - 8)) : t.compress[bits[c]][v];
     px |= (raw << shift[c]) & mask[c];
   }
   return px;
@@ -420,8 +441,11 @@ void Surface::Download() {
   td.SampleDesc.Count = 1;
   td.Usage = D3D11_USAGE_STAGING;
   td.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-  ID3D11Texture2D* staging = nullptr;
-  if (FAILED(b.device->CreateTexture2D(&td, nullptr, &staging))) {
+  // One reusable readback texture per size.
+  static std::map<uint64_t, ID3D11Texture2D*> cache;
+  ID3D11Texture2D*& staging = cache[(static_cast<uint64_t>(td.Width) << 32) | td.Height];
+  if (!staging && FAILED(b.device->CreateTexture2D(&td, nullptr, &staging))) {
+    staging = nullptr;
     Log("readback texture %ux%u failed", gpu_.width, gpu_.height);
     return;
   }
@@ -437,7 +461,6 @@ void Surface::Download() {
     }
     b.ctx->Unmap(staging, 0);
   }
-  staging->Release();
 }
 
 void Surface::CopyFrom(Surface* src, const POINT* dst_pt, const RECT* src_rect) {
@@ -466,8 +489,15 @@ void Surface::CopyFrom(Surface* src, const POINT* dst_pt, const RECT* src_rect) 
 bool Surface::UseGpuFor(Surface* src) {
   if (InMipChain() || layout_.depth || !Ready()) return false;
   if (src && (src->layout_.depth || src->layout_.palette)) return false;
-  if (IsRenderTargetKind() || SyncOwner()->sync_ == kGpuNewer) return true;
-  return src && src->SyncOwner()->sync_ == kGpuNewer;
+  // Work where the destination's newest copy is, so CPU drawing (GDI text,
+  // software blits) and GPU drawing don't copy the whole surface back and
+  // forth for every call.
+  bool src_gpu = src && src->SyncOwner()->sync_ == kGpuNewer;
+  switch (SyncOwner()->sync_) {
+    case kGpuNewer: return true;
+    case kCpuNewer: return src_gpu;
+    default: return IsRenderTargetKind() || src_gpu;
+  }
 }
 
 void Surface::BltGpu(const RECT& dr, Surface* src, const RECT& sr, bool key, DWORD key_value) {

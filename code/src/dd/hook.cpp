@@ -47,6 +47,48 @@ HRESULT __stdcall VideoStep(IStreamSample* s) {
   return hr;
 }
 
+// The video setup (0x4A3C2D) asks the DirectShow video stream for its
+// format; by default that is the desktop's 32-bit format, which the game's
+// Indeo videos stop decoding into after one frame. Ask for the 16-bit
+// format the game ran in originally.
+HRESULT __stdcall VideoGetFormat(IUnknown* stream, DDSURFACEDESC* cur, void** pal,
+                                 DDSURFACEDESC* desired, DWORD* flags) {
+  using GetFn = HRESULT(__stdcall*)(IUnknown*, DDSURFACEDESC*, void**, DDSURFACEDESC*, DWORD*);
+  using SetFn = HRESULT(__stdcall*)(IUnknown*, const DDSURFACEDESC*, void*);
+  void** vt = *reinterpret_cast<void***>(stream);
+  HRESULT hr = reinterpret_cast<GetFn>(vt[9])(stream, cur, pal, desired, flags);
+  if (FAILED(hr) || !cur) return hr;
+  dd::Log("video: stream format %lux%lu, %lu bpp (flags %lx)", cur->dwWidth, cur->dwHeight,
+          cur->ddpfPixelFormat.dwRGBBitCount, cur->dwFlags);
+  if (cur->ddpfPixelFormat.dwRGBBitCount != 16) {
+    DDSURFACEDESC d = *cur;
+    d.dwFlags |= DDSD_PIXELFORMAT;
+    d.ddpfPixelFormat = DDPIXELFORMAT{};
+    d.ddpfPixelFormat.dwSize = sizeof(DDPIXELFORMAT);
+    d.ddpfPixelFormat.dwFlags = DDPF_RGB;
+    d.ddpfPixelFormat.dwRGBBitCount = 16;
+    d.ddpfPixelFormat.dwRBitMask = 0xf800;
+    d.ddpfPixelFormat.dwGBitMask = 0x07e0;
+    d.ddpfPixelFormat.dwBBitMask = 0x001f;
+    HRESULT set = reinterpret_cast<SetFn>(vt[10])(stream, &d, nullptr);
+    dd::Log("video: switching the stream to 16-bit -> %08lx", set);
+    if (SUCCEEDED(set)) *cur = d;
+  }
+  return hr;
+}
+
+void PatchVideoFormat() {
+  const uint8_t original[] = {0x8b, 0x10, 0x53, 0x51, 0x50, 0xff, 0x52, 0x24};
+  if (!patch::Matches(0x4A3C28, original, sizeof(original))) {
+    patch::Log("video format patch: unexpected bytes, skipped");
+    return;
+  }
+  const uint8_t head[] = {0x53, 0x51, 0x50};  // push ebx; push ecx; push eax
+  patch::Write(0x4A3C28, head, sizeof(head));
+  patch::Call(0x4A3C2B, reinterpret_cast<const void*>(&VideoGetFormat), 5);
+  patch::Log("video format patch: applied");
+}
+
 void PatchVideoLoop() {
   const uint8_t original[] = {0x8b, 0x46, 0x64, 0x6a, 0x19, 0x6a, 0x02, 0x50,
                               0x8b, 0x08, 0xff, 0x51, 0x1c};
@@ -64,6 +106,7 @@ void PatchVideoLoop() {
 
 void ApplyD3D11Backend() {
   patch::HookIat(kIatDirectDrawCreateEx, reinterpret_cast<void*>(&dd::CreateDirectDraw));
+  PatchVideoFormat();
   PatchVideoLoop();
   patch::Log("d3d11 backend: on");
 }
