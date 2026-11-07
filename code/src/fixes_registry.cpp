@@ -88,6 +88,21 @@ void SeedUserKey() {
     patch::Log("registry: cannot create HKCU\\%s", kUserKey);
     return;
   }
+  // First run: copy everything an existing install has (including what
+  // Windows registry virtualization stored for it), so the game keeps
+  // its settings and hardware profile.
+  if (!HasValue(key, "mcm2fixImported")) {
+    HKEY old;
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, kGameKey, 0, KEY_READ, &old) == ERROR_SUCCESS) {
+      LONG r = RegCopyTreeA(old, nullptr, key);
+      patch::Log("registry: imported HKLM\\%s (result %ld)", kGameKey, r);
+      RegCloseKey(old);
+    } else {
+      patch::Log("registry: no existing install in HKLM");
+    }
+    SetDword(key, "mcm2fixImported", 1);
+  }
+
   const std::string folder = GameFolder();
   SetString(key, "HardDriveRootPath", folder);
   SetString(key, "CDPath", folder + "\\");  // no-CD build: the "CD" is the game folder
