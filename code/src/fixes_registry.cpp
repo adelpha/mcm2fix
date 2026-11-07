@@ -9,6 +9,7 @@
 // key is seeded with the install values the game expects, pointing at the
 // folder the exe runs from, so no installer is needed.
 #include <windows.h>
+#include <cstdio>
 #include <cstring>
 #include <string>
 
@@ -40,25 +41,10 @@ bool Redirect(HKEY root, LPCSTR subkey, std::string* out) {
   return true;
 }
 
-// The game caches a hardware profile per video device under DriverInfo\<guid>
-// and skips its startup tests when it can read one back. On Windows 11 that
-// cached path leaves the renderer stalled (the screen only redraws on focus
-// changes), while the tested path works. Under the old HKLM key Windows'
-// registry virtualization happened to hide the cached profile from reads,
-// so the game re-tested on every launch. Keep that behaviour: report the
-// profile as missing on read-only opens. This goes away with the D3D11
-// renderer in step 3.
-bool IsDriverInfoRead(const std::string& user_key, REGSAM sam) {
-  const char kDriverInfo[] = "\\DriverInfo";
-  return user_key.find(kDriverInfo) != std::string::npos &&
-         (sam & (KEY_SET_VALUE | KEY_CREATE_SUB_KEY)) == 0;
-}
-
 LONG WINAPI HookedRegOpenKeyExA(HKEY root, LPCSTR subkey, DWORD options, REGSAM sam,
                                 PHKEY result) {
   std::string user;
   if (Redirect(root, subkey, &user)) {
-    if (IsDriverInfoRead(user, sam)) return ERROR_FILE_NOT_FOUND;
     return g_open(HKEY_CURRENT_USER, user.c_str(), options, sam, result);
   }
   return g_open(root, subkey, options, sam, result);
@@ -128,6 +114,27 @@ void SeedUserKey() {
   if (!HasValue(key, "Launched")) SetString(key, "Launched", "1");
   if (!HasValue(key, "LangID")) SetDword(key, "LangID", 9);
   if (!HasValue(key, "AllowFreezeCamera")) SetDword(key, "AllowFreezeCamera", 1);
+  // Reuse the last input device instead of asking on every launch (the
+  // game's own "show controller picker" option, unset on most installs).
+  if (!HasValue(key, "UseLastController")) SetDword(key, "UseLastController", 1);
+
+  // The game tests the video card once and caches the result, including the
+  // list of display modes, under DriverInfo. mcm2fix's renderer provides
+  // those modes, so drop the cache whenever the list would change (new
+  // mcm2fix mode list or a different desktop size); the game then tests
+  // once and skips the test on later launches.
+  char stamp[64];
+  std::snprintf(stamp, sizeof(stamp), "modes-2 %dx%d", GetSystemMetrics(SM_CXSCREEN),
+                GetSystemMetrics(SM_CYSCREEN));
+  char old_stamp[64] = {};
+  DWORD stamp_size = sizeof(old_stamp) - 1;
+  if (RegQueryValueExA(key, "mcm2fixModeList", nullptr, nullptr,
+                       reinterpret_cast<BYTE*>(old_stamp), &stamp_size) != ERROR_SUCCESS ||
+      std::strcmp(old_stamp, stamp) != 0) {
+    LONG r = RegDeleteTreeA(key, "DriverInfo");
+    patch::Log("registry: display modes changed (%s), video card will be re-tested (%ld)", stamp, r);
+    SetString(key, "mcm2fixModeList", stamp);
+  }
 
   // Carry over the CD key from an existing install, if there is one.
   if (!HasValue(key, "PID")) {
