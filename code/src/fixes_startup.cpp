@@ -30,9 +30,44 @@ void ApplyNoHardwareChangeBox() {
                  sizeof(replacement));
 }
 
+// 4d14b0 (cdecl, 3 args) returns the renderer device to use, or opens the
+// "choose a video card" window when the count of usable hardware devices is
+// not exactly one or the game asks for it. The software renderer (Blade) is
+// also in the list. Replace it: return the first hardware device (flag bit
+// 0 at +0x1b8), else the first device. The device list is at 690894 (4
+// pointers) with its count at 6908a4; each device's name is at +0x4bc.
+void* __cdecl PickRenderDevice(int, int, void*) {
+  auto** devices = reinterpret_cast<uint8_t**>(0x690894);
+  int count = *reinterpret_cast<int*>(0x6908A4);
+  if (count > 4) count = 4;
+  void* pick = nullptr;
+  for (int i = 0; i < count; ++i) {
+    uint8_t* d = devices[i];
+    if (!d) continue;
+    bool hardware = (d[0x1B8] & 1) != 0;
+    patch::Log("device %d: \"%.64s\" hardware=%d", i, reinterpret_cast<char*>(d + 0x4BC),
+               hardware ? 1 : 0);
+    if (!pick && hardware) pick = d;
+  }
+  if (!pick && count > 0) pick = devices[0];
+  patch::Log("picked device %p", pick);
+  return pick;
+}
+
+void ApplyNoDevicePicker() {
+  static const uint8_t original[] = {0x81, 0xec, 0x0c, 0x03, 0x00, 0x00};  // sub esp, 0x30c
+  if (!patch::Matches(0x4D14B0, original, sizeof(original))) {
+    patch::Log("no-device-picker: unexpected bytes, skipped");
+    return;
+  }
+  patch::Jump(0x4D14B0, reinterpret_cast<uintptr_t>(&PickRenderDevice), sizeof(original));
+  patch::Log("no-device-picker: applied");
+}
+
 }  // namespace
 
 void ApplyStartupFixes() {
+  ApplyNoDevicePicker();
   ApplyPrimaryAdapterOnly();
   ApplyNoHardwareChangeBox();
 }
