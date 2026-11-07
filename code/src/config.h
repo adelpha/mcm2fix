@@ -22,7 +22,8 @@ struct Config {
   bool reg_log = true;
   bool dd_log = false;
   bool d3d11 = true;
-  bool dd_stats = false;  // D3D11 renderer: log activity counters every 2 s
+  bool dd_stats = false;
+  int alpha_cut = 128;  // D3D11: blended pixels below this alpha (0-255) do not write depth  // D3D11 renderer: log activity counters every 2 s
 };
 
 const Config& GetConfig();

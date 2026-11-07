@@ -22,6 +22,7 @@ void LoadConfig() {
   g_config.reg_log = GetPrivateProfileIntA("mcm2fix", "RegLog", 1, ini) != 0;
   g_config.dd_log = GetPrivateProfileIntA("mcm2fix", "DDLog", 0, ini) != 0;
   g_config.d3d11 = GetPrivateProfileIntA("mcm2fix", "D3D11", 1, ini) != 0;
+  g_config.alpha_cut = GetPrivateProfileIntA("mcm2fix", "AlphaCut", 128, ini);
   g_config.dd_stats = GetPrivateProfileIntA("mcm2fix", "DDStats", 0, ini) != 0;
   g_config.activate_log = GetPrivateProfileIntA("mcm2fix", "ActivateLog", 1, ini) != 0;
 }

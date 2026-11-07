@@ -5,6 +5,7 @@
 #include <cstring>
 #include <string>
 
+#include "../config.h"
 #include "directdraw.h"
 #include "surface.h"
 
@@ -35,6 +36,7 @@ cbuffer PSParams : register(b1) {
   float4 fog;     // start end density mode(0 off, 1 exp, 2 exp2, 3 linear)
   float4 atest;   // ref(0-255) func specular colorkey
   float4 key0;    // stage 0 colour key rgb, w = active
+  float4 acut;    // x: discard alpha below this (blended draws that write depth)
 };
 Texture2D tex0 : register(t0);
 Texture2D tex1 : register(t1);
@@ -150,6 +152,7 @@ float4 ps_main(VSOut i) : SV_Target {
                 func == 5 ? a8 > ref : func == 6 ? a8 != ref : func == 7 ? a8 >= ref : false;
     if (!ok) discard;
   }
+  if (cur.a < acut.x) discard;
   return cur;
 }
 )";
@@ -177,6 +180,7 @@ struct PSConstants {
   float fog[4];
   float atest[4];
   float key0[4];
+  float cut[4];
 };
 
 struct ClearConstants {
@@ -1266,6 +1270,12 @@ void Device::ApplyState(bool tl, bool depth_clip, bool has_depth) {
     tex_[0]->KeyColor(pc.key0);
     pc.key0[3] = 1;
   }
+  // Blended cut-outs (leaves, flags) that also write depth hide whatever is
+  // drawn behind them later, even where they are nearly transparent; the
+  // original game shows a stair-step fringe there. Drop those pixels.
+  if (rs_[RS_ALPHABLENDENABLE] && rs_[RS_ZWRITEENABLE] && rs_[RS_ZENABLE] &&
+      (rs_[RS_SRCBLEND] == 5 || rs_[RS_SRCBLEND] == 12))  // SRCALPHA, BOTHSRCALPHA
+    pc.cut[0] = static_cast<float>(GetConfig().alpha_cut) / 255.0f;
   b.ctx->UpdateSubresource(ps_cb_, 0, nullptr, &pc, 0, 0);
 
   bool flat = rs_[RS_SHADEMODE] == 1;
