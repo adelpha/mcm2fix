@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include "../patch.h"
+#include "../video/player.h"
 #include "backend.h"
 #include "directdraw.h"
 
@@ -34,6 +35,7 @@ constexpr HRESULT kPending = 0x00040001;  // MS_S_PENDING
 constexpr DWORD kWait = 2, kAbort = 4;    // COMPSTAT_WAIT, COMPSTAT_ABORT
 
 HRESULT __stdcall VideoStep(IStreamSample* s) {
+  if (::video::IsOwnSample(s)) return s->CompletionStatus(kWait, 25);  // our own player
   static int pending = 0;
   HRESULT hr = s->CompletionStatus(kWait, 25);
   if (hr == kPending && ++pending < 3) return hr;
