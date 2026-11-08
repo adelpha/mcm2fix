@@ -1315,7 +1315,20 @@ void Device::ApplyState(bool tl, bool depth_clip, bool has_depth) {
       // every filtered edge pixel through; soft layers (terrain detail,
       // shadows) have alpha test off and are left alone.
       rs_[RS_ALPHATESTENABLE] && (rs_[RS_ALPHAFUNC] == 5 || rs_[RS_ALPHAFUNC] == 7))
+  {
     pc.cut[0] = static_cast<float>(GetConfig().alpha_cut) / 255.0f;
+    // What the game hands us for foliage (texture size, mip levels, mip
+    // limits), to see why distant trees look soft.
+    if (tex_[0]) {
+      const DWORD* t = tss_[0];
+      GpuTexture* g = tex_[0]->Gpu();
+      LogOnce("cut-out texture %ux%u levels %u (surface %ux%u lod %lu): filter mag %lu min %lu mip %lu, "
+              "maxmip %lu, bias %.2f",
+              g->width, g->height, g->levels, tex_[0]->Width(), tex_[0]->Height(), tex_[0]->LodValue(),
+              t[TSS_MAGFILTER], t[TSS_MINFILTER], t[TSS_MIPFILTER], t[TSS_MAXMIPLEVEL],
+              AsFloat(t[TSS_MIPMAPLODBIAS]));
+    }
+  }
   b.ctx->UpdateSubresource(ps_cb_, 0, nullptr, &pc, 0, 0);
 
   bool flat = rs_[RS_SHADEMODE] == 1;
