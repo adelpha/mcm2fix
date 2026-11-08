@@ -29,8 +29,19 @@ add_library(mcm2fix SHARED
   src/video/adpcm.cpp
   src/video/audio_out.cpp
   src/video/player.cpp
-  src/video/indeo5_stub.cpp
   mcm2fix.def)
+# Indeo 5 video decoding needs a static FFmpeg (tools/build-ffmpeg.sh). Without
+# it the game's own DirectShow video path is used.
+set(MCM2FIX_FFMPEG "" CACHE PATH "FFmpeg install prefix from tools/build-ffmpeg.sh")
+if(MCM2FIX_FFMPEG)
+  target_sources(mcm2fix PRIVATE src/video/indeo5_ffmpeg.cpp)
+  target_include_directories(mcm2fix PRIVATE "${MCM2FIX_FFMPEG}/include")
+  target_link_libraries(mcm2fix PRIVATE "${MCM2FIX_FFMPEG}/lib/libavcodec.a"
+                                        "${MCM2FIX_FFMPEG}/lib/libavutil.a" bcrypt)
+else()
+  target_sources(mcm2fix PRIVATE src/video/indeo5_stub.cpp)
+endif()
+
 set_target_properties(mcm2fix PROPERTIES PREFIX "" OUTPUT_NAME "mcm2fix")
 
 target_link_libraries(mcm2fix PRIVATE d3d11 dxgi dxguid gdi32 user32 winmm)

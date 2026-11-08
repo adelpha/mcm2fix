@@ -20,8 +20,11 @@ What it does:
   stays borderless at desktop resolution and the picture is scaled with the
   aspect ratio kept. No display mode change, no exclusive fullscreen, no
   d3drm.dll, no Windows DirectDraw for drawing. See `docs/step3-renderer.md`.
-- Intro videos still play through Windows' DirectShow (amstream) and the
-  Indeo codec; `src/dd/hook.cpp` makes that path work with the new renderer.
+- Videos (intro, credits, menu event previews; Indeo 5 with MS ADPCM sound)
+  play through mcm2fix's own player (`src/video/`): the AVI is read and
+  decoded with FFmpeg's Indeo 5 decoder, sound goes through waveOut, and no
+  DirectShow or Indeo codec is needed. A build without FFmpeg falls back to
+  the game's DirectShow path (`src/dd/hook.cpp` keeps that working).
 
 The log is `%LOCALAPPDATA%\Motocross Madness 2\mcm2fix.log`.
 
@@ -34,10 +37,17 @@ Visual Studio:
     cmake -S code -B build -A Win32
     cmake --build build --config Release
 
-MinGW cross-compile (Linux):
+MinGW cross-compile (Linux), with the video decoder:
 
-    cmake -S code -B build -DCMAKE_TOOLCHAIN_FILE=code/toolchain-mingw32.cmake -DCMAKE_BUILD_TYPE=Release
+    tools/build-ffmpeg.sh ffmpeg-work
+    cmake -S code -B build -DCMAKE_TOOLCHAIN_FILE=code/toolchain-mingw32.cmake -DCMAKE_BUILD_TYPE=Release -DMCM2FIX_FFMPEG=$PWD/ffmpeg-work/install
     cmake --build build
+
+`tools/build-ffmpeg.sh` builds a static libavcodec with only the Indeo 5
+decoder. FFmpeg is licensed under the LGPL 2.1 or later; its source is the
+tagged FFmpeg release the script downloads, and mcm2fix's own source is
+here, so the DLL can be rebuilt against a modified FFmpeg. Without
+`MCM2FIX_FFMPEG` (e.g. the Visual Studio build) the videos use DirectShow.
 
 ## Installing
 

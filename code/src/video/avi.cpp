@@ -1,6 +1,10 @@
 #include "avi.h"
 
 #include <cstring>
+#ifndef _WIN32
+#include <fstream>
+#include <iterator>
+#endif
 
 namespace video {
 namespace {
@@ -25,15 +29,27 @@ int Digit(uint8_t c) { return c >= '0' && c <= '9' ? c - '0' : -1; }
 AviFile::~AviFile() { Close(); }
 
 void AviFile::Close() {
+#ifdef _WIN32
   if (base_) UnmapViewOfFile(base_);
   if (map_) CloseHandle(map_);
   if (file_ != INVALID_HANDLE_VALUE) CloseHandle(file_);
   base_ = nullptr;
   map_ = nullptr;
   file_ = INVALID_HANDLE_VALUE;
+#endif
 }
 
 bool AviFile::Open(const char* path) {
+#ifndef _WIN32
+  std::ifstream in(path, std::ios::binary);
+  contents_.assign(std::istreambuf_iterator<char>(in), {});
+  base_ = contents_.data();
+  size_ = contents_.size();
+  if (size_ < 12) {
+    error = "cannot open file";
+    return false;
+  }
+#else
   file_ = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
                       FILE_ATTRIBUTE_NORMAL, nullptr);
   if (file_ == INVALID_HANDLE_VALUE) {
@@ -52,6 +68,7 @@ bool AviFile::Open(const char* path) {
     error = "cannot map file";
     return false;
   }
+#endif
   if (Rd32(base_) != FourCC('R', 'I', 'F', 'F') || Rd32(base_ + 8) != FourCC('A', 'V', 'I', ' ')) {
     error = "not an AVI file";
     return false;
