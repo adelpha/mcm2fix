@@ -38,7 +38,8 @@ std::unordered_map<uint64_t, uint32_t> g_uses;  // draws so far this frame per s
 unsigned g_frames = 0;
 unsigned g_total = 0, g_blended = 0;
 unsigned g_race_frames = 0;  // frames drawn while smoothing could run
-bool g_trace = false;          // SmoothLog: tracing this frame  // matrices seen / blended, for the log
+bool g_trace = false;          // SmoothLog: tracing this frame
+bool g_trace_view = false;     // SmoothLog=2: tracing the camera this frame  // matrices seen / blended, for the log
 
 bool Affine(const float* m) {
   return m[3] == 0.0f && m[7] == 0.0f && m[11] == 0.0f && std::fabs(m[15] - 1.0f) < 1e-4f;
@@ -141,6 +142,8 @@ constexpr float kMaxStepMove = 30.0f;
 // one step (turning, leaning, legs and arms) before the pair is taken to be
 // two different objects.
 constexpr float kMaxBend = 4.0f;
+// Up to this, each vertex is blended on its own; beyond, the shape moves as a whole.
+constexpr float kMaxPointBlend = 0.5f;
 
 }  // namespace
 
@@ -182,15 +185,26 @@ const uint8_t* SmoothVertices(const uint8_t* verts, uint32_t stride, uint32_t co
     mean[0] += dx; mean[1] += dy; mean[2] += dz;
   }
   for (double& m : mean) m /= count;
+  double bend = 0.0;  // largest squared distance from the average move
   for (size_t i = 0; i < r.cur.size(); i += 3) {
     const double dx = r.cur[i] - r.prev[i] - mean[0], dy = r.cur[i + 1] - r.prev[i + 1] - mean[1],
                  dz = r.cur[i + 2] - r.prev[i + 2] - mean[2];
-    if (dx * dx + dy * dy + dz * dz > kMaxBend * kMaxBend) return verts;
+    const double d2 = dx * dx + dy * dy + dz * dz;
+    if (d2 > bend) bend = d2;
   }
+  if (bend > kMaxBend * kMaxBend) return verts;
   g_vout.assign(verts, verts + static_cast<size_t>(count) * stride);
+  // A shape that changes a lot in one step (a spinning wheel, a shadow cast
+  // on bumpy ground) can't be blended point by point without squashing it:
+  // draw its current shape, moved back along its average move instead.
+  const bool whole = bend > kMaxPointBlend * kMaxPointBlend;
+  const float back = 1.0f - alpha;
   for (uint32_t i = 0; i < count; ++i) {
     float p[3];
-    for (int c = 0; c < 3; ++c) p[c] = r.prev[i * 3 + c] + (r.cur[i * 3 + c] - r.prev[i * 3 + c]) * alpha;
+    for (int c = 0; c < 3; ++c) {
+      p[c] = whole ? r.cur[i * 3 + c] - static_cast<float>(mean[c]) * back
+                   : r.prev[i * 3 + c] + (r.cur[i * 3 + c] - r.prev[i * 3 + c]) * alpha;
+    }
     std::memcpy(g_vout.data() + static_cast<size_t>(i) * stride, p, 12);
   }
   ++g_vblended;
@@ -224,6 +238,11 @@ void SmoothTransform(uint32_t type, const float* in, const void* src, float* out
     std::memcpy(out, blended, sizeof(blended));
     ++g_blended;
   }
+  if (g_trace_view && type == 2) {
+    patch::Log("view: f=%u tick=%u a=%.3f use=%u in=(%.3f %.3f %.3f | %.2f %.2f %.2f) out=(%.3f %.3f %.3f | %.2f %.2f %.2f)",
+               g_race_frames, tick, alpha, use, in[0], in[1], in[2], in[12], in[13], in[14], out[0], out[1],
+               out[2], out[12], out[13], out[14]);
+  }
   if (g_trace) {
     patch::Log("trace: set %s src=%p use=%u tick=%u a=%.3f in=(%.2f %.2f %.2f) out=(%.2f %.2f %.2f) "
                "prev=(%.2f %.2f %.2f) prevtick=%u",
@@ -245,10 +264,12 @@ void SmoothFrameEnd() {
     if (SimDrawPoint(&tick, &alpha)) {
       ++g_race_frames;
       // Trace 6 frames, 5 seconds or so into the race.
-      g_trace = GetConfig().smooth_log && g_race_frames >= 600 && g_race_frames < 606;
+      const int mode = GetConfig().smooth_log;
+      g_trace = mode == 1 && g_race_frames >= 600 && g_race_frames < 606;
+      g_trace_view = mode == 2 && g_race_frames >= 600 && g_race_frames < 720;
       if (g_trace) patch::Log("trace: ---- frame %u, tick %u, a=%.3f", g_race_frames, tick, alpha);
     } else {
-      g_trace = false;
+      g_trace = g_trace_view = false;
     }
   }
   if (++g_frames % 600 == 0) {
