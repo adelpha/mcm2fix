@@ -90,13 +90,18 @@ void __cdecl FormatDesc(int id, DDPIXELFORMAT* pf) {
   }
 }
 
-int Upgrade(int id) {
+// The format worth upgrading to, given what the picture holds in memory
+// (src) and what the loader asked for (id). Only an upgrade that keeps
+// more of the source is worth it: most of the game's pictures are already
+// 555 in memory (24-bit TGAs are cut down when loaded), so a 24-bit
+// surface would hold exactly the same colours.
+int Upgrade(int src, int id) {
   switch (id) {
     case kArgb4444:
-    case kArgb1555: return kArgb8888;
+    case kArgb1555: return src == kArgb8888 ? kArgb8888 : id;
     case kRgb565:
     case kRgb555:
-    case kPal8: return kRgb888;
+    case kPal8: return (src == kRgb888 || src == kArgb8888) ? kRgb888 : id;
     default: return id;
   }
 }
@@ -115,6 +120,7 @@ void Summary() {
 
 // stdcall: called from the thunk with eax (chosen format), ebp (the texture
 // object) and esp at the hook point. Returns the format to use.
+int g_pending = 0;  // format OnCreateFromList should try first, 0 = none
 int __stdcall OnFormatChosen(int id, uintptr_t tex, uintptr_t esp) {
   // 0x4cb110 has pushed 4 registers after "sub esp,0C4h": the return
   // address is at +0D4h, argument k at +0D4h + 4k.
@@ -125,14 +131,28 @@ int __stdcall OnFormatChosen(int id, uintptr_t tex, uintptr_t esp) {
   // made the game write 24-bit pixels into a 16-bit buffer (truecolor2
   // crashed on the mouse cursor). Leave them alone.
   const bool display_format = (a[9] & 4) != 0;
-  // The upgrade itself happens in OnCreateFromList (0x4cb030); here we only
-  // log what the loader asked for and what it will try first.
-  const int out = GetConfig().true_color_textures && !display_format ? Upgrade(id) : id;
+  // Argument 1 = 0: the caller (0x4ca7d0) copies the pixels in itself and
+  // works out the row pitch from the 16-bit format it asked for, so a
+  // 24-bit surface got overrun (truecolor4 crashed at the Microsoft logo).
+  const bool caller_uploads = a[1] == 0;
+  const int src = static_cast<int>(a[6]);
+  const char* why = "";
+  int out = id;
+  if (!GetConfig().true_color_textures) why = " (off)";
+  else if (display_format) why = " (display format, kept)";
+  else if (caller_uploads) why = " (caller copies pixels itself, kept)";
+  else {
+    out = Upgrade(src, id);
+    if (out == id) why = " (no gain from source, kept)";
+  }
+  // The upgrade itself happens in OnCreateFromList (0x4cb030), which
+  // 0x4cb110 calls next for this texture.
+  g_pending = out != id ? out : 0;
   ++g_count;
   ++g_pairs[{id, out}];
   if (GetConfig().texture_log && g_count <= kDetailed) {
     patch::Log("texture #%u: format %s(0x%x) -> %s%s caller=%08x tex=%08x args %x %x %x %x %x %x %x %x %x %x",
-               g_count, Name(id), id, Name(out), display_format ? " (display format, kept)" : "", a[0], static_cast<unsigned>(tex), a[1], a[2], a[3], a[4],
+               g_count, Name(id), id, Name(out), why, a[0], static_cast<unsigned>(tex), a[1], a[2], a[3], a[4],
                a[5], a[6], a[7], a[8], a[9], a[10]);
   }
   if (GetConfig().texture_log && g_count % kSummaryEvery == 0) {
@@ -154,9 +174,14 @@ uint32_t g_list[8];
 unsigned g_list_log = 0;
 const uint32_t* __stdcall OnCreateFromList(uintptr_t tex, const DDSURFACEDESC2* desc,
                                            const uint32_t* list) {
-  if (!GetConfig().true_color_textures || !desc || !list || !list[0]) return list;
-  if (!(desc->dwFlags & DDSD_PIXELFORMAT)) return list;
-  const int up = Upgrade(static_cast<int>(list[0]));
+  const int up = g_pending;
+  g_pending = 0;
+  if (!up || !desc || !list || !list[0]) return list;
+  if (!(desc->dwFlags & DDSD_PIXELFORMAT)) {
+    if (GetConfig().texture_log && ++g_list_log <= kDetailed)
+      patch::Log("texture %08x: no pixel format in desc, %s not tried", static_cast<unsigned>(tex), Name(up));
+    return list;
+  }
   if (up == static_cast<int>(list[0])) return list;
   size_t n = 0;
   g_list[n++] = static_cast<uint32_t>(up);

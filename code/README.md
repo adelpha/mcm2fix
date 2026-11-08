@@ -115,9 +115,14 @@ for pictures with alpha such as trees, smoke and the HUD, and 555/565 for
 the rest, including the 8-bit paletted terrain. It also describes its own
 32-bit format wrongly (as 24 bits per pixel), so no driver ever matched it.
 `TrueColorTextures=1` fixes that description (0x5170A0), offers 24-bit and
-32-bit texture formats, and upgrades the loader's choice (0x4CB189):
-4444/1555 become 32-bit ARGB, 565/555/paletted become 24-bit RGB. The
-game's own converter (Pixtrans) handles every pair of these formats.
+32-bit texture formats, and puts a true-colour format first in the list the
+loader tries (0x4CB030), but only where the picture in memory holds more
+than 16 bits: 32-bit pictures asked for as 4444/1555 become 32-bit ARGB,
+24/32-bit pictures asked for as 565/555 become 24-bit RGB. Most opaque
+pictures are already cut down to 555 when the TGA is read, so they stay
+16-bit (nothing to gain). Off-screen display-format surfaces and textures
+whose caller copies the pixels in itself (0x4CA7D0, which works out the
+row pitch from the 16-bit format) are left alone.
 Texture hashes change with it, so replacements dumped with it off need
 dumping again.
 
