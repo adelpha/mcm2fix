@@ -54,9 +54,17 @@ here, so the DLL can be rebuilt against a modified FFmpeg. Without
 
 ## Installing
 
-    python tools/mcm2patch.py Mcm2.exe Mcm2_fixed.exe
+The game imports `d3drm.dll`, which Windows no longer ships, and Windows
+looks for it in the game folder first. So mcm2fix installs as a drop-in:
+copy the DLL into the game folder as `d3drm.dll`, with `mcm2fix.ini`, and
+start the unmodified `Mcm2.exe`. `tools/package.sh` builds the release zip
+that way (with `package/README.txt` for players).
 
-Put `Mcm2_fixed.exe` and `mcm2fix.dll` in the game folder.
+Alternatively, `python tools/mcm2patch.py Mcm2.exe Mcm2_fixed.exe` makes a
+copy of the exe that imports `mcm2fix.dll` by that name instead.
+
+`docs/clean-machine-test.md` is the check to run on a fresh Windows 11
+install before a release.
 
 ## mcm2fix.ini (optional, next to Mcm2.exe)
 
