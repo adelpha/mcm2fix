@@ -68,8 +68,10 @@ Files=1        ; send file writes to %LOCALAPPDATA%\Motocross Madness 2
 AlphaCut=128   ; trees and flags: drop pixels less opaque than this (0-255), which
                ; removes the fringe where trees hide flags behind them (0 = original look)
 WideFov=1      ; widescreen modes show more to the sides (0 = crop top and bottom like the original)
+RestartFix=1   ; Restart Race puts every rider back on the grid facing the course (0 = original bug)
 OneCore=0      ; 1 = pin the game to one CPU core (old stopgap)
 ActivateLog=0  ; debugging: log window activation
 RegLog=0       ; debugging: log every registry call
 DDStats=0      ; debugging: log renderer activity every 2 seconds
+RestartLog=0   ; debugging: log the start grid at race load and on Restart Race
 ```
