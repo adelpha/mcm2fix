@@ -14,6 +14,7 @@ void ApplyDiagnostics();
 void ApplyRegistryTrace();
 void ApplyD3D11Backend();
 void ApplyWidescreenFov();
+void ApplyArrowFix();
 
 namespace {
 
@@ -38,15 +39,16 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
       ApplyStep1Fixes();
       const Config& c = GetConfig();
       patch::Log("config: OneCore=%d Startup=%d Registry=%d Files=%d ActivateLog=%d RegLog=%d DDStats=%d "
-                 "AlphaCut=%d WideFov=%d",
+                 "AlphaCut=%d WideFov=%d ArrowFix=%d ArrowScale=%.2f",
                  c.one_core, c.startup, c.registry, c.files, c.activate_log, c.reg_log, c.dd_stats,
-                 c.alpha_cut, c.wide_fov);
+                 c.alpha_cut, c.wide_fov, c.arrow_heading, static_cast<double>(c.arrow_scale));
       if (c.startup) ApplyStartupFixes();
       if (c.registry) ApplyRegistryFixes();
       if (c.files) ApplyFileFixes();
       if (c.reg_log) ApplyRegistryTrace();
       ApplyD3D11Backend();
       ApplyWidescreenFov();
+      ApplyArrowFix();
       if (c.activate_log) ApplyDiagnostics();
     } else {
       patch::Log("not the supported Mcm2.exe; no fixes applied");
