@@ -387,6 +387,46 @@ const uint8_t* SmoothVertices(const uint8_t* verts, uint32_t stride, uint32_t co
   return g_vout.data();
 }
 
+// Projection: the camera's zoom (field of view) changes once per step, e.g.
+// the thrill cam zooming as the rider flies past. Blend the scale terms of
+// perspective projections between the last two steps, matched by the order
+// the game sets them in a frame.
+struct ProjRec {
+  float prev[4] = {}, cur[4] = {};  // m[0], m[5], m[8], m[9]
+  unsigned prev_tick = 0, tick = 0;
+};
+std::unordered_map<uint32_t, ProjRec> g_projs;
+uint32_t g_proj_use = 0;
+unsigned g_proj_why[4] = {};  // seen, blended, no previous, jumped
+bool g_proj_sample = false;
+
+void SmoothProjection(float* m) {
+  unsigned tick;
+  float alpha;
+  if (m[11] == 0.0f || !SimDrawPoint(&tick, &alpha)) return;  // not a perspective one, or not racing
+  ++g_proj_why[0];
+  ProjRec& r = g_projs[g_proj_use++];
+  if (r.tick != tick) {
+    std::memcpy(r.prev, r.cur, sizeof(r.prev));
+    r.prev_tick = r.tick;
+    r.tick = tick;
+  }
+  r.cur[0] = m[0]; r.cur[1] = m[5]; r.cur[2] = m[8]; r.cur[3] = m[9];
+  if (r.prev_tick == 0 || r.prev_tick + 1 != tick) { ++g_proj_why[2]; return; }
+  if (r.prev[0] == 0.0f || r.prev[1] == 0.0f) { ++g_proj_why[2]; return; }
+  const float k0 = r.cur[0] / r.prev[0], k1 = r.cur[1] / r.prev[1];
+  if (k0 < 0.5f || k0 > 2.0f || k1 < 0.5f || k1 > 2.0f) { ++g_proj_why[3]; return; }  // a cut, not a zoom
+  if (r.prev[0] == r.cur[0] && r.prev[1] == r.cur[1]) return;
+  float out[4];
+  for (int i = 0; i < 4; ++i) out[i] = r.prev[i] + (r.cur[i] - r.prev[i]) * alpha;
+  if (!g_proj_sample) {
+    g_proj_sample = true;
+    patch::Log("smoothing: projection zoom %.4f -> %.4f drawn at a=%.2f as %.4f", r.prev[0], r.cur[0], alpha, out[0]);
+  }
+  m[0] = out[0]; m[5] = out[1]; m[8] = out[2]; m[9] = out[3];
+  ++g_proj_why[1];
+}
+
 void SmoothTransform(uint32_t type, const float* in, const void* src, float* out) {
   std::memcpy(out, in, 16 * sizeof(float));
   unsigned tick;
@@ -438,6 +478,7 @@ void SmoothFrameEnd() {
   ProjectedShadowFrameEnd();
   PartsFrameEnd(g_frames % 600 == 599);
   g_uses.clear();
+  g_proj_use = 0;
   g_vuses.clear();
   g_luses.clear();
   g_tuses.clear();
@@ -471,6 +512,13 @@ void SmoothFrameEnd() {
                  g_shadow_why[4]);
       LogShadowDetail();
     }
+    if (on && g_proj_why[0]) {
+      patch::Log("smoothing: projections: %u seen, %u zoom blended; skipped: no previous %u, cut %u",
+                 g_proj_why[0], g_proj_why[1], g_proj_why[2], g_proj_why[3]);
+    }
+    for (unsigned& w : g_proj_why) w = 0;
+    g_proj_sample = false;
+    if (!on) g_projs.clear();
     for (unsigned& w : g_shadow_why) w = 0;
     g_total = g_blended = g_vtotal = g_vblended = 0;
     g_shadow_blends = 0;

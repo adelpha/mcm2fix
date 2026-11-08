@@ -774,6 +774,7 @@ HRESULT Device::SetTransform(DWORD type, D3DMATRIX* m) {
       proj_set_ = *m;
       proj_ = *m;
       const float r = SmoothProjectionScale(&m->m[0][0]);  // undo the smoothing cull margin
+      SmoothProjection(&proj_.m[0][0]);                      // zoom between steps
       proj_.m[0][0] *= r;
       proj_.m[1][1] *= r;
       if (m->m[2][3] != 0.0f && m->m[2][2] != 1.0f && m->m[2][2] != 0.0f) {

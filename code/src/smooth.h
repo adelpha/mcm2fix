@@ -51,5 +51,8 @@ float SmoothProjectionScale(const float* m);
 bool SmoothCullMargin(uintptr_t cam, float* ratio);
 unsigned SmoothMarginHits();
 
+// Blend a perspective projection's zoom between simulation steps (in place).
+void SmoothProjection(float* m);
+
 // Frame end bookkeeping for smooth_parts.cpp; `log` every 600 frames.
 void PartsFrameEnd(bool log);
