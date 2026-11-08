@@ -376,6 +376,141 @@ void PatchFrameTime() {
   patch::Log("precise frame time: applied");
 }
 
+// ---------------------------------------------------------------- fixed-rate simulation
+//
+// Game::Tick (0x4694b0, also reached from TrackGame's tick at 0x526cb0):
+//   frame time -> ControlInterface (+0x14) update(dt)
+//   unless paused (+0x2d5 bit 0):
+//     manager (+0x8) update(dt), world state (+0x2f4) vfunc 0x28 (dt),
+//     profiler 0x4894a0, Draw (vfunc 0x20), Present (vfunc 0x24),
+//     state post-frame 0x46abb0, 0x4eda50 on +0x10
+// The physics and AI were tuned at ~30 fps and do not behave the same with
+// smaller steps. With SimRate set, while a race is running we replace the
+// tick: the update calls run in fixed 1/SimRate steps, as many as real time
+// calls for, and draw/present runs once per displayed frame. Outside races
+// (menus, cursor) the tick runs once per frame with the real time, as before.
+
+using ThisFloatFn = int(__thiscall*)(void*, float);
+using ThisFn = int(__thiscall*)(void*);
+const ThisFloatFn kControlUpdate = reinterpret_cast<ThisFloatFn>(0x43DEA0);
+const ThisFloatFn kManagerUpdate = reinterpret_cast<ThisFloatFn>(0x4B14D0);
+const ThisFn kProfilerFrame = reinterpret_cast<ThisFn>(0x4894A0);
+const ThisFn kStatePostFrame = reinterpret_cast<ThisFn>(0x46ABB0);
+const ThisFn kPostFrame10 = reinterpret_cast<ThisFn>(0x4EDA50);
+
+LONGLONG g_bike_seen = 0;  // QPC when a bike was last simulated (race running)
+double g_sim_acc = 0.0;
+bool g_sim_fixed = false;
+
+template <typename Fn>
+Fn VFunc(void* obj, size_t offset) {
+  return *reinterpret_cast<Fn*>(*reinterpret_cast<uintptr_t*>(obj) + offset);
+}
+
+void SimUpdate(uintptr_t g, float step, float raw_dt) {
+  *reinterpret_cast<float*>(g + 0x2f0) = raw_dt;  // the game's global frame time
+  ++g_tick;
+  g_tick_dt = step;
+  UpdateFixValues(step);
+  if (void* ctl = *reinterpret_cast<void**>(g + 0x14)) kControlUpdate(ctl, step);
+  if (*reinterpret_cast<uint8_t*>(g + 0x2d5) & 1) return;  // paused
+  if (void* mgr = *reinterpret_cast<void**>(g + 0x8)) kManagerUpdate(mgr, step);
+  void* state = *reinterpret_cast<void**>(g + 0x2f4);
+  VFunc<ThisFloatFn>(state, 0x28)(state, step);
+}
+
+int __stdcall FixedTick(uintptr_t g) {
+  auto& now_ms = *reinterpret_cast<DWORD*>(g + 0x2d8);
+  auto& last_ms = *reinterpret_cast<DWORD*>(g + 0x2dc);
+  const LONGLONG now = Now();
+  double dt = 0.0;
+  if (last_ms == 0 || g_last_tick == 0) {
+    now_ms = last_ms = kGameMs();
+    g_sim_acc = 0.0;
+  } else {
+    now_ms = kGameMs();
+    dt = static_cast<double>(now - g_last_tick) / g_freq.QuadPart;
+  }
+  g_last_tick = now;
+
+  const int rate = GetConfig().sim_rate;
+  const bool racing = g_bike_seen && now - g_bike_seen < g_freq.QuadPart / 2;
+  if (racing != g_sim_fixed) {
+    g_sim_fixed = racing;
+    g_sim_acc = 0.0;
+    patch::Log("fixed-rate simulation %s", racing ? "on (race)" : "off");
+  }
+  if (g_sim_fixed) {
+    const double step = 1.0 / rate;
+    g_sim_acc += dt;
+    if (g_sim_acc > 0.25) g_sim_acc = 0.25;  // after a stall, don't try to catch up
+    while (g_sim_acc >= step) {
+      SimUpdate(g, static_cast<float>(step), static_cast<float>(step));
+      g_sim_acc -= step;
+    }
+  } else {
+    const float raw = static_cast<float>(dt);
+    SimUpdate(g, raw > 0.2f ? 0.2f : raw, raw);
+  }
+
+  if (!(*reinterpret_cast<uint8_t*>(g + 0x2d5) & 1)) {
+    kProfilerFrame(*reinterpret_cast<void**>(0x5724F0));
+    VFunc<ThisFn>(reinterpret_cast<void*>(g), 0x20)(reinterpret_cast<void*>(g));
+    VFunc<ThisFn>(reinterpret_cast<void*>(g), 0x24)(reinterpret_cast<void*>(g));
+    kStatePostFrame(*reinterpret_cast<void**>(g + 0x2f4));
+    kPostFrame10(*reinterpret_cast<void**>(g + 0x10));
+  }
+  last_ms = now_ms;
+  if (*reinterpret_cast<int*>(g + 0x1c8)) {
+    *reinterpret_cast<int*>(g + 0x1c4) = 1;
+    *reinterpret_cast<int*>(g + 0x1c8) = 0;
+  }
+  return 1;
+}
+
+void __stdcall NoteBikeSim() { g_bike_seen = Now(); }
+
+void PatchFixedTick() {
+  const uint8_t entry[] = {0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x0C};  // 004694b0 push ebp / mov ebp,esp / sub esp,0Ch
+  const uint8_t call_sim[] = {0xE8, 0x24, 0xC4, 0xF7, 0xFF};     // 00497bd7 call 414000
+  if (!patch::Matches(0x4694B0, entry, sizeof(entry)) ||
+      !patch::Matches(0x497BD7, call_sim, sizeof(call_sim))) {
+    patch::Log("fixed-rate simulation: code differs, not applied");
+    return;
+  }
+  auto* t = static_cast<uint8_t*>(
+      VirtualAlloc(nullptr, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+  if (!t) return;
+  auto rel = [](const uint8_t* from_end, const void* to) {
+    return static_cast<int32_t>(reinterpret_cast<uintptr_t>(to) - reinterpret_cast<uintptr_t>(from_end));
+  };
+  // Tick stub at t: push ecx; call FixedTick; ret
+  size_t n = 0;
+  t[n++] = 0x51;
+  t[n++] = 0xE8;
+  int32_t r = rel(t + n + 4, reinterpret_cast<const void*>(&FixedTick));
+  std::memcpy(t + n, &r, 4);
+  n += 4;
+  t[n++] = 0xC3;
+  // Bike stub at t+16: pushad; call NoteBikeSim; popad; jmp 414000
+  uint8_t* b = t + 16;
+  size_t m = 0;
+  b[m++] = 0x60;
+  b[m++] = 0xE8;
+  r = rel(b + m + 4, reinterpret_cast<const void*>(&NoteBikeSim));
+  std::memcpy(b + m, &r, 4);
+  m += 4;
+  b[m++] = 0x61;
+  b[m++] = 0xE9;
+  r = rel(b + m + 4, reinterpret_cast<const void*>(0x414000));
+  std::memcpy(b + m, &r, 4);
+  m += 4;
+  FlushInstructionCache(GetCurrentProcess(), t, 64);
+  patch::Jump(0x4694B0, reinterpret_cast<uintptr_t>(t), sizeof(entry));
+  patch::Call(0x497BD7, b, sizeof(call_sim));
+  patch::Log("fixed-rate simulation: %d steps per second in races", GetConfig().sim_rate);
+}
+
 void SleepUntil(LONGLONG target) {
   for (;;) {
     LONGLONG left = target - Now();
@@ -413,11 +548,15 @@ void ApplyFramePacing() {
   if (c.frame_fix) PatchFixSites();
   if (c.ai_rate > 0) PatchAiRate();
   if (c.ai_steer_rate > 0) PatchAiSteering();
-  if (c.precise_timer || c.frame_fix || c.ai_steer_rate > 0) PatchFrameTime();
+  if (c.sim_rate > 0) {
+    PatchFixedTick();  // replaces the whole tick, frame time included
+  } else if (c.precise_timer || c.frame_fix || c.ai_steer_rate > 0) {
+    PatchFrameTime();
+  }
   patch::Log("frame pacing: VSync=%d FrameCap=%d PreciseTimer=%d FrameFix=%d RefRate=%d AiRate=%d "
-             "AiSteerRate=%d",
+             "AiSteerRate=%d SimRate=%d",
              c.vsync, c.frame_cap, c.precise_timer, c.frame_fix, c.ref_rate, c.ai_rate,
-             c.ai_steer_rate);
+             c.ai_steer_rate, c.sim_rate);
 }
 
 void WaitForFrameSlot() {
