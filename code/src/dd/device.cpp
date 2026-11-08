@@ -1,3 +1,4 @@
+#include "../smooth.h"
 #include "device.h"
 
 #include <algorithm>
@@ -443,6 +444,7 @@ HRESULT VertexBuffer::ProcessVertices(DWORD op, DWORD dst_index, DWORD count,
   }
   if (op & D3DVOP_LIGHT) LogOnce("ProcessVertices: lighting requested, not emulated");
   const float* m = dev->Wvp();
+  SmoothNoteDraw("process", sl.tl, count);
   const D3DVIEWPORT7& vp = dev->Viewport();
   processed_vp_ = vp;
   if (processed_.size() < desc_.dwNumVertices) {
@@ -513,7 +515,7 @@ Device::Device(DirectDraw* dd, Surface* rt, REFCLSID cls) : dd_(dd), rt_(rt), gu
   dd_->AddRef();
   rt_->AddRef();
   rt_->SetUsedAsRenderTarget();
-  world_ = view_ = proj_ = Identity();
+  world_ = view_ = proj_ = world_set_ = view_set_ = Identity();
   viewport_ = {0, 0, rt->Width(), rt->Height(), 0.0f, 1.0f};
   rs_[RS_TEXTUREPERSPECTIVE] = 1;
   rs_[RS_ZENABLE] = rt->ZBuffer() ? 1 : 0;
@@ -760,15 +762,27 @@ HRESULT Device::Clear(DWORD count, D3DRECT* rects, DWORD flags, D3DCOLOR color, 
 HRESULT Device::SetTransform(DWORD type, D3DMATRIX* m) {
   if (!m) return DDERR_INVALIDPARAMS;
   switch (type) {
-    case D3DTRANSFORMSTATE_WORLD: world_ = *m; break;
-    case D3DTRANSFORMSTATE_VIEW: view_ = *m; break;
-    case D3DTRANSFORMSTATE_PROJECTION:
+    case D3DTRANSFORMSTATE_WORLD:
+      world_set_ = *m;
+      SmoothTransform(type, &m->m[0][0], m, &world_.m[0][0]);
+      break;
+    case D3DTRANSFORMSTATE_VIEW:
+      view_set_ = *m;
+      SmoothTransform(type, &m->m[0][0], m, &view_.m[0][0]);
+      break;
+    case D3DTRANSFORMSTATE_PROJECTION: {
+      proj_set_ = *m;
       proj_ = *m;
+      const float r = SmoothProjectionScale(&m->m[0][0]);  // undo the smoothing cull margin
+      SmoothProjection(&proj_.m[0][0]);                      // zoom between steps
+      proj_.m[0][0] *= r;
+      proj_.m[1][1] *= r;
       if (m->m[2][3] != 0.0f && m->m[2][2] != 1.0f && m->m[2][2] != 0.0f) {
         const float zn = -m->m[3][2] / m->m[2][2], zf = m->m[3][2] / (1.0f - m->m[2][2]);
         LogOnce("projection near %.2f far %.0f", zn, zf);
       }
       break;
+    }
     default: LogOnce("SetTransform type %lu ignored", type); return D3D_OK;
   }
   wvp_dirty_ = true;
@@ -778,9 +792,9 @@ HRESULT Device::SetTransform(DWORD type, D3DMATRIX* m) {
 HRESULT Device::GetTransform(DWORD type, D3DMATRIX* m) {
   if (!m) return DDERR_INVALIDPARAMS;
   switch (type) {
-    case D3DTRANSFORMSTATE_WORLD: *m = world_; break;
-    case D3DTRANSFORMSTATE_VIEW: *m = view_; break;
-    case D3DTRANSFORMSTATE_PROJECTION: *m = proj_; break;
+    case D3DTRANSFORMSTATE_WORLD: *m = world_set_; break;  // what the game set
+    case D3DTRANSFORMSTATE_VIEW: *m = view_set_; break;
+    case D3DTRANSFORMSTATE_PROJECTION: *m = proj_set_; break;
     default: *m = Identity(); break;
   }
   return D3D_OK;
@@ -883,6 +897,8 @@ HRESULT Device::DrawPrimitive(DWORD prim, DWORD fvf, void* v, DWORD n, DWORD) {
   d.verts = static_cast<const uint8_t*>(v);
   d.layout = FvfLayout::From(fvf);
   d.count = n;
+  SmoothNoteDraw("draw", d.layout.tl, n);
+  if (!d.layout.tl) d.verts = SmoothVertices(d.verts, d.layout.stride, n, nullptr);
   Submit(d);
   return D3D_OK;
 }
@@ -898,6 +914,8 @@ HRESULT Device::DrawIndexedPrimitive(DWORD prim, DWORD fvf, void* v, DWORD nv, W
   d.count = nv;
   d.idx = idx;
   d.nidx = ni;
+  SmoothNoteDraw("drawidx", d.layout.tl, d.count);
+  if (!d.layout.tl) d.verts = SmoothVertices(d.verts, d.layout.stride, nv, idx);
   Submit(d);
   return D3D_OK;
 }
@@ -945,6 +963,7 @@ HRESULT Device::DrawPrimitiveStrided(DWORD prim, DWORD fvf, D3DDRAWPRIMITIVESTRI
   d.prim = prim;
   d.verts = buf.data();
   d.count = n;
+  SmoothNoteDraw("draw", d.layout.tl, n);
   Submit(d);
   return D3D_OK;
 }
@@ -961,6 +980,8 @@ HRESULT Device::DrawIndexedPrimitiveStrided(DWORD prim, DWORD fvf, D3DDRAWPRIMIT
   d.count = nv;
   d.idx = idx;
   d.nidx = ni;
+  SmoothNoteDraw("drawidx", d.layout.tl, d.count);
+  if (!d.layout.tl) d.verts = SmoothVertices(d.verts, d.layout.stride, nv, idx);
   Submit(d);
   return D3D_OK;
 }
@@ -978,6 +999,7 @@ HRESULT Device::DrawPrimitiveVB(DWORD prim, IDirect3DVertexBuffer7* vb_in, DWORD
   d.first = start;
   d.count = n;
   d.vb = vb;
+  SmoothNoteDraw("drawvb", d.layout.tl, d.count);
   Submit(d);
   return D3D_OK;
 }
@@ -997,6 +1019,7 @@ HRESULT Device::DrawIndexedPrimitiveVB(DWORD prim, IDirect3DVertexBuffer7* vb_in
   d.idx = idx;
   d.nidx = ni;
   d.vb = vb;
+  SmoothNoteDraw("drawvb", d.layout.tl, d.count);
   Submit(d);
   return D3D_OK;
 }

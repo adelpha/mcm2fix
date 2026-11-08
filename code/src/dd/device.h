@@ -179,6 +179,7 @@ class Device : public d3d7::IDirect3DDevice7 {
   DWORD tss_[8][32] = {};
   Surface* tex_[8] = {};
   d3d7::D3DMATRIX world_{}, view_{}, proj_{};
+  d3d7::D3DMATRIX world_set_{}, view_set_{}, proj_set_{};  // as the game set them (world_/view_ may be smoothed)
   float wvp_[16] = {};
   bool wvp_dirty_ = true;
   d3d7::D3DVIEWPORT7 viewport_{};

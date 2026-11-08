@@ -22,6 +22,7 @@
 
 #include "config.h"
 #include "patch.h"
+#include "smooth.h"
 
 namespace {
 
@@ -50,11 +51,40 @@ struct ScaleState {
   float written;  // what we stored in its place
 };
 std::map<uintptr_t, ScaleState> g_scale;
+// The arrow's screen spot as offsets (+0xb4 right, +0xb8 up), worked out by
+// the game from the camera's field of view only when that changes.
+struct SpotState {
+  float base_h, base_v;  // the game's own
+  float h, v;            // what we stored in their place
+};
+std::map<uintptr_t, SpotState> g_spot;
+
+// While smoothing widens the camera for culling (fixes_widescreen.cpp) the
+// game places and sizes the arrow for the wider view; it is drawn with the
+// real one, so bring it back by that ratio.
+float MarginFix(uintptr_t cue, uintptr_t cam) {
+  float r = 1.0f;
+  if (!SmoothCullMargin(cam, &r) || !(r > 0.0f)) r = 1.0f;
+  float& h = *reinterpret_cast<float*>(cue + 0xb4);
+  float& v = *reinterpret_cast<float*>(cue + 0xb8);
+  if (!std::isfinite(h) || !std::isfinite(v)) return r;
+  SpotState st{h, v, h, v};
+  auto it = g_spot.find(cue);
+  if (it != g_spot.end() && h == it->second.h && v == it->second.v) {
+    st.base_h = it->second.base_h;
+    st.base_v = it->second.base_v;
+  }
+  st.h = h = st.base_h / r;
+  st.v = v = st.base_v / r;
+  g_spot[cue] = st;
+  return r;
+}
 
 void __stdcall AdjustCue(uintptr_t cue, float* dir) {
   if (*reinterpret_cast<uint32_t*>(cue) != kVisualCueVtable) return;
   const uintptr_t cam = *reinterpret_cast<uintptr_t*>(cue + 0x40);
   if (!cam) return;
+  const float margin = MarginFix(cue, cam);
 
   if (GetConfig().arrow_heading && dir) {
     // Camera basis (columns of its rotation matrix, see 0x48c14c).
@@ -106,7 +136,7 @@ void __stdcall AdjustCue(uintptr_t cue, float* dir) {
   float base = size;
   auto it = g_scale.find(cue);
   if (it != g_scale.end() && size == it->second.written) base = it->second.base;
-  size = base * k;
+  size = base * k / margin;
   g_scale[cue] = {base, size};
 }
 

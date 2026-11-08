@@ -45,6 +45,7 @@ uintptr_t g_race = 0;    // BikeRace being watched
 int g_frame = -1;        // frames since load/restart (-1 = not watching)
 const char* g_phase = "load";
 int g_grid_calls = 0;
+unsigned g_restarts = 0;  // Restart Race count
 
 template <typename T>
 T Rd(uintptr_t a) {
@@ -54,6 +55,62 @@ T Rd(uintptr_t a) {
 }
 
 uintptr_t Game() { return Rd<uintptr_t>(kGame); }
+
+// ---- FINAL LAP after a restart ----
+// The race HUD shows "FINAL LAP" once: its update (slot 10; 0x405c10 for
+// vtable 0x555750, 0x50a750 for the other HUD) starts the drop text at
+// +0xa8 when the player starts the last lap and then sets a "shown" flag
+// (+0xa4 or +0xac) that only the constructor clears. Restart Race keeps
+// the HUD, so after a restart the text never shows again. Clear the flag
+// (and stop a drop still in progress) on the first HUD update after each
+// restart.
+struct HudHook {
+  uintptr_t slot, fn, flag;
+};
+const HudHook kHudHooks[] = {{0x555778, 0x405C10, 0xA4}, {0x55A610, 0x50A750, 0xAC}, {0x55D560, 0x50A750, 0xAC}};
+struct HudSeen {
+  uintptr_t hud;
+  unsigned restarts;
+};
+HudSeen g_huds[8] = {};
+
+void HudRestartCheck(uintptr_t self, uintptr_t flag) {
+  HudSeen* free_slot = nullptr;
+  for (HudSeen& h : g_huds) {
+    if (h.hud == self) {
+      if (h.restarts != g_restarts) {
+        h.restarts = g_restarts;
+        const int shown = Rd<int>(self + flag);
+        const uintptr_t drop = Rd<uintptr_t>(self + 0xA8);
+        const int dropping = drop ? Rd<int>(drop + 0x34) : 0;
+        *reinterpret_cast<int*>(self + flag) = 0;
+        if (drop && dropping) *reinterpret_cast<int*>(drop + 0x34) = 0;
+        patch::Log("restart: HUD %08x final-lap text re-armed (was shown %d, dropping %d)",
+                   static_cast<unsigned>(self), shown, dropping);
+      }
+      return;
+    }
+    if (!free_slot && !h.hud) free_slot = &h;
+  }
+  if (!free_slot) {  // forget the oldest
+    for (int i = 1; i < 8; ++i) g_huds[i - 1] = g_huds[i];
+    free_slot = &g_huds[7];
+  }
+  *free_slot = {self, g_restarts};
+  patch::Log("restart: HUD %08x seen (final-lap flag +%x = %d)", static_cast<unsigned>(self),
+             static_cast<unsigned>(flag), Rd<int>(self + flag));
+}
+
+using HudUpdateFn = int(__thiscall*)(uintptr_t self, int arg);
+int __fastcall HudUpdateA(uintptr_t self, void*, int arg) {
+  HudRestartCheck(self, 0xA4);
+  return reinterpret_cast<HudUpdateFn>(0x405C10)(self, arg);
+}
+int __fastcall HudUpdateB(uintptr_t self, void*, int arg) {
+  HudRestartCheck(self, 0xAC);
+  return reinterpret_cast<HudUpdateFn>(0x50A750)(self, arg);
+}
+
 
 void LogGameMode(const char* what) {
   uintptr_t g = Game();
@@ -206,6 +263,7 @@ void PlaceBikesOnGrid(uintptr_t race) {
 }
 
 void __fastcall RestartHook(uintptr_t self, void*, int a, int b, int c) {
+  ++g_restarts;
   if (!GetConfig().restart_log) {
     g_restart(self, nullptr, a, b, c);
     if (GetConfig().restart_fix) PlaceBikesOnGrid(self);
@@ -275,6 +333,20 @@ void ApplyRestartFixes() {
   if (!g_restart) return;
   patch::Jump(kRestart, reinterpret_cast<uintptr_t>(&RestartHook), sizeof(kRestartEntry));
   patch::Log("restart: Restart Race fix %s", c.restart_fix ? "applied" : "off");
+  if (c.restart_fix) {
+    int hooked = 0;
+    for (const HudHook& h : kHudHooks) {
+      if (Rd<uintptr_t>(h.slot) != h.fn) {
+        patch::Log("restart: HUD slot %08x holds %08x, final-lap re-arm not hooked there",
+                   static_cast<unsigned>(h.slot), Rd<unsigned>(h.slot));
+        continue;
+      }
+      void* fn = h.flag == 0xA4 ? reinterpret_cast<void*>(&HudUpdateA) : reinterpret_cast<void*>(&HudUpdateB);
+      patch::Write(h.slot, &fn, sizeof(fn));
+      ++hooked;
+    }
+    patch::Log("restart: FINAL LAP text re-armed after restarts (%d HUD slots hooked)", hooked);
+  }
   if (!c.restart_log) return;
 
   uintptr_t slot = kBikeRaceVtable + 4 * kUpdateSlot;
