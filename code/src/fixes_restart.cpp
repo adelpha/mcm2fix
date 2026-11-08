@@ -8,6 +8,7 @@
 // and at restart, and what the bikes look like on the frames after, so we
 // can see where the wrong positions and headings come from.
 #include <windows.h>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -155,7 +156,61 @@ void __fastcall GridSlotHook(uintptr_t self, void*, float* pos, float* dir, uint
   }
 }
 
+// Vehicle "place" (vtable +0x84, Vehicle 0x52ca80, KrustyBike 0x48f0e0):
+// (pos*, forward*, up*, velocity*, keep_height, reset_arg). It resets the
+// bike, sets its forward and up vectors and position, and with keep_height
+// 0 settles it on the ground. This is what the restart is missing: the
+// bike's own reset only moves it to bike+0x10c and leaves it turned the way
+// it was when the race was paused.
+using PlaceFn = int(__fastcall*)(uintptr_t self, void* edx, const float* pos, const float* fwd,
+                                 const float* up, const float* vel, int keep_height, int reset_arg);
+constexpr int kPlaceSlot = 0x84 / 4;
+
+bool IsKnownPlace(uintptr_t fn) { return fn == 0x48F0E0 || fn == 0x407870 || fn == 0x52CA80; }
+
+void PlaceBikesOnGrid(uintptr_t race) {
+  auto next = reinterpret_cast<NextBikeFn>(kNextBike);
+  int idx = 0;
+  int placed = 0, skipped = 0;
+  for (int guard = 0; guard < 64; ++guard) {
+    uintptr_t bike = next(race, nullptr, &idx);
+    if (!bike) break;
+    uintptr_t vt = Rd<uintptr_t>(bike);
+    uintptr_t place = Rd<uintptr_t>(vt + 4 * kPlaceSlot);
+    if (!Rd<uint8_t>(bike + 0x109) || !IsKnownPlace(place)) {
+      ++skipped;
+      continue;
+    }
+    float pos[3], fwd[3];
+    std::memcpy(pos, reinterpret_cast<void*>(bike + 0x10c), sizeof(pos));
+    std::memcpy(fwd, reinterpret_cast<void*>(bike + 0x118), sizeof(fwd));
+    fwd[1] = 0.0f;
+    float len = std::sqrt(fwd[0] * fwd[0] + fwd[2] * fwd[2]);
+    if (!(len > 1e-4f)) {
+      ++skipped;
+      continue;
+    }
+    fwd[0] /= len;
+    fwd[2] /= len;
+    const float up[3] = {0.0f, 1.0f, 0.0f};
+    const float vel[3] = {0.0f, 0.0f, 0.0f};
+    reinterpret_cast<PlaceFn>(place)(bike, nullptr, pos, fwd, up, vel, 0, 0);
+    // Place settles the bike on the ground and clears the pending reset.
+    // Hand the settled spot back to the game's own reset (bike+0x109), which
+    // also resets the rider and the camera on the next update.
+    std::memcpy(reinterpret_cast<void*>(bike + 0x10c), reinterpret_cast<void*>(bike + 0x0c), 12);
+    *reinterpret_cast<uint8_t*>(bike + 0x109) = 1;
+    ++placed;
+  }
+  patch::Log("restart: placed %d bikes on the grid (%d skipped)", placed, skipped);
+}
+
 void __fastcall RestartHook(uintptr_t self, void*, int a, int b, int c) {
+  if (!GetConfig().restart_log) {
+    g_restart(self, nullptr, a, b, c);
+    if (GetConfig().restart_fix) PlaceBikesOnGrid(self);
+    return;
+  }
   patch::Log("restart: Restart Race race=%08x args=%d,%d,%d nbikes=%d", static_cast<unsigned>(self), a, b,
              c, Rd<int>(self + 0x158));
   LogGameMode("before");
@@ -168,6 +223,11 @@ void __fastcall RestartHook(uintptr_t self, void*, int a, int b, int c) {
   g_restart(self, nullptr, a, b, c);
   patch::Log("restart: bikes right after restart");
   LogBikes(self, true);
+  if (GetConfig().restart_fix) {
+    PlaceBikesOnGrid(self);
+    patch::Log("restart: bikes after placing them");
+    LogBikes(self, true);
+  }
 }
 
 void __fastcall UpdateHook(uintptr_t self, void*, int arg) {
@@ -205,22 +265,26 @@ void* MakeTrampoline(uintptr_t addr, const uint8_t* entry, size_t len) {
 }  // namespace
 
 void ApplyRestartFixes() {
-  if (!GetConfig().restart_log) return;
-  if (!patch::Matches(kRestart, kRestartEntry, sizeof(kRestartEntry)) ||
-      !patch::Matches(kGridSlot, kGridSlotEntry, sizeof(kGridSlotEntry))) {
-    patch::Log("restart: code differs, logging not applied");
-    return;
-  }
-  uintptr_t slot = kBikeRaceVtable + 4 * kUpdateSlot;
-  if (Rd<uintptr_t>(slot) != 0x41E0B0) {
-    patch::Log("restart: BikeRace vtable differs, logging not applied");
+  const Config& c = GetConfig();
+  if (!c.restart_fix && !c.restart_log) return;
+  if (!patch::Matches(kRestart, kRestartEntry, sizeof(kRestartEntry))) {
+    patch::Log("restart: code differs, not applied");
     return;
   }
   g_restart = reinterpret_cast<RestartFn>(MakeTrampoline(kRestart, kRestartEntry, sizeof(kRestartEntry)));
-  g_grid_slot = reinterpret_cast<GridSlotFn>(MakeTrampoline(kGridSlot, kGridSlotEntry, sizeof(kGridSlotEntry)));
-  if (!g_restart || !g_grid_slot) return;
-  g_update = reinterpret_cast<UpdateFn>(Rd<uintptr_t>(slot));
+  if (!g_restart) return;
   patch::Jump(kRestart, reinterpret_cast<uintptr_t>(&RestartHook), sizeof(kRestartEntry));
+  patch::Log("restart: Restart Race fix %s", c.restart_fix ? "applied" : "off");
+  if (!c.restart_log) return;
+
+  uintptr_t slot = kBikeRaceVtable + 4 * kUpdateSlot;
+  if (!patch::Matches(kGridSlot, kGridSlotEntry, sizeof(kGridSlotEntry)) || Rd<uintptr_t>(slot) != 0x41E0B0) {
+    patch::Log("restart: grid code differs, logging not applied");
+    return;
+  }
+  g_grid_slot = reinterpret_cast<GridSlotFn>(MakeTrampoline(kGridSlot, kGridSlotEntry, sizeof(kGridSlotEntry)));
+  if (!g_grid_slot) return;
+  g_update = reinterpret_cast<UpdateFn>(Rd<uintptr_t>(slot));
   patch::Jump(kGridSlot, reinterpret_cast<uintptr_t>(&GridSlotHook), sizeof(kGridSlotEntry));
   uintptr_t hook = reinterpret_cast<uintptr_t>(&UpdateHook);
   patch::Write(slot, &hook, sizeof(hook));

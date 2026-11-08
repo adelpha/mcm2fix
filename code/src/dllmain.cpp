@@ -40,9 +40,9 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
       ApplyStep1Fixes();
       const Config& c = GetConfig();
       patch::Log("config: OneCore=%d Startup=%d Registry=%d Files=%d ActivateLog=%d RegLog=%d DDStats=%d "
-                 "AlphaCut=%d WideFov=%d RestartLog=%d",
+                 "AlphaCut=%d WideFov=%d RestartFix=%d RestartLog=%d",
                  c.one_core, c.startup, c.registry, c.files, c.activate_log, c.reg_log, c.dd_stats,
-                 c.alpha_cut, c.wide_fov, c.restart_log);
+                 c.alpha_cut, c.wide_fov, c.restart_fix, c.restart_log);
       if (c.startup) ApplyStartupFixes();
       if (c.registry) ApplyRegistryFixes();
       if (c.files) ApplyFileFixes();
