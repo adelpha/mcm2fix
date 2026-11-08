@@ -20,6 +20,7 @@
 
 #include "framerate.h"
 #include "patch.h"
+#include "config.h"
 
 namespace {
 
@@ -34,7 +35,9 @@ struct Rec {
 std::unordered_map<uint64_t, Rec> g_recs;
 std::unordered_map<uint64_t, uint32_t> g_uses;  // draws so far this frame per source
 unsigned g_frames = 0;
-unsigned g_total = 0, g_blended = 0;  // matrices seen / blended, for the log
+unsigned g_total = 0, g_blended = 0;
+unsigned g_race_frames = 0;  // frames drawn while smoothing could run
+bool g_trace = false;          // SmoothLog: tracing this frame  // matrices seen / blended, for the log
 
 bool Affine(const float* m) {
   return m[3] == 0.0f && m[7] == 0.0f && m[11] == 0.0f && std::fabs(m[15] - 1.0f) < 1e-4f;
@@ -120,10 +123,32 @@ void SmoothTransform(uint32_t type, const float* in, const void* src, float* out
     std::memcpy(out, blended, sizeof(blended));
     ++g_blended;
   }
+  if (g_trace) {
+    patch::Log("trace: set %s src=%p use=%u tick=%u a=%.3f in=(%.2f %.2f %.2f) out=(%.2f %.2f %.2f) "
+               "prev=(%.2f %.2f %.2f) prevtick=%u",
+               type == 1 ? "world" : "view", src, use, tick, alpha, in[12], in[13], in[14], out[12],
+               out[13], out[14], r.prev[12], r.prev[13], r.prev[14], r.prev_tick);
+  }
+}
+
+void SmoothNoteDraw(const char* what, bool tl, unsigned verts) {
+  if (g_trace) patch::Log("trace: %s tl=%d verts=%u", what, tl ? 1 : 0, verts);
 }
 
 void SmoothFrameEnd() {
   g_uses.clear();
+  {
+    unsigned tick;
+    float alpha;
+    if (SimDrawPoint(&tick, &alpha)) {
+      ++g_race_frames;
+      // Trace 6 frames, 5 seconds or so into the race.
+      g_trace = GetConfig().smooth_log && g_race_frames >= 600 && g_race_frames < 606;
+      if (g_trace) patch::Log("trace: ---- frame %u, tick %u, a=%.3f", g_race_frames, tick, alpha);
+    } else {
+      g_trace = false;
+    }
+  }
   if (++g_frames % 600 == 0) {
     unsigned tick;
     float alpha;

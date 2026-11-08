@@ -443,6 +443,7 @@ HRESULT VertexBuffer::ProcessVertices(DWORD op, DWORD dst_index, DWORD count,
   }
   if (op & D3DVOP_LIGHT) LogOnce("ProcessVertices: lighting requested, not emulated");
   const float* m = dev->Wvp();
+  SmoothNoteDraw("process", sl.tl, count);
   const D3DVIEWPORT7& vp = dev->Viewport();
   processed_vp_ = vp;
   if (processed_.size() < desc_.dwNumVertices) {
@@ -877,6 +878,7 @@ HRESULT Device::DrawPrimitive(DWORD prim, DWORD fvf, void* v, DWORD n, DWORD) {
   d.verts = static_cast<const uint8_t*>(v);
   d.layout = FvfLayout::From(fvf);
   d.count = n;
+  SmoothNoteDraw("draw", d.layout.tl, n);
   Submit(d);
   return D3D_OK;
 }
@@ -892,6 +894,7 @@ HRESULT Device::DrawIndexedPrimitive(DWORD prim, DWORD fvf, void* v, DWORD nv, W
   d.count = nv;
   d.idx = idx;
   d.nidx = ni;
+  SmoothNoteDraw("drawidx", d.layout.tl, d.count);
   Submit(d);
   return D3D_OK;
 }
@@ -939,6 +942,7 @@ HRESULT Device::DrawPrimitiveStrided(DWORD prim, DWORD fvf, D3DDRAWPRIMITIVESTRI
   d.prim = prim;
   d.verts = buf.data();
   d.count = n;
+  SmoothNoteDraw("draw", d.layout.tl, n);
   Submit(d);
   return D3D_OK;
 }
@@ -955,6 +959,7 @@ HRESULT Device::DrawIndexedPrimitiveStrided(DWORD prim, DWORD fvf, D3DDRAWPRIMIT
   d.count = nv;
   d.idx = idx;
   d.nidx = ni;
+  SmoothNoteDraw("drawidx", d.layout.tl, d.count);
   Submit(d);
   return D3D_OK;
 }
@@ -972,6 +977,7 @@ HRESULT Device::DrawPrimitiveVB(DWORD prim, IDirect3DVertexBuffer7* vb_in, DWORD
   d.first = start;
   d.count = n;
   d.vb = vb;
+  SmoothNoteDraw("drawvb", d.layout.tl, d.count);
   Submit(d);
   return D3D_OK;
 }
@@ -991,6 +997,7 @@ HRESULT Device::DrawIndexedPrimitiveVB(DWORD prim, IDirect3DVertexBuffer7* vb_in
   d.idx = idx;
   d.nidx = ni;
   d.vb = vb;
+  SmoothNoteDraw("drawvb", d.layout.tl, d.count);
   Submit(d);
   return D3D_OK;
 }

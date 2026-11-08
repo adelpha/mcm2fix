@@ -9,3 +9,6 @@ void SmoothTransform(uint32_t type, const float* in, const void* src, float* out
 
 // A frame was presented: start counting draws afresh.
 void SmoothFrameEnd();
+
+// Debug (SmoothLog=1): note a draw or vertex processing call for the trace.
+void SmoothNoteDraw(const char* what, bool tl, unsigned verts);
