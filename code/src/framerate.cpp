@@ -168,6 +168,7 @@ const AiPlanFn kAiPlan = reinterpret_cast<AiPlanFn>(0x415170);
 struct AiState {
   float pending = 0.0f;
   int last = 1;
+  LONGLONG seen = 0;  // QPC of the last call
 };
 std::map<void*, AiState> g_ai;
 
@@ -175,8 +176,15 @@ int __stdcall AiPlan(void* bike, float dt) {
   const int rate = GetConfig().ai_rate;
   if (rate <= 0) return kAiPlan(bike, dt);
   AiState& st = g_ai[bike];
+  const LONGLONG now = Now();
+  // A rider we haven't seen for a moment is a new race (bikes of a new race
+  // can reuse an old bike's memory): always plan on its first call, like the
+  // original game does, instead of reusing the old race's answer.
+  const bool fresh = st.seen == 0 || now - st.seen > g_freq.QuadPart / 2;
+  st.seen = now;
+  if (fresh) st.pending = 0.0f;
   st.pending += dt;
-  if (st.pending + 1e-4f < 1.0f / rate && st.pending < 0.2f) return st.last;
+  if (!fresh && st.pending + 1e-4f < 1.0f / rate && st.pending < 0.2f) return st.last;
   float step = st.pending;
   st.pending = 0.0f;
   st.last = kAiPlan(bike, step);
@@ -546,7 +554,9 @@ void ApplyFramePacing() {
   g_fix_frames = c.frame_fix;
   g_ref_rate = static_cast<float>(c.ref_rate);
   if (c.frame_fix) PatchFixSites();
-  if (c.ai_rate > 0) PatchAiRate();
+  // With a fixed simulation rate the planner already runs at most SimRate
+  // times a second, so the separate AI throttle is only needed below that.
+  if (c.ai_rate > 0 && (c.sim_rate <= 0 || c.ai_rate < c.sim_rate)) PatchAiRate();
   if (c.ai_steer_rate > 0) PatchAiSteering();
   if (c.sim_rate > 0) {
     PatchFixedTick();  // replaces the whole tick, frame time included
