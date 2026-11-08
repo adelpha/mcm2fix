@@ -13,6 +13,11 @@
 // object pass (0x45c5ef) skips anything further away. ViewDistance scales
 // those as well.
 //
+// Tree detail: vegetation within the first two ints of the same rows
+// (150 / 75 at the best level) is drawn with its near, full-resolution
+// version, blended out between the two; beyond, it is a dense low-res
+// billboard (0x457650). TreeDetailDistance scales both.
+//
 // Texture detail: the game streams each texture at a resolution chosen from
 // how big it is on screen (0x444efe computes log2 of the wanted size and
 // passes it to 0x515f90, capped at 9 = 512 px); far objects such as trees
@@ -81,6 +86,19 @@ constexpr uintptr_t kObjectTables[] = {0x5707E8, 0x5706A8};
 constexpr int kObjectRange[2][10] = {{256, 256, 320, 384, 448, 512, 576, 640, 768, 768},
                                      {256, 256, 256, 384, 384, 448, 512, 512, 640, 768}};
 
+void ScaleTreeDetail(float scale) {
+  for (int t = 0; t < 2; ++t) {
+    for (int i = 0; i < 10; ++i) {
+      for (int f = 0; f < 2; ++f) {
+        int* p = reinterpret_cast<int*>(kObjectTables[t] + i * 32 + f * 4);
+        const int v = static_cast<int>(*p * scale + 0.5f);
+        patch::Write(reinterpret_cast<uintptr_t>(p), &v, 4);
+      }
+    }
+  }
+  patch::Log("tree detail distance x%.2f", scale);
+}
+
 void ScaleObjectRanges(float scale) {
   for (int t = 0; t < 2; ++t) {
     for (int i = 0; i < 10; ++i) {
@@ -120,6 +138,7 @@ void ApplyDetailFixes() {
     ScaleObjectRanges(c.view_distance);
     patch::Log("view distance x%.2f", c.view_distance);
   }
+  if (c.tree_detail != 1.0f) ScaleTreeDetail(c.tree_detail);
   if (c.texture_lod != 0.0f) ApplyTextureLod(c.texture_lod);
   if (c.model_lod != 1.0f) {
     const uint8_t original[] = {0xD9, 0x05, 0x48, 0x57, 0x55, 0x00};  // fld dword [0x555748]

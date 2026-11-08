@@ -67,6 +67,8 @@ Antialiasing=4 ; multisample antialiasing of the 3D scene: 0/1 = off, 2, 4 or 8
 MipBias=0      ; texture sharpness at a distance: negative = sharper (e.g. -0.5), positive = softer
 ViewDistance=1 ; multiplies how far the game draws (far clip, culling and fog move together)
 FogDistance=1  ; multiplies the fog distances on top of that (2 = fog starts twice as far away)
+TreeDetailDistance=1 ; trees switch from a dense low-res billboard to their sparse full-res version
+               ; within 150 units at best detail; this multiplies that distance (10 = everywhere)
 TextureLod=0   ; the game loads smaller texture versions for far objects (trees!); each step
                ; up loads twice the resolution (2-3 keeps trees sharp; the cap is 512 px)
 ModelLod=1     ; detailed models stay this many times further away before switching to simpler ones

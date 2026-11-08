@@ -43,8 +43,8 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
                  c.one_core, c.startup, c.registry, c.files, c.activate_log, c.reg_log, c.dd_stats,
                  c.alpha_cut, c.wide_fov);
       patch::Log("graphics: Fov=%.1f Anisotropy=%d Antialiasing=%d MipBias=%.2f FogDistance=%.2f "
-                 "ViewDistance=%.2f ModelLod=%.2f TextureLod=%.2f AlphaMipScale=%.2f FoliageFullRes=%d TextureReplace=%d TextureDump=%d",
-                 c.fov, c.anisotropy, c.msaa, c.mip_bias, c.fog_scale, c.view_distance, c.model_lod, c.texture_lod, c.alpha_mip_scale, c.foliage_full_res,
+                 "ViewDistance=%.2f ModelLod=%.2f TextureLod=%.2f AlphaMipScale=%.2f FoliageFullRes=%d TreeDetailDistance=%.2f TextureReplace=%d TextureDump=%d",
+                 c.fov, c.anisotropy, c.msaa, c.mip_bias, c.fog_scale, c.view_distance, c.model_lod, c.texture_lod, c.alpha_mip_scale, c.foliage_full_res, c.tree_detail,
                  c.texture_replace, c.texture_dump);
       if (c.startup) ApplyStartupFixes();
       if (c.registry) ApplyRegistryFixes();
