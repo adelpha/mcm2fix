@@ -14,6 +14,7 @@ void ApplyDiagnostics();
 void ApplyRegistryTrace();
 void ApplyD3D11Backend();
 void ApplyWidescreenFov();
+void ApplyDetailFixes();
 
 namespace {
 
@@ -41,12 +42,17 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
                  "AlphaCut=%d WideFov=%d",
                  c.one_core, c.startup, c.registry, c.files, c.activate_log, c.reg_log, c.dd_stats,
                  c.alpha_cut, c.wide_fov);
+      patch::Log("graphics: Fov=%.1f Anisotropy=%d Antialiasing=%d MipBias=%.2f FogDistance=%.2f "
+                 "ViewDistance=%.2f ModelLod=%.2f TextureReplace=%d TextureDump=%d",
+                 c.fov, c.anisotropy, c.msaa, c.mip_bias, c.fog_scale, c.view_distance, c.model_lod,
+                 c.texture_replace, c.texture_dump);
       if (c.startup) ApplyStartupFixes();
       if (c.registry) ApplyRegistryFixes();
       if (c.files) ApplyFileFixes();
       if (c.reg_log) ApplyRegistryTrace();
       ApplyD3D11Backend();
       ApplyWidescreenFov();
+      ApplyDetailFixes();
       if (c.activate_log) ApplyDiagnostics();
     } else {
       patch::Log("not the supported Mcm2.exe; no fixes applied");
