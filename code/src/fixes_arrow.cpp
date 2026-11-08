@@ -67,7 +67,8 @@ void __stdcall AdjustCue(uintptr_t cue, float* dir) {
     const float dist = *reinterpret_cast<float*>(cue + 0x44);
     const float h = *reinterpret_cast<float*>(cue + 0xb4);
     if (Normalize(right) && Normalize(up) && Normalize(fwd) && dist > 0.0f && std::isfinite(h)) {
-      const float a = std::atan2(h, dist);  // view axis -> arrow, about camera up
+      // view axis -> arrow, about camera up; ArrowTurn scales it (1 = full).
+      const float a = std::atan2(h, dist) * GetConfig().arrow_turn;
       const float c = std::cos(a), s = std::sin(a);
       Vec d = Load(reinterpret_cast<uintptr_t>(dir));
       const float x = Dot(d, right), y = Dot(d, up), z = Dot(d, fwd);
@@ -133,6 +134,6 @@ void ApplyArrowFix() {
   put({0xC3});                                          // ret
   FlushInstructionCache(GetCurrentProcess(), t, n);
   patch::Jump(kSetOrientation, reinterpret_cast<uintptr_t>(t), sizeof(kSetOrientationEntry));
-  patch::Log("direction arrow: applied (heading=%d scale=%.2f)", c.arrow_heading ? 1 : 0,
-             static_cast<double>(c.arrow_scale));
+  patch::Log("direction arrow: applied (heading=%d turn=%.2f scale=%.2f)", c.arrow_heading ? 1 : 0,
+             static_cast<double>(c.arrow_turn), static_cast<double>(c.arrow_scale));
 }

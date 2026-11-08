@@ -59,6 +59,7 @@ AlphaCut=128   ; trees and flags: drop pixels less opaque than this (0-255), whi
                ; removes the fringe where trees hide flags behind them (0 = original look)
 WideFov=1      ; widescreen modes show more to the sides (0 = crop top and bottom like the original)
 ArrowFix=1     ; race direction arrow points the right way (0 = original, leans toward the screen centre)
+ArrowTurn=0.8  ; how much of that correction to apply (1.0 = full; lower if the arrow points left of a gate dead ahead)
 ArrowScale=2.0 ; size of the race direction arrow (1.0 = original)
 OneCore=0      ; 1 = pin the game to one CPU core (old stopgap)
 ActivateLog=0  ; debugging: log window activation
