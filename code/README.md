@@ -20,6 +20,9 @@ What it does:
   stays borderless at desktop resolution and the picture is scaled with the
   aspect ratio kept. No display mode change, no exclusive fullscreen, no
   d3drm.dll, no Windows DirectDraw for drawing. See `docs/step3-renderer.md`.
+- Frame pacing (`src/framerate.cpp`): VSync and frame-cap settings, a precise
+  frame timer, and frame-rate independence for the few simulation, rider
+  animation and camera steps that the game applied once per frame.
 - Intro videos still play through Windows' DirectShow (amstream) and the
   Indeo codec; `src/dd/hook.cpp` makes that path work with the new renderer.
 
@@ -58,6 +61,11 @@ Files=1        ; send file writes to %LOCALAPPDATA%\Motocross Madness 2
 AlphaCut=128   ; trees and flags: drop pixels less opaque than this (0-255), which
                ; removes the fringe where trees hide flags behind them (0 = original look)
 WideFov=1      ; widescreen modes show more to the sides (0 = crop top and bottom like the original)
+VSync=1        ; wait for the monitor's refresh (0 = no wait; tears if the system allows it)
+FrameCap=0     ; most frames per second (0 = no cap beyond VSync)
+PreciseTimer=1 ; the game's frame time from QueryPerformanceCounter instead of whole milliseconds
+FrameFix=1     ; steps the game applies once per frame scale with frame time (0 = original)
+RefRate=30     ; the frame rate those per-frame steps are treated as tuned for
 OneCore=0      ; 1 = pin the game to one CPU core (old stopgap)
 ActivateLog=0  ; debugging: log window activation
 RegLog=0       ; debugging: log every registry call
