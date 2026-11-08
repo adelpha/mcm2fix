@@ -669,6 +669,8 @@ std::unordered_map<uintptr_t, CasterRec> g_casters;
 std::vector<uintptr_t> g_casters_written;
 // pre-draws, draws, off, casters seen, blended, no previous, jumped/turned, restored at frame end
 unsigned g_ps_why[8] = {};
+// texture re-renders: game asked, we forced, rendered something (+0x130), last period seen (+0x120)
+unsigned g_ps_tex[4] = {};
 bool g_ps_logged_sample = false;
 unsigned g_ps_casters_max = 0;
 
@@ -726,7 +728,17 @@ int __fastcall SmoothPsPreDraw(void* self, void*) {
                  r.prev[14], alpha, out[12], out[13], out[14]);
     }
   }
-  return kPsPreDraw(self);
+  // The game only re-renders the shadow texture when its update (once per sim
+  // step, every [+0x120] steps) sets +0x11c; otherwise the old texture from
+  // the last step is drawn. Ask for a fresh render every frame so the shadow
+  // shows the riders where they are drawn now.
+  int* want = reinterpret_cast<int*>(obj + 0x11c);
+  g_ps_tex[3] = *reinterpret_cast<unsigned*>(obj + 0x120);
+  if (*want) ++g_ps_tex[0];
+  else { *want = 1; ++g_ps_tex[1]; }
+  const int result = kPsPreDraw(self);
+  if (*reinterpret_cast<int*>(obj + 0x130)) ++g_ps_tex[2];
+  return result;
 }
 
 int __fastcall SmoothPsDraw(void* self, void*) {
@@ -761,6 +773,11 @@ void ProjectedShadowFrameEnd() {
                  g_ps_why[0], g_ps_why[1], g_ps_why[3], g_ps_casters_max, g_ps_why[4], g_ps_why[2], g_ps_why[5],
                  g_ps_why[6], g_ps_why[7], static_cast<unsigned>(g_casters.size()));
     }
+    if (g_ps_why[0]) {
+      patch::Log("smoothing: shadow texture renders: game asked %u, forced %u, drew casters %u; period %u steps",
+                 g_ps_tex[0], g_ps_tex[1], g_ps_tex[2], g_ps_tex[3]);
+    }
+    for (unsigned& w : g_ps_tex) w = 0;
     for (unsigned& w : g_ps_why) w = 0;
     g_ps_logged_sample = false;
     g_ps_casters_max = 0;
@@ -774,5 +791,5 @@ void InstallProjectedShadowSmoothing() {
   constexpr uintptr_t kVtable = 0x55C848;
   const bool a = PatchSlot(kVtable + 0x30, 0x4DF7F0, reinterpret_cast<void*>(&SmoothPsPreDraw), "projected shadow pre-draw");
   const bool b = PatchSlot(kVtable + 0x34, 0x4E0C00, reinterpret_cast<void*>(&SmoothPsDraw), "projected shadow draw");
-  patch::Log("smoothing: projected shadows %s", a && b ? "fitted to casters placed between steps" : "NOT hooked");
+  patch::Log("smoothing: projected shadows %s", a && b ? "re-rendered every frame from casters placed between steps" : "NOT hooked");
 }
