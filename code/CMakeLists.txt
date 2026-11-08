@@ -20,6 +20,7 @@ add_library(mcm2fix SHARED
   src/diagnostics.cpp
   src/regtrace.cpp
   src/config.cpp
+  src/framerate.cpp
   src/dd/backend.cpp
   src/dd/surface.cpp
   src/dd/directdraw.cpp

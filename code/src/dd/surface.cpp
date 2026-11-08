@@ -4,6 +4,8 @@
 #include <cstring>
 #include <map>
 
+#include "../config.h"
+#include "../framerate.h"
 #include "directdraw.h"
 
 namespace dd {
@@ -839,6 +841,8 @@ HRESULT Surface::EnumOverlayZOrders(DWORD, LPVOID, LPDDENUMSURFACESCALLBACK7) {
 }
 
 HRESULT Surface::Flip(LPDIRECTDRAWSURFACE7, DWORD flags) {
+  if (!back_) return DDERR_NOTFLIPPABLE;
+  WaitForFrameSlot();  // frame cap, outside the lock
   DD_LOCK;
   if (!back_) return DDERR_NOTFLIPPABLE;
   ++Counters().flips;
@@ -847,7 +851,9 @@ HRESULT Surface::Flip(LPDIRECTDRAWSURFACE7, DWORD flags) {
     cur->SwapContents(cur->back_);
     cur = cur->back_;
   }
-  PresentFront((flags & DDFLIP_NOVSYNC) ? 0 : 1);
+  if (flags & DDFLIP_NOVSYNC) LogOnce("game flips with DDFLIP_NOVSYNC");
+  // VSync in mcm2fix.ini decides, whatever the game asked for.
+  PresentFront(GetConfig().vsync ? 1 : 0);
   return DD_OK;
 }
 

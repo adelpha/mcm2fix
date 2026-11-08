@@ -11,7 +11,12 @@ struct Config {
   bool reg_log = false;       // RegLog: log every registry call
   bool dd_stats = false;      // DDStats: log renderer activity every 2 seconds
   bool wide_fov = true;       // WideFov: wide modes show more to the sides instead of cropping
-  int alpha_cut = 128;        // AlphaCut: alpha-tested blended pixels below this (0-255) are dropped
+  int alpha_cut = 128;
+  bool vsync = true;          // VSync: wait for the monitor's refresh when showing a frame
+  int frame_cap = 0;          // FrameCap: most frames per second (0 = no cap beyond VSync)
+  bool precise_timer = true;  // PreciseTimer: frame time from QueryPerformanceCounter, not whole ms
+  bool frame_fix = true;      // FrameFix: per-frame animation/physics steps scale with frame time
+  int ref_rate = 30;          // RefRate: frame rate those per-frame steps were tuned for        // AlphaCut: alpha-tested blended pixels below this (0-255) are dropped
 };
 
 const Config& GetConfig();
