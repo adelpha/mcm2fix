@@ -5,6 +5,7 @@
 
 #include "config.h"
 #include "patch.h"
+#include "video/player.h"
 
 void ApplyStep1Fixes();
 void ApplyStartupFixes();
@@ -49,6 +50,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
       ApplyD3D11Backend();
       ApplyWidescreenFov();
       ApplyArrowFix();
+      video::ApplyVideoPlayer();
       if (c.activate_log) ApplyDiagnostics();
     } else {
       patch::Log("not the supported Mcm2.exe; no fixes applied");
