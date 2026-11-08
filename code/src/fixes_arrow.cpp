@@ -73,8 +73,23 @@ void __stdcall AdjustCue(uintptr_t cue, float* dir) {
       Vec d = Load(reinterpret_cast<uintptr_t>(dir));
       const float x = Dot(d, right), y = Dot(d, up), z = Dot(d, fwd);
       const float x2 = x * c + z * s;
-      const float z2 = z * c - x * s;
-      Vec out = Add(Add(Scale(right, x2), Scale(up, y)), Scale(fwd, z2));
+      float z2 = z * c - x * s;
+      float x3 = x2, y2 = y;
+      // ArrowTilt: raise the nose a few degrees so the arrow is seen a
+      // little more from above.
+      const float tilt = GetConfig().arrow_tilt * 3.14159265f / 180.0f;
+      const float flat = std::sqrt(x2 * x2 + z2 * z2);
+      if (tilt != 0.0f && flat > 1e-6f) {
+        const float len = std::sqrt(flat * flat + y * y);
+        float e = std::atan2(y, flat) + tilt;
+        if (e > 1.4f) e = 1.4f;
+        if (e < -1.4f) e = -1.4f;
+        const float k2 = std::cos(e) * len / flat;
+        x3 = x2 * k2;
+        z2 = z2 * k2;
+        y2 = std::sin(e) * len;
+      }
+      Vec out = Add(Add(Scale(right, x3), Scale(up, y2)), Scale(fwd, z2));
       if (std::isfinite(out.x) && std::isfinite(out.y) && std::isfinite(out.z)) {
         dir[0] = out.x;
         dir[1] = out.y;
@@ -134,6 +149,7 @@ void ApplyArrowFix() {
   put({0xC3});                                          // ret
   FlushInstructionCache(GetCurrentProcess(), t, n);
   patch::Jump(kSetOrientation, reinterpret_cast<uintptr_t>(t), sizeof(kSetOrientationEntry));
-  patch::Log("direction arrow: applied (heading=%d turn=%.2f scale=%.2f)", c.arrow_heading ? 1 : 0,
-             static_cast<double>(c.arrow_turn), static_cast<double>(c.arrow_scale));
+  patch::Log("direction arrow: applied (heading=%d turn=%.2f tilt=%.1f scale=%.2f)",
+             c.arrow_heading ? 1 : 0, static_cast<double>(c.arrow_turn),
+             static_cast<double>(c.arrow_tilt), static_cast<double>(c.arrow_scale));
 }

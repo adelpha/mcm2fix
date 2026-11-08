@@ -31,6 +31,9 @@ void LoadConfig() {
   GetPrivateProfileStringA("mcm2fix", "ArrowTurn", "0.8", buf, sizeof(buf), ini);
   float turn = static_cast<float>(std::atof(buf));
   g_config.arrow_turn = (turn >= 0.0f && turn <= 2.0f) ? turn : 0.8f;
+  GetPrivateProfileStringA("mcm2fix", "ArrowTilt", "10", buf, sizeof(buf), ini);
+  float tilt = static_cast<float>(std::atof(buf));
+  g_config.arrow_tilt = (tilt >= -45.0f && tilt <= 45.0f) ? tilt : 10.0f;
   g_config.dd_stats = GetPrivateProfileIntA("mcm2fix", "DDStats", 0, ini) != 0;
   g_config.activate_log = GetPrivateProfileIntA("mcm2fix", "ActivateLog", 0, ini) != 0;
 }

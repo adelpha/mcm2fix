@@ -13,6 +13,7 @@ struct Config {
   bool wide_fov = true;       // WideFov: wide modes show more to the sides instead of cropping
   bool arrow_heading = true;  // ArrowFix: draw the race direction arrow without perspective lean
   float arrow_turn = 0.8f;    // ArrowTurn: how much of that correction to apply (1 = full)
+  float arrow_tilt = 10.0f;   // ArrowTilt: degrees the arrow's nose is raised, to see it more from above
   float arrow_scale = 2.0f;   // ArrowScale: size of the race direction arrow (1 = original)
   int alpha_cut = 128;        // AlphaCut: alpha-tested blended pixels below this (0-255) are dropped
 };
