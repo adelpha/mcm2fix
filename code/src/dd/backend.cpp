@@ -19,6 +19,7 @@ namespace dd {
 namespace {
 Backend g_backend;
 bool g_device_failed = false;
+bool g_tearing = false;  // swap chain made with ALLOW_TEARING (VSync=0)
 RECT g_monitor_rect{};
 
 const char kBlitShader[] = R"(
@@ -267,7 +268,9 @@ bool ResizeSwapchain() {
   if (b.swapchain) {
     b.ctx->OMSetRenderTargets(0, nullptr, nullptr);
     b.ctx->Flush();
-    if (FAILED(b.swapchain->ResizeBuffers(0, w, h, DXGI_FORMAT_UNKNOWN, 0))) return false;
+    if (FAILED(b.swapchain->ResizeBuffers(
+            0, w, h, DXGI_FORMAT_UNKNOWN, g_tearing ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0)))
+      return false;
   } else {
     IDXGIDevice* dxgi_dev = nullptr;
     IDXGIAdapter* adapter = nullptr;
@@ -289,9 +292,25 @@ bool ResizeSwapchain() {
     sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
     sd.BufferCount = 2;
     sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+    // With VSync off, let frames reach the screen as soon as they are ready
+    // (tearing) instead of DWM holding them for the next refresh.
+    g_tearing = false;
+    if (!GetConfig().vsync) {
+      IDXGIFactory5* f5 = nullptr;
+      if (SUCCEEDED(factory->QueryInterface(__uuidof(IDXGIFactory5), reinterpret_cast<void**>(&f5)))) {
+        BOOL allow = FALSE;
+        if (SUCCEEDED(f5->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &allow, sizeof(allow))))
+          g_tearing = allow != FALSE;
+        f5->Release();
+      }
+      if (g_tearing) sd.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
+      Log("VSync off, tearing %s", g_tearing ? "supported" : "not supported");
+    }
     HRESULT hr = factory->CreateSwapChainForHwnd(b.device, b.hwnd, &sd, nullptr, nullptr,
                                                  &b.swapchain);
     if (FAILED(hr)) {
+      g_tearing = false;
+      sd.Flags = 0;
       sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
       sd.BufferCount = 1;
       hr = factory->CreateSwapChainForHwnd(b.device, b.hwnd, &sd, nullptr, nullptr,
@@ -503,7 +522,7 @@ void Present(ID3D11ShaderResourceView* src, UINT src_w, UINT src_h, UINT interva
     p.linear = true;
     Blit(p);
   }
-  HRESULT hr = b.swapchain->Present(interval, 0);
+  HRESULT hr = b.swapchain->Present(interval, interval == 0 && g_tearing ? DXGI_PRESENT_ALLOW_TEARING : 0);
   if (FAILED(hr)) LogOnce("Present failed %08lx", hr);
 }
 

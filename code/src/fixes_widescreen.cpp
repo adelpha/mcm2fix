@@ -14,6 +14,8 @@
 #include <map>
 
 #include "config.h"
+#include "framerate.h"
+#include "smooth.h"
 #include "patch.h"
 
 namespace {
@@ -29,6 +31,19 @@ struct FovState {
   float written;  // what we stored in its place
 };
 std::map<uintptr_t, FovState> g_fov;
+
+// Smoothing draws the camera up to one simulation step behind the one the
+// game culls with, so when turning fast, things at the screen edge were
+// already culled. While smoothing, the game's camera gets a wider angle
+// (more is kept) and the drawing projection and the names are scaled back.
+constexpr float kCullMargin = 1.2f;  // ratio of tan(half angle)
+struct MarginCam {
+  float ratio = 1.0f;
+  float p00 = 0.0f, p11 = 0.0f;  // the camera's projection after the last update, to recognise it
+};
+std::map<uintptr_t, MarginCam> g_margin;
+unsigned g_margin_hits = 0;
+bool g_margin_logged = false;
 
 float Widen(float deg, float aspect) {
   const float kPi = 3.14159265f;
@@ -63,8 +78,28 @@ void __stdcall AdjustFov(uintptr_t cam) {
   const float aspect = static_cast<float>(w) / static_cast<float>(h);
   const bool widen = cfg.wide_fov && aspect > 4.0f / 3.0f + 0.01f;
   const float target = widen ? Widen(base, aspect) : base;
-  fov = target;
-  g_fov[cam] = {base, target};
+  float written = target;
+  unsigned tick;
+  float alpha;
+  if (w >= 320 && aspect >= 1.3f && SimDrawPoint(&tick, &alpha)) {  // the main view, not the square shadow camera
+    const float kPi = 3.14159265f;
+    float wide = 2.0f * std::atan(std::tan(target * 0.5f * kPi / 180.0f) * kCullMargin) * 180.0f / kPi;
+    if (wide > 170.0f) wide = 170.0f;
+    MarginCam& mc = g_margin[cam];
+    mc.ratio = std::tan(wide * 0.5f * kPi / 180.0f) / std::tan(target * 0.5f * kPi / 180.0f);
+    mc.p00 = *reinterpret_cast<float*>(cam + 0x6c);
+    mc.p11 = *reinterpret_cast<float*>(cam + 0x6c + 20);
+    written = wide;
+    if (!g_margin_logged) {
+      g_margin_logged = true;
+      patch::Log("smoothing: camera %08x culls with %.1f deg, drawn at %.1f (%dx%d)", static_cast<unsigned>(cam),
+                 wide, target, w, h);
+    }
+  } else {
+    g_margin.erase(cam);
+  }
+  fov = written;
+  g_fov[cam] = {base, written};
 }
 
 // The speedometer (InstrumentOverlay, instr1.tga, vtable 0x55d914) is a
@@ -170,6 +205,28 @@ struct Thunk {
 };
 
 }  // namespace
+
+float SmoothProjectionScale(const float* m) {
+  for (const auto& c : g_margin)
+    if (c.second.p00 != 0.0f && m[0] == c.second.p00 && m[5] == c.second.p11) {
+      ++g_margin_hits;
+      return c.second.ratio;
+    }
+  return 1.0f;
+}
+
+bool SmoothCullMargin(uintptr_t cam, float* ratio) {
+  auto it = g_margin.find(cam);
+  if (it == g_margin.end()) return false;
+  *ratio = it->second.ratio;
+  return true;
+}
+
+unsigned SmoothMarginHits() {
+  const unsigned n = g_margin_hits;
+  g_margin_hits = 0;
+  return n;
+}
 
 void ApplyWidescreenFov() {
   if (!GetConfig().wide_fov && GetConfig().fov <= 0.0f) return;

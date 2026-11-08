@@ -20,6 +20,9 @@ What it does:
   stays borderless at desktop resolution and the picture is scaled with the
   aspect ratio kept. No display mode change, no exclusive fullscreen, no
   d3drm.dll, no Windows DirectDraw for drawing. See `docs/step3-renderer.md`.
+- Frame pacing (`src/framerate.cpp`): VSync and frame-cap settings, a precise
+  frame timer, and frame-rate independence for the few simulation, rider
+  animation and camera steps that the game applied once per frame.
 - Videos (intro, credits, menu event previews; Indeo 5 with MS ADPCM sound)
   play through mcm2fix's own player (`src/video/`): the AVI is read and
   decoded with FFmpeg's Indeo 5 decoder, sound goes through waveOut, and no
@@ -68,6 +71,17 @@ Files=1        ; send file writes to %LOCALAPPDATA%\Motocross Madness 2
 AlphaCut=128   ; trees and flags: drop pixels less opaque than this (0-255), which
                ; removes the fringe where trees hide flags behind them (0 = original look)
 WideFov=1      ; widescreen modes show more to the sides (0 = crop top and bottom like the original)
+VSync=1        ; wait for the monitor's refresh (0 = no wait; tears if the system allows it)
+FrameCap=0     ; most frames per second (0 = no cap beyond VSync)
+PreciseTimer=1 ; the game's frame time from QueryPerformanceCounter instead of whole milliseconds
+FrameFix=1     ; steps the game applies once per frame scale with frame time (0 = original)
+RefRate=30     ; the frame rate those per-frame steps are treated as tuned for
+AiRate=30      ; computer riders re-plan their line this many times a second (0 = every frame)
+AiSteerRate=0  ; fastest a computer rider's front wheel can turn, degrees per second (0 = no limit)
+SimRate=30     ; races run this many simulation steps per second whatever the frame rate
+               ; (0 = one step per frame, the original way; 10-1000)
+SimSmooth=1    ; draw the camera, bikes, riders, shadows and names blended between simulation steps
+               ; (smooth motion at any frame rate, one step of delay); 0 = show each step as it is
 Fov=0          ; field of view in degrees as a 4:3 screen shows it (0 = game default, 77);
                ; the zoom keys still step from it, widescreen adds to the sides
 Anisotropy=16  ; anisotropic texture filtering, 0/1 = off, 2-16

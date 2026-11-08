@@ -11,6 +11,16 @@ struct Config {
   bool reg_log = false;       // RegLog: log every registry call
   bool dd_stats = false;      // DDStats: log renderer activity every 2 seconds
   bool wide_fov = true;       // WideFov: wide modes show more to the sides instead of cropping
+  bool vsync = true;          // VSync: wait for the monitor's refresh when showing a frame
+  int frame_cap = 0;          // FrameCap: most frames per second (0 = no cap beyond VSync)
+  bool precise_timer = true;  // PreciseTimer: frame time from QueryPerformanceCounter, not whole ms
+  bool frame_fix = true;      // FrameFix: per-frame animation/physics steps scale with frame time
+  int ai_rate = 30;           // AiRate: computer riders re-plan this many times a second (0 = every frame)
+  int smooth_log = 0;         // SmoothLog: 1 = trace a few frames of matrices and draws, 2 = camera only, 120 frames
+  int sim_smooth = 1;         // SimSmooth: draw objects between simulation steps (needs SimRate)
+  int sim_rate = 30;          // SimRate: race simulation steps per second, drawing stays per frame (0 = one step per frame)
+  int ai_steer_rate = 0;    // AiSteerRate: fastest a computer rider's front wheel turns, degrees/s (0 = no limit)
+  int ref_rate = 30;          // RefRate: frame rate those per-frame steps were tuned for
   bool arrow_heading = true;  // ArrowFix: draw the race direction arrow without perspective lean
   float arrow_turn = 0.8f;    // ArrowTurn: how much of that correction to apply (1 = full)
   float arrow_tilt = 10.0f;   // ArrowTilt: degrees the arrow's nose is raised, to see it more from above
