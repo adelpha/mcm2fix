@@ -44,5 +44,12 @@ bool SmoothPartsActive();
 // Blend the screen position of the names over riders between steps.
 void InstallNameSmoothing();
 
+// Smoothing cull margin (fixes_widescreen.cpp): the scale to apply to a
+// projection matrix the game sets (1 if it isn't a widened camera's), and
+// the ratio for a camera's screen positions.
+float SmoothProjectionScale(const float* m);
+bool SmoothCullMargin(uintptr_t cam, float* ratio);
+unsigned SmoothMarginHits();
+
 // Frame end bookkeeping for smooth_parts.cpp; `log` every 600 frames.
 void PartsFrameEnd(bool log);

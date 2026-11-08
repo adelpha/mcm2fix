@@ -770,13 +770,18 @@ HRESULT Device::SetTransform(DWORD type, D3DMATRIX* m) {
       view_set_ = *m;
       SmoothTransform(type, &m->m[0][0], m, &view_.m[0][0]);
       break;
-    case D3DTRANSFORMSTATE_PROJECTION:
+    case D3DTRANSFORMSTATE_PROJECTION: {
+      proj_set_ = *m;
       proj_ = *m;
+      const float r = SmoothProjectionScale(&m->m[0][0]);  // undo the smoothing cull margin
+      proj_.m[0][0] *= r;
+      proj_.m[1][1] *= r;
       if (m->m[2][3] != 0.0f && m->m[2][2] != 1.0f && m->m[2][2] != 0.0f) {
         const float zn = -m->m[3][2] / m->m[2][2], zf = m->m[3][2] / (1.0f - m->m[2][2]);
         LogOnce("projection near %.2f far %.0f", zn, zf);
       }
       break;
+    }
     default: LogOnce("SetTransform type %lu ignored", type); return D3D_OK;
   }
   wvp_dirty_ = true;
@@ -788,7 +793,7 @@ HRESULT Device::GetTransform(DWORD type, D3DMATRIX* m) {
   switch (type) {
     case D3DTRANSFORMSTATE_WORLD: *m = world_set_; break;  // what the game set
     case D3DTRANSFORMSTATE_VIEW: *m = view_set_; break;
-    case D3DTRANSFORMSTATE_PROJECTION: *m = proj_; break;
+    case D3DTRANSFORMSTATE_PROJECTION: *m = proj_set_; break;
     default: *m = Identity(); break;
   }
   return D3D_OK;
