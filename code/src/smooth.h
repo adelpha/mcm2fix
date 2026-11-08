@@ -22,3 +22,6 @@ const uint8_t* SmoothVertices(const uint8_t* verts, uint32_t stride, uint32_t co
 
 // Hook the game's GDI text so names over riders move with the blend.
 void InstallTextSmoothing();
+
+// Rebuild rider shadows from the blended rider each frame.
+void InstallShadowSmoothing();

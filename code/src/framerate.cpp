@@ -561,7 +561,10 @@ void ApplyFramePacing() {
   if (c.ai_steer_rate > 0) PatchAiSteering();
   if (c.sim_rate > 0) {
     PatchFixedTick();  // replaces the whole tick, frame time included
-    if (c.sim_smooth) InstallTextSmoothing();
+    if (c.sim_smooth) {
+      InstallTextSmoothing();
+      InstallShadowSmoothing();
+    }
   } else if (c.precise_timer || c.frame_fix || c.ai_steer_rate > 0) {
     PatchFrameTime();
   }

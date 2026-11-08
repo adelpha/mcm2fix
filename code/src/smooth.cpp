@@ -42,6 +42,7 @@ constexpr float kMaxStepMove = 30.0f;
 std::unordered_map<uint64_t, Rec> g_recs;
 std::unordered_map<uint64_t, uint32_t> g_uses;  // draws so far this frame per source
 unsigned g_frames = 0;
+unsigned g_shadow_blends = 0;  // shadows rebuilt from blended riders
 unsigned g_total = 0, g_blended = 0;
 unsigned g_race_frames = 0;  // frames drawn while smoothing could run
 bool g_trace = false;          // SmoothLog: tracing this frame
@@ -457,7 +458,9 @@ void SmoothFrameEnd() {
                  g_blended, g_total, g_vblended, g_vtotal, static_cast<unsigned>(g_recs.size()),
                  static_cast<unsigned>(g_vrecs.size()));
     }
+    if (on) patch::Log("smoothing: %u shadow draws rebuilt", g_shadow_blends);
     g_total = g_blended = g_vtotal = g_vblended = 0;
+    g_shadow_blends = 0;
     for (auto it = g_recs.begin(); it != g_recs.end();) {
       if (!on || it->second.tick + 30 < tick) it = g_recs.erase(it);
       else ++it;
@@ -482,4 +485,128 @@ void InstallTextSmoothing() {
   void* old = patch::HookIat(kIatTextOutA, reinterpret_cast<void*>(&SmoothTextOut));
   if (old) g_text_out = reinterpret_cast<TextOutFn>(old);
   patch::Log("smoothing: text over riders %s", old ? "follows the blend" : "not hooked");
+}
+
+// ---------------------------------------------------------------- shadows
+//
+// Rider and bike shadows (D3DIMSoultreeShadow, vtable 0x556624) are built
+// by projecting the rider's meshes onto the ground (0x447ec0) and drawn by
+// its draw method (0x4484c0). Blending the finished shadow doesn't work
+// (its shape and size change every step), so at draw time we put the
+// blended mesh positions in place, rebuild the shadow from them, draw it,
+// and put the game's positions back.
+
+namespace {
+
+using ShadowFn = int(__thiscall*)(void*);
+const ShadowFn kShadowBuild = reinterpret_cast<ShadowFn>(0x447EC0);
+const ShadowFn kShadowDraw = reinterpret_cast<ShadowFn>(0x4484C0);
+
+struct ShadowRec {
+  std::vector<float*> arrays;  // each mesh's vertex positions (stride 32 bytes)
+  std::vector<uint32_t> counts;
+  std::vector<float> prev, cur;
+  float prev_m[16] = {}, cur_m[16] = {};  // the projection at [obj+0x30]+0xd8
+  unsigned prev_tick = 0, tick = 0;
+};
+std::unordered_map<uintptr_t, ShadowRec> g_shadows;
+
+// The meshes the shadow is built from: list at [mesh+0x28c] picked by the
+// detail level at [mesh+0x27c]; each entry {count, items}, items 0x38 bytes
+// with the vertex count at +0x8 and the vertices at +0x10.
+bool ShadowMeshes(uintptr_t obj, std::vector<float*>& arrays, std::vector<uint32_t>& counts) {
+  arrays.clear();
+  counts.clear();
+  const uintptr_t mesh = *reinterpret_cast<uintptr_t*>(obj + 0x2c);
+  if (!mesh) return false;
+  const int level = *reinterpret_cast<int*>(mesh + 0x27c);
+  const uintptr_t lists = *reinterpret_cast<uintptr_t*>(mesh + 0x28c);
+  if (!lists || level < 0 || level > 16) return false;
+  const int n = *reinterpret_cast<int*>(lists + level * 8);
+  const uintptr_t items = *reinterpret_cast<uintptr_t*>(lists + level * 8 + 4);
+  if (n <= 0 || n > 256 || !items) return false;
+  for (int i = 0; i < n; ++i) {
+    const uintptr_t item = items + static_cast<uintptr_t>(i) * 0x38;
+    const int count = *reinterpret_cast<int*>(item + 0x8);
+    auto* verts = *reinterpret_cast<float**>(item + 0x10);
+    if (count <= 0 || count > 65536 || !verts) return false;
+    arrays.push_back(verts);
+    counts.push_back(static_cast<uint32_t>(count));
+  }
+  return true;
+}
+
+int __fastcall SmoothShadowDraw(void* self, void*) {
+  const uintptr_t obj = reinterpret_cast<uintptr_t>(self);
+  unsigned tick;
+  float alpha;
+  if (!SimDrawPoint(&tick, &alpha)) return kShadowDraw(self);
+  ShadowRec& r = g_shadows[obj];
+  std::vector<float*> arrays;
+  std::vector<uint32_t> counts;
+  if (!ShadowMeshes(obj, arrays, counts)) return kShadowDraw(self);
+  size_t total = 0;
+  for (uint32_t c : counts) total += c;
+  if (r.tick != tick) {
+    const bool same = arrays == r.arrays && counts == r.counts && r.cur.size() == total * 3;
+    if (same) {
+      r.prev.swap(r.cur);
+      r.prev_tick = r.tick;
+    } else {
+      r.prev_tick = 0;
+    }
+    r.arrays = arrays;
+    r.counts = counts;
+    r.tick = tick;
+    r.cur.resize(total * 3);
+    std::memcpy(r.prev_m, r.cur_m, sizeof(r.prev_m));
+    if (const uintptr_t proj = *reinterpret_cast<uintptr_t*>(obj + 0x30))
+      std::memcpy(r.cur_m, reinterpret_cast<void*>(proj + 0xd8), sizeof(r.cur_m));
+    size_t k = 0;
+    for (size_t m = 0; m < arrays.size(); ++m)
+      for (uint32_t i = 0; i < counts[m]; ++i, k += 3)
+        std::memcpy(&r.cur[k], reinterpret_cast<uint8_t*>(arrays[m]) + i * 32, 12);
+  }
+  if (r.prev_tick == 0 || r.prev_tick + 1 != tick || arrays != r.arrays || r.prev.size() != r.cur.size())
+    return kShadowDraw(self);
+  for (size_t k = 0; k < r.cur.size(); k += 3) {
+    const float dx = r.cur[k] - r.prev[k], dy = r.cur[k + 1] - r.prev[k + 1], dz = r.cur[k + 2] - r.prev[k + 2];
+    if (dx * dx + dy * dy + dz * dz > kMaxStepMove * kMaxStepMove) return kShadowDraw(self);
+  }
+  // Blended positions in, rebuild, draw, game's positions back.
+  size_t k = 0;
+  for (size_t m = 0; m < arrays.size(); ++m)
+    for (uint32_t i = 0; i < counts[m]; ++i, k += 3) {
+      float p[3];
+      for (int c = 0; c < 3; ++c) p[c] = r.prev[k + c] + (r.cur[k + c] - r.prev[k + c]) * alpha;
+      std::memcpy(reinterpret_cast<uint8_t*>(arrays[m]) + i * 32, p, 12);
+    }
+  float* mat = nullptr;
+  if (const uintptr_t proj = *reinterpret_cast<uintptr_t*>(obj + 0x30)) {
+    mat = reinterpret_cast<float*>(proj + 0xd8);
+    for (int c = 0; c < 16; ++c) mat[c] = r.prev_m[c] + (r.cur_m[c] - r.prev_m[c]) * alpha;
+  }
+  kShadowBuild(self);
+  const int result = kShadowDraw(self);
+  if (mat) std::memcpy(mat, r.cur_m, sizeof(r.cur_m));
+  k = 0;
+  for (size_t m = 0; m < arrays.size(); ++m)
+    for (uint32_t i = 0; i < counts[m]; ++i, k += 3)
+      std::memcpy(reinterpret_cast<uint8_t*>(arrays[m]) + i * 32, &r.cur[k], 12);
+  ++g_shadow_blends;
+  return result;
+}
+
+}  // namespace
+
+void InstallShadowSmoothing() {
+  constexpr uintptr_t kVtable = 0x556624;
+  constexpr uintptr_t kSlot = kVtable + 0x38;
+  if (*reinterpret_cast<uintptr_t*>(kSlot) != 0x4484C0) {
+    patch::Log("smoothing: shadow draw slot differs, shadows not smoothed");
+    return;
+  }
+  void* fn = reinterpret_cast<void*>(&SmoothShadowDraw);
+  patch::Write(kSlot, &fn, sizeof(fn));
+  patch::Log("smoothing: shadows rebuilt from blended riders every frame");
 }
