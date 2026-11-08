@@ -86,6 +86,23 @@ constexpr uintptr_t kObjectTables[] = {0x5707E8, 0x5706A8};
 constexpr int kObjectRange[2][10] = {{256, 256, 320, 384, 448, 512, 576, 640, 768, 768},
                                      {256, 256, 256, 384, 384, 448, 512, 512, 640, 768}};
 
+// TreeDetailDistance=0: every tree uses its near version, whatever the
+// distance (0x457650 always answers "near, not blended").
+void ForceTreeDetail() {
+  const uint8_t entry[] = {0x83, 0xEC, 0x0C, 0x56, 0x57};  // sub esp,0Ch; push esi; push edi
+  if (!patch::Matches(0x457650, entry, sizeof(entry))) {
+    patch::Log("tree detail: code differs, not applied");
+    return;
+  }
+  const uint8_t stub[] = {0x8B, 0x44, 0x24, 0x04,              // mov eax,[esp+4]
+                          0xC7, 0x00, 0, 0, 0, 0,              // mov dword [eax],0
+                          0x8B, 0x44, 0x24, 0x08,              // mov eax,[esp+8]
+                          0xC7, 0x00, 0, 0, 0, 0,              // mov dword [eax],0
+                          0xC2, 0x08, 0x00};                   // ret 8
+  patch::Write(0x457650, stub, sizeof(stub));
+  patch::Log("tree detail: always near");
+}
+
 void ScaleTreeDetail(float scale) {
   for (int t = 0; t < 2; ++t) {
     for (int i = 0; i < 10; ++i) {
@@ -138,7 +155,8 @@ void ApplyDetailFixes() {
     ScaleObjectRanges(c.view_distance);
     patch::Log("view distance x%.2f", c.view_distance);
   }
-  if (c.tree_detail != 1.0f) ScaleTreeDetail(c.tree_detail);
+  if (c.tree_detail == 0.0f) ForceTreeDetail();
+  else if (c.tree_detail != 1.0f) ScaleTreeDetail(c.tree_detail);
   if (c.texture_lod != 0.0f) ApplyTextureLod(c.texture_lod);
   if (c.model_lod != 1.0f) {
     const uint8_t original[] = {0xD9, 0x05, 0x48, 0x57, 0x55, 0x00};  // fld dword [0x555748]
