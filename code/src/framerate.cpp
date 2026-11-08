@@ -564,6 +564,7 @@ void ApplyFramePacing() {
     if (c.sim_smooth) {
       InstallTextSmoothing();
       InstallShadowSmoothing();
+      InstallProjectedShadowSmoothing();
     }
   } else if (c.precise_timer || c.frame_fix || c.ai_steer_rate > 0) {
     PatchFrameTime();

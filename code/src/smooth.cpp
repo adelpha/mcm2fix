@@ -42,6 +42,7 @@ constexpr float kMaxStepMove = 30.0f;
 std::unordered_map<uint64_t, Rec> g_recs;
 std::unordered_map<uint64_t, uint32_t> g_uses;  // draws so far this frame per source
 unsigned g_frames = 0;
+bool g_bypass = false;  // drawing something already placed between steps (shadow camera)
 unsigned g_shadow_blends = 0;  // shadows rebuilt from blended riders
 unsigned g_shadow_why[6] = {};  // calls, no meshes, no prev, moved too far, off, ok
 unsigned g_total = 0, g_blended = 0;
@@ -390,7 +391,7 @@ void SmoothTransform(uint32_t type, const float* in, const void* src, float* out
   std::memcpy(out, in, 16 * sizeof(float));
   unsigned tick;
   float alpha;
-  if (!SimDrawPoint(&tick, &alpha)) return;
+  if (g_bypass || !SimDrawPoint(&tick, &alpha)) return;
   const uint64_t source = (static_cast<uint64_t>(reinterpret_cast<uintptr_t>(src)) << 8) | (type & 0xff);
   const uint32_t use = g_uses[source]++;
   const uint64_t key = source ^ (static_cast<uint64_t>(use) << 40);
@@ -431,8 +432,10 @@ void SmoothNoteDraw(const char* what, bool tl, unsigned verts) {
 }
 
 void LogShadowDetail();
+void ProjectedShadowFrameEnd();
 
 void SmoothFrameEnd() {
+  ProjectedShadowFrameEnd();
   g_uses.clear();
   g_vuses.clear();
   g_luses.clear();
@@ -635,4 +638,137 @@ void InstallShadowSmoothing() {
   void* fn = reinterpret_cast<void*>(&SmoothShadowDraw);
   patch::Write(kSlot, &fn, sizeof(fn));
   patch::Log("smoothing: shadows rebuilt from blended riders every frame");
+}
+
+// ---------------------------------------------------------------- projected shadows
+//
+// The riders' shadows are ProjectedShadow objects (vtable 0x55c848): a
+// ShadowCamera at [obj+0x58] follows the rider from the light; before the
+// scene is drawn (slot 0x30, 0x4df7f0) the rider is drawn into a texture
+// from that camera and the ground under it is given texture coordinates from
+// the same camera; then (slot 0x34, 0x4e0c00) that ground is drawn with the
+// shadow texture. The camera only moves once per simulation step. So before
+// slot 0x30 we put the camera between its last two places (eye +0x170,
+// target +0x17c, up +0x188, then its matrix update 0x42fd50), and put the
+// game's camera back after slot 0x34. The rider drawn into the texture is
+// already blended by the vertex blend, so the camera's own view matrix is
+// not blended a second time.
+
+namespace {
+
+using PsFn = int(__thiscall*)(void*);
+const PsFn kPsPreDraw = reinterpret_cast<PsFn>(0x4DF7F0);
+const PsFn kPsDraw = reinterpret_cast<PsFn>(0x4E0C00);
+const PsFn kCameraUpdate = reinterpret_cast<PsFn>(0x42FD50);
+constexpr uintptr_t kCamState = 0x6c;     // matrices and placement the update writes...
+constexpr size_t kCamStateSize = 0x1c4 - 0x6c;  // ...through +0x1c0
+constexpr uintptr_t kCamPlace = 0x170;    // eye, target, up: 9 floats
+
+struct PsRec {
+  float prev[9] = {}, cur[9] = {};
+  unsigned prev_tick = 0, tick = 0;
+  uint8_t saved[kCamStateSize];
+  uintptr_t cam_saved = 0;  // camera whose state is in `saved` (0 = nothing to restore)
+};
+std::unordered_map<uintptr_t, PsRec> g_ps;
+unsigned g_ps_why[8] = {};  // predraw calls, draw calls, off, no camera, no previous, jumped, blended, restored late
+bool g_ps_logged_sample = false;
+
+void PsRestore(PsRec& r) {
+  if (!r.cam_saved) return;
+  std::memcpy(reinterpret_cast<void*>(r.cam_saved + kCamState), r.saved, kCamStateSize);
+  r.cam_saved = 0;
+}
+
+int __fastcall SmoothPsPreDraw(void* self, void*) {
+  ++g_ps_why[0];
+  const uintptr_t obj = reinterpret_cast<uintptr_t>(self);
+  unsigned tick;
+  float alpha;
+  if (!SimDrawPoint(&tick, &alpha)) { ++g_ps_why[2]; return kPsPreDraw(self); }
+  const uintptr_t cam = *reinterpret_cast<uintptr_t*>(obj + 0x58);
+  if (!cam) { ++g_ps_why[3]; return kPsPreDraw(self); }
+  PsRec& r = g_ps[obj];
+  PsRestore(r);  // in case last frame's draw never came
+  const float* place = reinterpret_cast<const float*>(cam + kCamPlace);
+  if (r.tick != tick) {
+    std::memcpy(r.prev, r.cur, sizeof(r.prev));
+    r.prev_tick = r.tick;
+    r.tick = tick;
+  }
+  std::memcpy(r.cur, place, sizeof(r.cur));
+  if (r.prev_tick == 0 || r.prev_tick + 1 != tick) { ++g_ps_why[4]; return kPsPreDraw(self); }
+  float d2 = 0.0f;
+  for (int c = 0; c < 3; ++c) d2 += (r.cur[c] - r.prev[c]) * (r.cur[c] - r.prev[c]);
+  if (d2 > kMaxStepMove * kMaxStepMove) { ++g_ps_why[5]; return kPsPreDraw(self); }
+  std::memcpy(r.saved, reinterpret_cast<void*>(cam + kCamState), kCamStateSize);
+  r.cam_saved = cam;
+  float blended[9];
+  for (int c = 0; c < 9; ++c) blended[c] = r.prev[c] + (r.cur[c] - r.prev[c]) * alpha;
+  std::memcpy(reinterpret_cast<void*>(cam + kCamPlace), blended, sizeof(blended));
+  kCameraUpdate(reinterpret_cast<void*>(cam));
+  if (!g_ps_logged_sample) {
+    g_ps_logged_sample = true;
+    patch::Log("smoothing: shadow camera %08x eye was (%.2f %.2f %.2f) now (%.2f %.2f %.2f) drawn at a=%.2f "
+               "(%.2f %.2f %.2f), target (%.2f %.2f %.2f) up (%.2f %.2f %.2f)",
+               static_cast<unsigned>(cam), r.prev[0], r.prev[1], r.prev[2], r.cur[0], r.cur[1], r.cur[2],
+               alpha, blended[0], blended[1], blended[2], r.cur[3], r.cur[4], r.cur[5], r.cur[6], r.cur[7],
+               r.cur[8]);
+  }
+  ++g_ps_why[6];
+  g_bypass = true;
+  const int result = kPsPreDraw(self);
+  g_bypass = false;
+  return result;
+}
+
+int __fastcall SmoothPsDraw(void* self, void*) {
+  ++g_ps_why[1];
+  auto it = g_ps.find(reinterpret_cast<uintptr_t>(self));
+  if (it == g_ps.end() || !it->second.cam_saved) return kPsDraw(self);
+  g_bypass = true;
+  const int result = kPsDraw(self);
+  g_bypass = false;
+  PsRestore(it->second);
+  return result;
+}
+
+bool PatchSlot(uintptr_t slot, uintptr_t expected, void* fn, const char* what) {
+  if (*reinterpret_cast<uintptr_t*>(slot) != expected) {
+    patch::Log("smoothing: %s slot at %08x holds %08x, not %08x; not hooked", what,
+               static_cast<unsigned>(slot), *reinterpret_cast<unsigned*>(slot), static_cast<unsigned>(expected));
+    return false;
+  }
+  patch::Write(slot, &fn, sizeof(fn));
+  return true;
+}
+
+}  // namespace
+
+void ProjectedShadowFrameEnd() {
+  for (auto& kv : g_ps) {
+    if (kv.second.cam_saved) {
+      ++g_ps_why[7];
+      PsRestore(kv.second);
+    }
+  }
+  if (g_frames % 600 == 599) {
+    unsigned tick;
+    float alpha;
+    if (SimDrawPoint(&tick, &alpha) || g_ps_why[0]) {
+      patch::Log("smoothing: projected shadows: %u pre-draws, %u draws, %u blended; skipped: off %u, no camera %u, "
+                 "no previous %u, jumped %u; restored at frame end %u; %u shadows tracked",
+                 g_ps_why[0], g_ps_why[1], g_ps_why[6], g_ps_why[2], g_ps_why[3], g_ps_why[4], g_ps_why[5],
+                 g_ps_why[7], static_cast<unsigned>(g_ps.size()));
+    }
+    for (unsigned& w : g_ps_why) w = 0;
+    g_ps_logged_sample = false;
+  }
+}
+
+void InstallProjectedShadowSmoothing() {
+  constexpr uintptr_t kVtable = 0x55C848;
+  const bool a = PatchSlot(kVtable + 0x30, 0x4DF7F0, reinterpret_cast<void*>(&SmoothPsPreDraw), "projected shadow pre-draw");
+  const bool b = PatchSlot(kVtable + 0x34, 0x4E0C00, reinterpret_cast<void*>(&SmoothPsDraw), "projected shadow draw");
+  patch::Log("smoothing: projected shadows %s", a && b ? "follow the blend (camera moved between steps)" : "NOT hooked");
 }

@@ -25,3 +25,6 @@ void InstallTextSmoothing();
 
 // Rebuild rider shadows from the blended rider each frame.
 void InstallShadowSmoothing();
+
+// Move the riders' projected-shadow cameras between steps.
+void InstallProjectedShadowSmoothing();
