@@ -317,6 +317,55 @@ bool g_name_sample = false;
 using ProjectFn = int(__thiscall*)(void*, void*, void*, float*, float*, void*);
 const ProjectFn kProject = reinterpret_cast<ProjectFn>(0x5349B0);
 
+// ---- dropping text ("FINAL LAP") ----
+// DropTextOverlay (vtable 0x55da74): its update (slot 10, 0x5206c0) moves the
+// text once per step; its draw (slot 15, 0x520740) prints it at x +0x3c,
+// y +0x44 (ints). Draw it at the position blended between the last two steps.
+struct DropRec {
+  int prev[2] = {}, cur[2] = {};
+  unsigned prev_tick = 0, tick = 0;
+};
+std::unordered_map<uintptr_t, DropRec> g_drops;
+unsigned g_dw[4] = {};  // draws, blended, no previous, jumped
+bool g_drop_sample = false;
+using DropDrawFn = int(__thiscall*)(void*);
+const DropDrawFn kDropDraw = reinterpret_cast<DropDrawFn>(0x520740);
+
+int __fastcall DropDraw(void* self, void*) {
+  ++g_dw[0];
+  unsigned tick;
+  float alpha;
+  if (!SimDrawPoint(&tick, &alpha)) return kDropDraw(self);
+  const uintptr_t o = reinterpret_cast<uintptr_t>(self);
+  int* pos[2] = {reinterpret_cast<int*>(o + 0x3c), reinterpret_cast<int*>(o + 0x44)};
+  DropRec& r = g_drops[o];
+  if (r.tick != tick) {
+    r.prev[0] = r.cur[0];
+    r.prev[1] = r.cur[1];
+    r.prev_tick = r.tick;
+    r.tick = tick;
+  }
+  r.cur[0] = *pos[0];
+  r.cur[1] = *pos[1];
+  if (r.prev_tick == 0 || r.prev_tick + 1 != tick) { ++g_dw[2]; return kDropDraw(self); }
+  const int dx = r.cur[0] - r.prev[0], dy = r.cur[1] - r.prev[1];
+  if (dx * dx + dy * dy > 300 * 300) { ++g_dw[3]; return kDropDraw(self); }
+  const int bx = r.prev[0] + static_cast<int>(std::lround(dx * alpha));
+  const int by = r.prev[1] + static_cast<int>(std::lround(dy * alpha));
+  if (!g_drop_sample && (dx || dy)) {
+    g_drop_sample = true;
+    patch::Log("smoothing: drop text %08x at (%d %d) was (%d %d), drawn at a=%.2f (%d %d)", static_cast<unsigned>(o),
+               r.cur[0], r.cur[1], r.prev[0], r.prev[1], alpha, bx, by);
+  }
+  *pos[0] = bx;
+  *pos[1] = by;
+  ++g_dw[1];
+  const int result = kDropDraw(self);
+  *pos[0] = r.cur[0];
+  *pos[1] = r.cur[1];
+  return result;
+}
+
 }  // namespace
 
 extern "C" {
@@ -412,12 +461,24 @@ void InstallPartSmoothing() {
   patch::Log("smoothing: bike and rider parts placed between steps before the game builds them");
 }
 
+void InstallDropTextSmoothing() {
+  const uintptr_t slot = 0x55DA74 + 15 * 4;
+  if (*reinterpret_cast<uintptr_t*>(slot) != 0x520740) {
+    patch::Log("smoothing: drop text NOT hooked (slot holds %08x)", *reinterpret_cast<unsigned*>(slot));
+    return;
+  }
+  void* fn = reinterpret_cast<void*>(&DropDraw);
+  patch::Write(slot, &fn, sizeof(fn));
+  patch::Log("smoothing: dropping text (FINAL LAP) placed between steps");
+}
+
 void InstallNameSmoothing() {
   static const uint8_t call[] = {0x52, 0x50, 0xe8, 0x2b, 0x60, 0x01, 0x00};
   if (!patch::Matches(0x51E97E, call, sizeof(call))) {
     patch::Log("smoothing: names NOT hooked (unexpected bytes)");
     return;
   }
+  InstallDropTextSmoothing();
   g_name_project_fn = reinterpret_cast<void*>(&NameProject);
   patch::Call(0x51E980, reinterpret_cast<void*>(&NameProjectThunk), 5);
   patch::Log("smoothing: names over riders placed between steps");
@@ -444,6 +505,13 @@ void PartsFrameEnd(bool log) {
                g_nw[0], g_nw[1], g_nw[5], g_nw[2], g_nw[3], g_nw[4], static_cast<unsigned>(g_names.size()),
                SmoothMarginHits());
   }
+  if (g_dw[0]) {
+    patch::Log("smoothing: drop text: %u draws, %u blended; skipped: no previous %u, jumped %u", g_dw[0], g_dw[1],
+               g_dw[2], g_dw[3]);
+  }
+  for (unsigned& w : g_dw) w = 0;
+  g_drop_sample = false;
+  if (!on) g_drops.clear();
   for (unsigned& w : g_pw) w = 0;
   for (unsigned& w : g_nw) w = 0;
   g_max_turn = 0.0f;
