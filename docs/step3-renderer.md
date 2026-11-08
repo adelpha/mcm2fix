@@ -12,7 +12,7 @@ own implementation in `code/src/dd/`, which draws with Direct3D 11.
 | `directdraw.*` | `IDirectDraw7` and `IDirect3D7`. Display modes are virtual: `SetDisplayMode` only changes the size of the game's surfaces. |
 | `surface.*` | `IDirectDrawSurface7`, palette, clipper, gamma. Each surface has a CPU copy in the game's pixel format and a BGRA8 texture; whichever was written last is the newest, and copies only happen when the other side is needed. |
 | `device.*` | `IDirect3DDevice7` and vertex buffers: one uber-shader for the fixed-function pipeline (two texture stages, fog, alpha test, specular, colour key). |
-| `hook.cpp` | Installs the IAT hook and the two intro-video patches. |
+| `hook.cpp` | Installs the IAT hook. |
 
 ## Things worth knowing
 
