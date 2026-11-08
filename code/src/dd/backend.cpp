@@ -1,4 +1,5 @@
 #include "backend.h"
+#include "msaa.h"
 
 #include <d3dcompiler.h>
 #include <dxgi1_6.h>
@@ -82,6 +83,7 @@ void LogOnce(const char* fmt, ...) {
 }
 
 void GpuTexture::Reset() {
+  MsaaForget(tex);
   SafeRelease(srv);
   SafeRelease(rtv);
   SafeRelease(dsv);

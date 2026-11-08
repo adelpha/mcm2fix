@@ -12,6 +12,17 @@ struct Config {
   bool dd_stats = false;      // DDStats: log renderer activity every 2 seconds
   bool wide_fov = true;       // WideFov: wide modes show more to the sides instead of cropping
   int alpha_cut = 128;        // AlphaCut: alpha-tested blended pixels below this (0-255) are dropped
+  // Graphics options.
+  float fov = 0.0f;           // Fov: camera field of view in degrees at 4:3 (0 = game's own, 77)
+  int anisotropy = 16;        // Anisotropy: anisotropic filtering level (0/1 = off, up to 16)
+  int msaa = 4;               // Antialiasing: MSAA samples for 3D scenes (0/1 = off, 2, 4, 8)
+  float mip_bias = 0.0f;      // MipBias: texture mip level bias (negative = sharper at a distance)
+  float fog_scale = 1.0f;     // FogDistance: multiplies the game's fog distances
+  float view_distance = 1.0f; // ViewDistance: multiplies the game's view (far clip) distance
+  bool tree_always_near = false;  // TreeDetailDistance=0: trees always use their close-up version
+  float model_lod = 1.0f;     // ModelLod: detailed models are kept this many times further away
+  bool texture_replace = true;  // TextureReplace: load replacement textures from textures\ folder
+  bool texture_dump = false;    // TextureDump: save every texture the game uploads as PNG
 };
 
 const Config& GetConfig();

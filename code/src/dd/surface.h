@@ -112,11 +112,18 @@ class Surface : public IDirectDrawSurface7 {
 
   // Make the GPU copy current (uploading CPU changes) and return it.
   GpuTexture* Gpu();
+  // The same, for the device drawing 3D into it: leaves a multisampled
+  // copy of a render target as it is (see msaa.h).
+  GpuTexture* GpuForDraw();
   // The caller is about to draw into this surface on the GPU.
   void MarkGpuWritten();
   // Make the CPU copy current (reading back GPU changes).
   void SyncToCpu(const char* why = "other");
   void MarkCpuWritten();
+
+  // The texture to sample when drawing with this surface: its GPU copy,
+  // or a replacement picture (see texreplace.h).
+  ID3D11ShaderResourceView* SampleSrv();
 
   // Copy pixel data (all mip levels when both have them) for Device::Load.
   void CopyFrom(Surface* src, const POINT* dst_pt, const RECT* src_rect);
@@ -158,6 +165,9 @@ class Surface : public IDirectDrawSurface7 {
   IDirectDrawClipper* clipper_ = nullptr;
 
   GpuTexture gpu_;
+  GpuTexture replaced_;    // replacement picture, if one matches
+  uint64_t tex_hash_ = 0;  // hash of the last uploaded top level
+  void MatchReplacement(const uint8_t* bgra, UINT w, UINT h);
   enum Sync { kInSync, kCpuNewer, kGpuNewer } sync_ = kCpuNewer;
 
   // GetDC state.

@@ -22,6 +22,8 @@ constexpr uintptr_t kCameraUpdate = 0x42FD50;
 constexpr uintptr_t kCameraUpdateResume = 0x42FD56;
 const uint8_t kCameraUpdateEntry[] = {0x83, 0xEC, 0x48, 0x53, 0x8B, 0xD9};  // sub esp,48h; push ebx; mov ebx,ecx
 
+constexpr float kGameFov = 77.0f;  // the game's default camera field of view
+
 struct FovState {
   float base;     // the game's own (4:3) value
   float written;  // what we stored in its place
@@ -41,18 +43,26 @@ void __stdcall AdjustFov(uintptr_t cam) {
   if (w <= 0 || h <= 0) return;
   float& fov = *reinterpret_cast<float*>(cam + 0x16c);
   if (!(fov > 1.0f && fov < 179.0f)) return;
+  const Config& cfg = GetConfig();
   float base = fov;
+  bool fresh = true;
   auto it = g_fov.find(cam);
   if (it != g_fov.end()) {
     float delta = fov - it->second.written;
     if (delta == 0.0f) {
       base = it->second.base;
+      fresh = false;
     } else if (std::fabs(delta) <= 1.5f) {
       base = it->second.base + delta;  // zoom keys step our widened value
+      fresh = false;
     }
   }
+  // ini Fov replaces the game's default field of view on new cameras
+  // (the zoom keys still step from there).
+  if (fresh && cfg.fov > 0.0f && std::fabs(base - kGameFov) < 0.01f) base = cfg.fov;
   const float aspect = static_cast<float>(w) / static_cast<float>(h);
-  const float target = aspect > 4.0f / 3.0f + 0.01f ? Widen(base, aspect) : base;
+  const bool widen = cfg.wide_fov && aspect > 4.0f / 3.0f + 0.01f;
+  const float target = widen ? Widen(base, aspect) : base;
   fov = target;
   g_fov[cam] = {base, target};
 }
@@ -162,7 +172,7 @@ struct Thunk {
 }  // namespace
 
 void ApplyWidescreenFov() {
-  if (!GetConfig().wide_fov) return;
+  if (!GetConfig().wide_fov && GetConfig().fov <= 0.0f) return;
   if (!patch::Matches(kCameraUpdate, kCameraUpdateEntry, sizeof(kCameraUpdateEntry))) {
     patch::Log("widescreen fov: camera update code differs, not applied");
     return;
@@ -191,7 +201,9 @@ void ApplyWidescreenFov() {
   put({0xC3});                                        // ret
   FlushInstructionCache(GetCurrentProcess(), t, n);
   patch::Jump(kCameraUpdate, reinterpret_cast<uintptr_t>(t), sizeof(kCameraUpdateEntry));
-  patch::Log("widescreen fov: applied");
+  patch::Log("widescreen fov: applied (Fov %.1f, WideFov %d)", GetConfig().fov,
+             GetConfig().wide_fov ? 1 : 0);
+  if (!GetConfig().wide_fov) return;
 
   // Speedometer dial: AdjustOverlayRect(ecx) at the base layout's entry.
   if (!patch::Matches(kOverlayLayout, kOverlayLayoutEntry, sizeof(kOverlayLayoutEntry))) {

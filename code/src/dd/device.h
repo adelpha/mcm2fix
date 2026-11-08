@@ -156,7 +156,9 @@ class Device : public d3d7::IDirect3DDevice7 {
     const VertexBuffer* vb = nullptr;  // for ProcessVertices clip data
   };
   void Submit(const Draw& d);
-  bool BindTarget(bool& has_depth);
+  // Binds the render target (or its multisampled stand-in) and depth.
+  // `full_clear`: the caller will overwrite all of the colour buffer.
+  bool BindTarget(bool& has_depth, bool full_clear = false);
   void ApplyState(bool tl, bool depth_clip, bool has_depth);
   ID3D11BlendState* GetBlend();
   ID3D11DepthStencilState* GetDepth(bool has_depth);
@@ -166,6 +168,10 @@ class Device : public d3d7::IDirect3DDevice7 {
   UINT PushIndices(const void* data, UINT bytes);
 
   LONG refs_ = 1;
+  // What BindTarget bound.
+  ID3D11RenderTargetView* cur_rtv_ = nullptr;
+  ID3D11DepthStencilView* cur_dsv_ = nullptr;
+  bool cur_msaa_ = false;
   DirectDraw* dd_;
   Surface* rt_ = nullptr;
   GUID guid_;

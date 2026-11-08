@@ -4,7 +4,10 @@
 #include <cstring>
 #include <map>
 
+#include "../config.h"
 #include "directdraw.h"
+#include "msaa.h"
+#include "texreplace.h"
 
 namespace dd {
 
@@ -228,6 +231,7 @@ Surface::~Surface() {
   SafeRelease(palette_);
   SafeRelease(clipper_);
   gpu_.Reset();
+  replaced_.Reset();
   if (!root_ && dd_ && DirectDraw::Current() == dd_) dd_->ForgetSurface(this);
 }
 
@@ -360,6 +364,13 @@ void Surface::PaletteBGRA(uint8_t out[256][4]) const {
 // ------------------------------------------------------------ CPU/GPU sync
 
 GpuTexture* Surface::Gpu() {
+  // Whoever asks is about to read or write the texture outside 3D drawing:
+  // bring in what was drawn into its multisampled copy.
+  MsaaRelease(SyncOwner()->gpu_.tex);
+  return GpuForDraw();
+}
+
+GpuTexture* Surface::GpuForDraw() {
   Surface* o = SyncOwner();
   if (!o->gpu_.tex) {
     if (!Ready()) return &o->gpu_;
@@ -374,6 +385,7 @@ GpuTexture* Surface::Gpu() {
     }
   }
   if (o->sync_ == kCpuNewer) {
+    MsaaRelease(o->gpu_.tex);
     o->Upload();
     o->sync_ = kInSync;
   }
@@ -470,13 +482,39 @@ void Surface::Upload() {
         for (UINT x = 0; x < w; ++x) layout_.ToBGRA(ReadPx(src + x * bytes, layout_.bpp), dst + x * 4);
       }
     }
+    if (level == 0) MatchReplacement(bgra.data(), w, h);
     if (layout_.mask[3] && uploads_ < 4) BleedIntoTransparent(bgra.data(), w, h);
     B().ctx->UpdateSubresource(gpu_.tex, level, nullptr, bgra.data(), w * 4, 0);
   }
 }
 
+void Surface::MatchReplacement(const uint8_t* bgra, UINT w, UINT h) {
+  const Config& cfg = GetConfig();
+  const bool eligible = (cfg.texture_replace || cfg.texture_dump) &&
+                        (desc_.ddsCaps.dwCaps & DDSCAPS_TEXTURE) && !IsRenderTargetKind() &&
+                        uploads_ <= 3;  // not video or other streaming textures
+  if (!eligible) {
+    replaced_.Reset();
+    tex_hash_ = 0;
+    return;
+  }
+  const uint64_t hash = TextureHash(bgra, w, h);
+  if (hash == tex_hash_) return;
+  tex_hash_ = hash;
+  replaced_.Reset();
+  DumpTexture(hash, bgra, w, h);
+  LoadReplacement(hash, replaced_);
+}
+
+ID3D11ShaderResourceView* Surface::SampleSrv() {
+  GpuTexture* g = Gpu();
+  Surface* o = SyncOwner();
+  return o->replaced_.srv ? o->replaced_.srv : g->srv;
+}
+
 void Surface::Download() {
   if (!gpu_.tex || layout_.depth) return;
+  MsaaRelease(gpu_.tex);
   ++Counters().downloads;
   if (!mips_.empty()) LogOnce("reading back a mipmapped surface (top level only)");
   Backend& b = B();

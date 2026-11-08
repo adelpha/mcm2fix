@@ -17,6 +17,7 @@ add_library(mcm2fix SHARED
   src/fixes_registry.cpp
   src/fixes_files.cpp
   src/fixes_widescreen.cpp
+  src/fixes_detail.cpp
   src/diagnostics.cpp
   src/regtrace.cpp
   src/config.cpp
@@ -25,6 +26,8 @@ add_library(mcm2fix SHARED
   src/dd/directdraw.cpp
   src/dd/device.cpp
   src/dd/hook.cpp
+  src/dd/msaa.cpp
+  src/dd/texreplace.cpp
   src/video/avi.cpp
   src/video/adpcm.cpp
   src/video/audio_out.cpp
@@ -44,7 +47,7 @@ endif()
 
 set_target_properties(mcm2fix PROPERTIES PREFIX "" OUTPUT_NAME "mcm2fix")
 
-target_link_libraries(mcm2fix PRIVATE d3d11 dxgi dxguid gdi32 user32 winmm)
+target_link_libraries(mcm2fix PRIVATE d3d11 dxgi dxguid gdi32 user32 ole32 windowscodecs winmm)
 target_compile_definitions(mcm2fix PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 
 if(MSVC)

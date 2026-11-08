@@ -68,8 +68,30 @@ Files=1        ; send file writes to %LOCALAPPDATA%\Motocross Madness 2
 AlphaCut=128   ; trees and flags: drop pixels less opaque than this (0-255), which
                ; removes the fringe where trees hide flags behind them (0 = original look)
 WideFov=1      ; widescreen modes show more to the sides (0 = crop top and bottom like the original)
+Fov=0          ; field of view in degrees as a 4:3 screen shows it (0 = game default, 77);
+               ; the zoom keys still step from it, widescreen adds to the sides
+Anisotropy=16  ; anisotropic texture filtering, 0/1 = off, 2-16
+Antialiasing=4 ; multisample antialiasing of the 3D scene: 0/1 = off, 2, 4 or 8
+MipBias=0      ; texture sharpness at a distance: negative = sharper (e.g. -0.5), positive = softer
+ViewDistance=1 ; multiplies how far the game draws (far clip, culling and fog move together)
+FogDistance=1  ; multiplies the fog distances on top of that (2 = fog starts twice as far away)
+TreeDetailDistance=1 ; 0 = every tree uses its sparse close-up version at any distance (looks bad; for fun)
+ModelLod=1     ; detailed models stay this many times further away before switching to simpler ones
+TextureReplace=1 ; draw pictures from textures\<hash>.png in place of the game's textures
+TextureDump=0  ; save every texture the game loads to %LOCALAPPDATA%\Motocross Madness 2\textures_dump
 OneCore=0      ; 1 = pin the game to one CPU core (old stopgap)
 ActivateLog=0  ; debugging: log window activation
 RegLog=0       ; debugging: log every registry call
 DDStats=0      ; debugging: log renderer activity every 2 seconds
 ```
+
+## Texture replacements
+
+Set `TextureDump=1`, play, and every texture the game loads is saved once
+as `%LOCALAPPDATA%\Motocross Madness 2\textures_dump\<hash>.png` (the hash
+is 16 hex digits of the texture's size and pixels). Edit or upscale one,
+keep the file name (anything after the 16 digits and a `_` is ignored), and
+put it in `textures\` in the game folder or in
+`%LOCALAPPDATA%\Motocross Madness 2\textures\`. PNG, JPEG and BMP of any
+size work; mipmaps are generated on the GPU. Keep alpha where the original
+has it. Textures that change every frame (videos) are never replaced.

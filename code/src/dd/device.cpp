@@ -7,6 +7,7 @@
 
 #include "../config.h"
 #include "directdraw.h"
+#include "msaa.h"
 #include "surface.h"
 
 namespace dd {
@@ -694,17 +695,20 @@ HRESULT Device::GetRenderTarget(IDirectDrawSurface7** s) {
 
 HRESULT Device::Clear(DWORD count, D3DRECT* rects, DWORD flags, D3DCOLOR color, float z, DWORD) {
   DD_LOCK;
-  bool has_depth = false;
-  if (!BindTarget(has_depth)) return D3D_OK;
-  Backend& b = B();
-  GpuTexture* rt = rt_->Gpu();
-  GpuTexture* zt = has_depth ? rt_->ZBuffer()->Gpu() : nullptr;
-  bool clear_color = (flags & D3DCLEAR_TARGET) != 0;
-  bool clear_depth = (flags & D3DCLEAR_ZBUFFER) && zt && zt->dsv;
-  if (!clear_color && !clear_depth) return D3D_OK;
+  if (!rt_ || !Ready() || !g_pipe.ready) return D3D_OK;
   RECT vp{static_cast<LONG>(viewport_.dwX), static_cast<LONG>(viewport_.dwY),
           static_cast<LONG>(viewport_.dwX + viewport_.dwWidth),
           static_cast<LONG>(viewport_.dwY + viewport_.dwHeight)};
+  const bool whole = (!count || !rects) && vp.left <= 0 && vp.top <= 0 &&
+                     vp.right >= static_cast<LONG>(rt_->Width()) &&
+                     vp.bottom >= static_cast<LONG>(rt_->Height());
+  bool has_depth = false;
+  if (!BindTarget(has_depth, whole && (flags & D3DCLEAR_TARGET))) return D3D_OK;
+  Backend& b = B();
+  GpuTexture* rt = rt_->GpuForDraw();
+  bool clear_color = (flags & D3DCLEAR_TARGET) != 0;
+  bool clear_depth = (flags & D3DCLEAR_ZBUFFER) && has_depth && cur_dsv_;
+  if (!clear_color && !clear_depth) return D3D_OK;
   std::vector<RECT> list;
   if (!count || !rects) {
     list.push_back(vp);
@@ -721,8 +725,8 @@ HRESULT Device::Clear(DWORD count, D3DRECT* rects, DWORD flags, D3DCOLOR color, 
     bool full = r.left <= 0 && r.top <= 0 && r.right >= static_cast<LONG>(rt->width) &&
                 r.bottom >= static_cast<LONG>(rt->height);
     if (full) {
-      if (clear_color) b.ctx->ClearRenderTargetView(rt->rtv, rgba);
-      if (clear_depth) b.ctx->ClearDepthStencilView(zt->dsv, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, z, 0);
+      if (clear_color) b.ctx->ClearRenderTargetView(cur_rtv_, rgba);
+      if (clear_depth) b.ctx->ClearDepthStencilView(cur_dsv_, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, z, 0);
       continue;
     }
     ClearConstants cc{};
@@ -733,7 +737,7 @@ HRESULT Device::Clear(DWORD count, D3DRECT* rects, DWORD flags, D3DCOLOR color, 
     std::memcpy(cc.color, rgba, sizeof(rgba));
     cc.depth[0] = z;
     b.ctx->UpdateSubresource(g_pipe.clear_cb, 0, nullptr, &cc, 0, 0);
-    b.ctx->OMSetRenderTargets(1, &rt->rtv, clear_depth ? zt->dsv : nullptr);
+    b.ctx->OMSetRenderTargets(1, &cur_rtv_, clear_depth ? cur_dsv_ : nullptr);
     D3D11_VIEWPORT v{0, 0, static_cast<float>(rt->width), static_cast<float>(rt->height), 0, 1};
     b.ctx->RSSetViewports(1, &v);
     b.ctx->RSSetState(b.blit_raster);
@@ -746,7 +750,10 @@ HRESULT Device::Clear(DWORD count, D3DRECT* rects, DWORD flags, D3DCOLOR color, 
     b.ctx->PSSetShader(g_pipe.clear_ps, nullptr, 0);
     b.ctx->Draw(4, 0);
   }
-  if (clear_color) rt_->MarkGpuWritten();
+  if (clear_color) {
+    if (cur_msaa_) MsaaMarkDrawn();
+    rt_->MarkGpuWritten();
+  }
   return D3D_OK;
 }
 
@@ -755,7 +762,13 @@ HRESULT Device::SetTransform(DWORD type, D3DMATRIX* m) {
   switch (type) {
     case D3DTRANSFORMSTATE_WORLD: world_ = *m; break;
     case D3DTRANSFORMSTATE_VIEW: view_ = *m; break;
-    case D3DTRANSFORMSTATE_PROJECTION: proj_ = *m; break;
+    case D3DTRANSFORMSTATE_PROJECTION:
+      proj_ = *m;
+      if (m->m[2][3] != 0.0f && m->m[2][2] != 1.0f && m->m[2][2] != 0.0f) {
+        const float zn = -m->m[3][2] / m->m[2][2], zf = m->m[3][2] / (1.0f - m->m[2][2]);
+        LogOnce("projection near %.2f far %.0f", zn, zf);
+      }
+      break;
     default: LogOnce("SetTransform type %lu ignored", type); return D3D_OK;
   }
   wvp_dirty_ = true;
@@ -1100,9 +1113,9 @@ UINT Device::PushIndices(const void* data, UINT bytes) {
   return at;
 }
 
-bool Device::BindTarget(bool& has_depth) {
+bool Device::BindTarget(bool& has_depth, bool full_clear) {
   if (!rt_ || !Ready() || !g_pipe.ready) return false;
-  GpuTexture* rt = rt_->Gpu();
+  GpuTexture* rt = rt_->GpuForDraw();
   if (!rt->rtv) return false;
   ID3D11DepthStencilView* dsv = nullptr;
   if (Surface* z = rt_->ZBuffer()) {
@@ -1113,7 +1126,18 @@ bool Device::BindTarget(bool& has_depth) {
   // Never sample from the texture being drawn into.
   ID3D11ShaderResourceView* none[2] = {};
   B().ctx->PSSetShaderResources(0, 2, none);
-  B().ctx->OMSetRenderTargets(1, &rt->rtv, dsv);
+  // 3D scenes (targets with a depth buffer) are drawn multisampled.
+  MsaaViews mv;
+  cur_msaa_ = has_depth && MsaaAcquire(rt, mv, full_clear);
+  if (cur_msaa_) {
+    cur_rtv_ = mv.rtv;
+    cur_dsv_ = mv.dsv;
+  } else {
+    MsaaRelease(rt->tex);
+    cur_rtv_ = rt->rtv;
+    cur_dsv_ = dsv;
+  }
+  B().ctx->OMSetRenderTargets(1, &cur_rtv_, cur_dsv_);
   return true;
 }
 
@@ -1208,7 +1232,14 @@ ID3D11SamplerState* Device::GetSampler(int stage) {
   s.AddressV = AddressFor(av);
   s.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
   s.MaxAnisotropy = s.Filter == D3D11_FILTER_ANISOTROPIC ? 16 : 1;
-  s.MipLODBias = AsFloat(t[TSS_MIPMAPLODBIAS]);
+  // Anisotropic filtering (ini Anisotropy) for every texture the game
+  // filters smoothly; point-sampled ones (text, pixel art) stay as they are.
+  const Config& cfg = GetConfig();
+  if (cfg.anisotropy > 1 && min != 1) {
+    s.Filter = D3D11_FILTER_ANISOTROPIC;
+    s.MaxAnisotropy = static_cast<UINT>(cfg.anisotropy);
+  }
+  s.MipLODBias = AsFloat(t[TSS_MIPMAPLODBIAS]) + cfg.mip_bias;
   s.MinLOD = static_cast<float>(maxlevel);
   s.MaxLOD = mip == 1 ? static_cast<float>(maxlevel) : D3D11_FLOAT32_MAX;
   s.ComparisonFunc = D3D11_COMPARISON_NEVER;
@@ -1242,8 +1273,7 @@ void Device::ApplyState(bool tl, bool depth_clip, bool has_depth) {
       if (tex_[s] == rt_) {
         LogOnce("texture is the current render target; ignored");
       } else {
-        GpuTexture* g = tex_[s]->Gpu();
-        srv[s] = g->srv;
+        srv[s] = tex_[s]->SampleSrv();
         pc.scol[s][3] = srv[s] ? 1 : 0;
       }
     }
@@ -1258,10 +1288,15 @@ void Device::ApplyState(bool tl, bool depth_clip, bool has_depth) {
   pc.fogcolor[3] = 1;
   if (rs_[RS_FOGENABLE]) {
     DWORD mode = rs_[RS_FOGTABLEMODE] ? rs_[RS_FOGTABLEMODE] : rs_[RS_FOGVERTEXMODE];
-    pc.fog[0] = AsFloat(rs_[RS_FOGSTART]);
-    pc.fog[1] = AsFloat(rs_[RS_FOGEND]);
-    pc.fog[2] = AsFloat(rs_[RS_FOGDENSITY]);
+    // ini FogDistance pushes the fog out (or pulls it in).
+    const float scale = GetConfig().fog_scale;
+    pc.fog[0] = AsFloat(rs_[RS_FOGSTART]) * scale;
+    pc.fog[1] = AsFloat(rs_[RS_FOGEND]) * scale;
+    pc.fog[2] = AsFloat(rs_[RS_FOGDENSITY]) / scale;
     pc.fog[3] = static_cast<float>(mode & 3);
+    LogOnce("fog mode %lu/%lu start %.1f end %.1f density %.4f", rs_[RS_FOGTABLEMODE],
+            rs_[RS_FOGVERTEXMODE], AsFloat(rs_[RS_FOGSTART]), AsFloat(rs_[RS_FOGEND]),
+            AsFloat(rs_[RS_FOGDENSITY]));
   }
   pc.atest[0] = static_cast<float>(rs_[RS_ALPHAREF] & 0xff);
   pc.atest[1] = rs_[RS_ALPHATESTENABLE] ? static_cast<float>(rs_[RS_ALPHAFUNC]) : 8.0f;
@@ -1396,6 +1431,7 @@ void Device::Submit(const Draw& d) {
   } else {
     b.ctx->Draw(d.count, 0);
   }
+  if (cur_msaa_) MsaaMarkDrawn();
   rt_->MarkGpuWritten();
   ++Counters().draws;
 }
