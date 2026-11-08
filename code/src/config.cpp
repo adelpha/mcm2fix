@@ -34,7 +34,7 @@ void LoadConfig() {
   g_config.ai_steer_rate = GetPrivateProfileIntA("mcm2fix", "AiSteerRate", 0, ini);
   if (g_config.ai_steer_rate < 0) g_config.ai_steer_rate = 0;
   g_config.smooth_log = GetPrivateProfileIntA("mcm2fix", "SmoothLog", 0, ini);
-  g_config.sim_smooth = GetPrivateProfileIntA("mcm2fix", "SimSmooth", 0, ini) != 0;
+  g_config.sim_smooth = GetPrivateProfileIntA("mcm2fix", "SimSmooth", 1, ini) != 0;
   g_config.sim_rate = GetPrivateProfileIntA("mcm2fix", "SimRate", 30, ini);
   if (g_config.sim_rate < 0) g_config.sim_rate = 0;
   if (g_config.sim_rate > 0 && g_config.sim_rate < 10) g_config.sim_rate = 10;

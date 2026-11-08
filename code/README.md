@@ -70,8 +70,8 @@ AiRate=30      ; computer riders re-plan their line this many times a second (0 
 AiSteerRate=0  ; fastest a computer rider's front wheel can turn, degrees per second (0 = no limit)
 SimRate=30     ; races run this many simulation steps per second whatever the frame rate
                ; (0 = one step per frame, the original way; 10-1000)
-SimSmooth=0    ; experimental: draw objects and camera blended between simulation steps (smooth motion,
-               ; one step of delay); 0 = show each step as it is
+SimSmooth=1    ; draw the camera, bikes, riders, shadows and names blended between simulation steps
+               ; (smooth motion at any frame rate, one step of delay); 0 = show each step as it is
 OneCore=0      ; 1 = pin the game to one CPU core (old stopgap)
 ActivateLog=0  ; debugging: log window activation
 RegLog=0       ; debugging: log every registry call
