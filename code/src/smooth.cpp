@@ -33,6 +33,10 @@ struct Rec {
   bool has_prev = false;
 };
 
+// Largest distance a vertex (or the camera) may move in one step and still be
+// treated as the same thing moving (the game's units are about a foot; ~600 mph).
+constexpr float kMaxStepMove = 30.0f;
+
 std::unordered_map<uint64_t, Rec> g_recs;
 std::unordered_map<uint64_t, uint32_t> g_uses;  // draws so far this frame per source
 unsigned g_frames = 0;
@@ -50,7 +54,7 @@ float Len3(const float* v) { return std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] *
 // Blend two affine matrices: translation linearly, the three axes linearly and
 // then made square again with their blended lengths. False when the two are
 // too far apart to be one object moving for one step.
-bool Blend(const float* a, const float* b, float t, float* out) {
+bool Blend(const float* a, const float* b, float t, float* out, bool check_jump = true) {
   if (!Affine(a) || !Affine(b)) return false;
   float axes[3][3];
   float lens[3];
@@ -69,7 +73,7 @@ bool Blend(const float* a, const float* b, float t, float* out) {
   for (int c = 0; c < 3; ++c) d[c] = b[12 + c] - a[12 + c];
   const float jump = Len3(d);
   const float scale = (lens[0] + lens[1] + lens[2]) / 3.0f;
-  if (jump > 200.0f * scale) return false;
+  if (check_jump && jump > 200.0f * scale) return false;
   // Gram-Schmidt on the blended axes, keeping the first axis' direction.
   float* x = axes[0];
   float* y = axes[1];
@@ -116,7 +120,12 @@ bool BlendView(const float* a, const float* b, float t, float* out) {
   float ea[3], eb[3];
   ViewEye(a, ea);
   ViewEye(b, eb);
-  if (!Blend(a, b, t, out)) return false;
+  // A view's translation swings by hundreds of units when the camera only
+  // turns a little far from the world's origin, so check the camera's own
+  // move instead.
+  const float dx = eb[0] - ea[0], dy = eb[1] - ea[1], dz = eb[2] - ea[2];
+  if (dx * dx + dy * dy + dz * dz > kMaxStepMove * kMaxStepMove) return false;
+  if (!Blend(a, b, t, out, false)) return false;
   float eye[3];
   for (int c = 0; c < 3; ++c) eye[c] = ea[c] + (eb[c] - ea[c]) * t;
   for (int c = 0; c < 3; ++c) {
@@ -135,9 +144,6 @@ std::unordered_map<uint64_t, uint32_t> g_vuses;
 std::vector<uint8_t> g_vout;
 unsigned g_vtotal = 0, g_vblended = 0;
 
-// Largest distance a vertex may move in one step and still be treated as the
-// same object moving (the game's units are about a foot; ~600 mph).
-constexpr float kMaxStepMove = 30.0f;
 // Largest distance a vertex may move apart from the object's average move in
 // one step (turning, leaning, legs and arms) before the pair is taken to be
 // two different objects.
