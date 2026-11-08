@@ -67,6 +67,7 @@ PreciseTimer=1 ; the game's frame time from QueryPerformanceCounter instead of w
 FrameFix=1     ; steps the game applies once per frame scale with frame time (0 = original)
 RefRate=30     ; the frame rate those per-frame steps are treated as tuned for
 AiRate=30      ; computer riders re-plan their line this many times a second (0 = every frame)
+AiSteerRate=360 ; fastest a computer rider's front wheel can turn, degrees per second (0 = no limit)
 OneCore=0      ; 1 = pin the game to one CPU core (old stopgap)
 ActivateLog=0  ; debugging: log window activation
 RegLog=0       ; debugging: log every registry call

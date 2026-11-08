@@ -210,6 +210,95 @@ void PatchAiRate() {
   patch::Log("AI rate: planner runs at %d Hz per rider", GetConfig().ai_rate);
 }
 
+// ---------------------------------------------------------------- AI steering speed
+//
+// Computer riders do not use the controls. Inside the bike physics (0x40faa0)
+// their front wheel is pointed straight at the planner's target point every
+// step, clamped to 45 degrees, with no limit on how fast it swings, so it can
+// go from full left to full right in one frame. Two copies of that code end
+// at 0x41021c and 0x413571 with the target direction (x, y, z) at
+// [esp+30h] and the bike's heading at [esp+14h]; the rider's path struct
+// (unique per rider) is at [esp+998h]. We limit how fast the wheel angle
+// may change, AiSteerRate degrees per second.
+
+struct AiWheel {
+  float angle = 0.0f;  // wheel angle we let through last time, radians
+  float base = 0.0f;   // angle at the start of this tick
+  unsigned tick = 0;
+};
+std::map<uintptr_t, AiWheel> g_ai_wheel;
+unsigned g_tick = 0;     // counts game ticks
+float g_tick_dt = 0.0f;  // the game's (clamped) step for this tick
+
+void __stdcall LimitAiWheel(uintptr_t esp) {
+  const int rate = GetConfig().ai_steer_rate;
+  if (rate <= 0 || g_tick_dt <= 0.0f) return;
+  auto* target = reinterpret_cast<float*>(esp + 0x30);
+  const auto* heading = reinterpret_cast<const float*>(esp + 0x14);
+  const uintptr_t rider = *reinterpret_cast<uintptr_t*>(esp + 0x998);
+  float hx = heading[0], hz = heading[2];
+  float hl = std::sqrt(hx * hx + hz * hz);
+  float tl = std::sqrt(target[0] * target[0] + target[2] * target[2]);
+  if (hl < 1e-6f || tl < 1e-6f) return;
+  hx /= hl;
+  hz /= hl;
+  const float tx = target[0] / tl, tz = target[2] / tl;
+  const float want = std::atan2(hx * tz - hz * tx, hx * tx + hz * tz);
+  AiWheel& w = g_ai_wheel[rider];
+  if (w.tick != g_tick) {
+    if (g_tick - w.tick > 2) w.angle = want;  // new rider or after a pause
+    w.base = w.angle;
+    w.tick = g_tick;
+  }
+  const float max_step = rate * 3.14159265f / 180.0f * g_tick_dt;
+  float d = want - w.base;
+  if (d > max_step) d = max_step;
+  if (d < -max_step) d = -max_step;
+  w.angle = w.base + d;
+  const float c = std::cos(w.angle), sn = std::sin(w.angle);
+  target[0] = hx * c - hz * sn;
+  target[1] = 0.0f;
+  target[2] = hz * c + hx * sn;
+}
+
+void HookAiWheel(uintptr_t at, const uint8_t (&original)[8]) {
+  if (!patch::Matches(at, original, sizeof(original))) {
+    patch::Log("AI steering: code at %08x differs, not applied", static_cast<unsigned>(at));
+    return;
+  }
+  auto* t = static_cast<uint8_t*>(
+      VirtualAlloc(nullptr, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+  if (!t) return;
+  size_t n = 0;
+  const uint8_t head[] = {0x60, 0x8D, 0x44, 0x24, 0x20, 0x50, 0xE8};  // pushad; lea eax,[esp+20h]; push eax; call
+  std::memcpy(t, head, sizeof(head));
+  n = sizeof(head);
+  int32_t rel = static_cast<int32_t>(reinterpret_cast<uintptr_t>(&LimitAiWheel) -
+                                     (reinterpret_cast<uintptr_t>(t) + n + 4));
+  std::memcpy(t + n, &rel, 4);
+  n += 4;
+  t[n++] = 0x61;  // popad
+  std::memcpy(t + n, original, sizeof(original));  // the replaced instructions
+  n += sizeof(original);
+  t[n++] = 0x68;  // push resume
+  uint32_t resume = static_cast<uint32_t>(at + sizeof(original));
+  std::memcpy(t + n, &resume, 4);
+  n += 4;
+  t[n++] = 0xC3;  // ret
+  FlushInstructionCache(GetCurrentProcess(), t, n);
+  patch::Jump(at, reinterpret_cast<uintptr_t>(t), sizeof(original));
+}
+
+void PatchAiSteering() {
+  // fld dword [esp+30h] / mov ecx,[esp+38h]
+  const uint8_t first[8] = {0xD9, 0x44, 0x24, 0x30, 0x8B, 0x4C, 0x24, 0x38};
+  // fld dword [esp+30h] / mov eax,[esp+38h]
+  const uint8_t second[8] = {0xD9, 0x44, 0x24, 0x30, 0x8B, 0x44, 0x24, 0x38};
+  HookAiWheel(0x41021C, first);
+  HookAiWheel(0x413571, second);
+  patch::Log("AI steering: front wheel turns at most %d degrees/s", GetConfig().ai_steer_rate);
+}
+
 // ---------------------------------------------------------------- frame time
 
 using MsTimerFn = DWORD(__cdecl*)();
@@ -234,6 +323,8 @@ float __stdcall GameFrameTime(uintptr_t game) {
   if (!GetConfig().precise_timer) {
     dt = (now_ms - last_ms) * 0.001f;  // the game's own whole-millisecond step
   }
+  ++g_tick;
+  g_tick_dt = dt > 0.2f ? 0.2f : dt;
   UpdateFixValues(dt);
   return dt;
 }
@@ -321,9 +412,12 @@ void ApplyFramePacing() {
   g_ref_rate = static_cast<float>(c.ref_rate);
   if (c.frame_fix) PatchFixSites();
   if (c.ai_rate > 0) PatchAiRate();
-  if (c.precise_timer || c.frame_fix) PatchFrameTime();
-  patch::Log("frame pacing: VSync=%d FrameCap=%d PreciseTimer=%d FrameFix=%d RefRate=%d AiRate=%d",
-             c.vsync, c.frame_cap, c.precise_timer, c.frame_fix, c.ref_rate, c.ai_rate);
+  if (c.ai_steer_rate > 0) PatchAiSteering();
+  if (c.precise_timer || c.frame_fix || c.ai_steer_rate > 0) PatchFrameTime();
+  patch::Log("frame pacing: VSync=%d FrameCap=%d PreciseTimer=%d FrameFix=%d RefRate=%d AiRate=%d "
+             "AiSteerRate=%d",
+             c.vsync, c.frame_cap, c.precise_timer, c.frame_fix, c.ref_rate, c.ai_rate,
+             c.ai_steer_rate);
 }
 
 void WaitForFrameSlot() {
