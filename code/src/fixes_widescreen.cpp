@@ -57,7 +57,7 @@ void __stdcall AdjustFov(uintptr_t cam) {
   g_fov[cam] = {base, target};
 }
 
-// The speedometer (InstrumentOverlay, instr1.tga, vtable 0x55d990) is a
+// The speedometer (InstrumentOverlay, instr1.tga, vtable 0x55d914) is a
 // screen overlay laid out in 640x480 units, scaled by the view width and
 // height separately, so on a wide screen it is stretched sideways.
 //
@@ -71,7 +71,7 @@ void __stdcall AdjustFov(uintptr_t cam) {
 constexpr uintptr_t kOverlayLayout = 0x4BAAD0;
 constexpr uintptr_t kOverlayLayoutResume = 0x4BAAD5;
 const uint8_t kOverlayLayoutEntry[] = {0x83, 0xEC, 0x3C, 0x53, 0x56};  // sub esp,3ch; push ebx; push esi
-constexpr uintptr_t kInstrumentVtable = 0x55D990;
+constexpr uintptr_t kInstrumentVtable = 0x55D914;
 constexpr uintptr_t kInstrumentLayoutCall = 0x51E1AA;
 constexpr uintptr_t kInstrumentBuild = 0x51E2E0;
 
