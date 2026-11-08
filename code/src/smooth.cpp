@@ -275,7 +275,7 @@ const uint8_t* SmoothVertices(const uint8_t* verts, uint32_t stride, uint32_t co
                               const void* idx) {
   unsigned tick;
   float alpha;
-  if (!verts || stride < 12 || !count || !SimDrawPoint(&tick, &alpha)) return verts;
+  if (!verts || stride < 12 || !count || SmoothPartsDrawing() || !SimDrawPoint(&tick, &alpha)) return verts;
   // Same vertex memory, same index list, same size: same object (counted per frame,
   // since the game may reuse one scratch buffer for several objects).
   uint64_t source = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(verts));
@@ -436,6 +436,7 @@ void ProjectedShadowFrameEnd();
 
 void SmoothFrameEnd() {
   ProjectedShadowFrameEnd();
+  PartsFrameEnd(g_frames % 600 == 599);
   g_uses.clear();
   g_vuses.clear();
   g_luses.clear();

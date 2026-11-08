@@ -28,3 +28,15 @@ void InstallShadowSmoothing();
 
 // Move the riders' projected-shadow cameras between steps.
 void InstallProjectedShadowSmoothing();
+
+// Blend each bike/rider part's matrix between steps before the game builds
+// the object's vertices from it (smooth_parts.cpp).
+void InstallPartSmoothing();
+// True while the game draws an object whose parts were blended that way.
+bool SmoothPartsDrawing();
+
+// Blend the screen position of the names over riders between steps.
+void InstallNameSmoothing();
+
+// Frame end bookkeeping for smooth_parts.cpp; `log` every 600 frames.
+void PartsFrameEnd(bool log);

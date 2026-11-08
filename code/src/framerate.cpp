@@ -562,7 +562,8 @@ void ApplyFramePacing() {
   if (c.sim_rate > 0) {
     PatchFixedTick();  // replaces the whole tick, frame time included
     if (c.sim_smooth) {
-      InstallTextSmoothing();
+      InstallNameSmoothing();
+      InstallPartSmoothing();
       InstallShadowSmoothing();
       InstallProjectedShadowSmoothing();
     }

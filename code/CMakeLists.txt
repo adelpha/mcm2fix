@@ -22,6 +22,7 @@ add_library(mcm2fix SHARED
   src/config.cpp
   src/framerate.cpp
   src/smooth.cpp
+  src/smooth_parts.cpp
   src/dd/backend.cpp
   src/dd/surface.cpp
   src/dd/directdraw.cpp
