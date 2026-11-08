@@ -47,6 +47,8 @@ void LoadConfig() {
   g_config.fog_scale = fog >= 0.1f && fog <= 20.0f ? fog : 1.0f;
   float view = ReadFloat("ViewDistance", 1.0f, ini);
   g_config.view_distance = view >= 0.25f && view <= 10.0f ? view : 1.0f;
+  float tlod = ReadFloat("TextureLod", 0.0f, ini);
+  g_config.texture_lod = tlod >= -4.0f && tlod <= 9.0f ? tlod : 0.0f;
   float lod = ReadFloat("ModelLod", 1.0f, ini);
   g_config.model_lod = lod >= 0.25f && lod <= 10.0f ? lod : 1.0f;
   g_config.texture_replace = GetPrivateProfileIntA("mcm2fix", "TextureReplace", 1, ini) != 0;

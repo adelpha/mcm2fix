@@ -13,6 +13,12 @@
 // object pass (0x45c5ef) skips anything further away. ViewDistance scales
 // those as well.
 //
+// Texture detail: the game streams each texture at a resolution chosen from
+// how big it is on screen (0x444efe computes log2 of the wanted size and
+// passes it to 0x515f90, capped at 9 = 512 px); far objects such as trees
+// get small versions, which MipBias can't sharpen. TextureLod adds that
+// many levels to every request (1 = twice the resolution).
+//
 // Model LOD: each model picks a level by its projected size times
 // 1/factor (0x445d00, factor from the detail table at 0x57a548: 1.0 at the
 // best detail). ModelLod multiplies that, so a model keeps its detailed
@@ -21,6 +27,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <initializer_list>
 
 #include "config.h"
 #include "patch.h"
@@ -33,6 +40,42 @@ constexpr uintptr_t kFogStart = 0x4E3C2A;  // push 128.0f
 constexpr uintptr_t kLodScale = 0x445D00;  // fld dword [0x555748] (1.0f)
 
 float g_model_lod = 1.0f;
+float g_texture_lod = 0.0f;
+
+constexpr uintptr_t kTextureRequest = 0x515F90;
+constexpr uintptr_t kTextureRequestResume = 0x515F9A;
+const uint8_t kTextureRequestEntry[] = {0xD9, 0x44, 0x24, 0x04,                // fld [esp+4]
+                                        0xD8, 0x1D, 0x08, 0xD8, 0x55, 0x00};  // fcomp [0x55d808]
+
+void ApplyTextureLod(float levels) {
+  if (!patch::Matches(kTextureRequest, kTextureRequestEntry, sizeof(kTextureRequestEntry))) {
+    patch::Log("texture lod: code differs, not applied");
+    return;
+  }
+  g_texture_lod = levels;
+  auto* t = static_cast<uint8_t*>(
+      VirtualAlloc(nullptr, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+  if (!t) return;
+  size_t n = 0;
+  auto put = [&](std::initializer_list<uint8_t> b) {
+    for (uint8_t x : b) t[n++] = x;
+  };
+  auto put32 = [&](uint32_t v) {
+    std::memcpy(t + n, &v, 4);
+    n += 4;
+  };
+  put({0xD9, 0x44, 0x24, 0x04});  // fld [esp+4]
+  put({0xD8, 0x05});              // fadd [g_texture_lod]
+  put32(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&g_texture_lod)));
+  put({0xD9, 0x5C, 0x24, 0x04});  // fstp [esp+4]
+  for (uint8_t b : kTextureRequestEntry) put({b});
+  put({0x68});
+  put32(static_cast<uint32_t>(kTextureRequestResume));  // push resume
+  put({0xC3});                                          // ret
+  FlushInstructionCache(GetCurrentProcess(), t, n);
+  patch::Jump(kTextureRequest, reinterpret_cast<uintptr_t>(t), sizeof(kTextureRequestEntry));
+  patch::Log("texture lod +%.2f", levels);
+}
 
 constexpr uintptr_t kObjectTables[] = {0x5707E8, 0x5706A8};
 constexpr int kObjectRange[2][10] = {{256, 256, 320, 384, 448, 512, 576, 640, 768, 768},
@@ -77,6 +120,7 @@ void ApplyDetailFixes() {
     ScaleObjectRanges(c.view_distance);
     patch::Log("view distance x%.2f", c.view_distance);
   }
+  if (c.texture_lod != 0.0f) ApplyTextureLod(c.texture_lod);
   if (c.model_lod != 1.0f) {
     const uint8_t original[] = {0xD9, 0x05, 0x48, 0x57, 0x55, 0x00};  // fld dword [0x555748]
     if (!patch::Matches(kLodScale, original, sizeof(original))) {

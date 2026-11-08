@@ -19,6 +19,7 @@ struct Config {
   float mip_bias = 0.0f;      // MipBias: texture mip level bias (negative = sharper at a distance)
   float fog_scale = 1.0f;     // FogDistance: multiplies the game's fog distances
   float view_distance = 1.0f; // ViewDistance: multiplies the game's view (far clip) distance
+  float texture_lod = 0.0f;   // TextureLod: levels of extra resolution the game streams textures at
   float model_lod = 1.0f;     // ModelLod: detailed models are kept this many times further away
   bool texture_replace = true;  // TextureReplace: load replacement textures from textures\ folder
   bool texture_dump = false;    // TextureDump: save every texture the game uploads as PNG
