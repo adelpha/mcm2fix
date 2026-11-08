@@ -1,0 +1,292 @@
+// "Restart Race" from the pause menu (ExitDlg, ButMiddle -> BikeRace
+// restart at 0x421590). The game puts every bike back on the start grid:
+// it recomputes each grid slot with 0x422030 and stores the position at
+// bike+0x10c and the heading at bike+0x118, then sets bike+0x109 so the
+// bike applies it on its next update.
+//
+// Test build: RestartLog=1 logs what the grid code computes at race load
+// and at restart, and what the bikes look like on the frames after, so we
+// can see where the wrong positions and headings come from.
+#include <windows.h>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+
+#include "config.h"
+#include "patch.h"
+
+namespace {
+
+constexpr uintptr_t kGame = 0x5743AC;           // global game object pointer
+constexpr uintptr_t kRestart = 0x421590;        // BikeRace restart (this, a, b, c)
+constexpr uintptr_t kGridSlot = 0x422030;       // BikeRace grid slot (this, pos*, dir*, event, slot)
+constexpr uintptr_t kNextBike = 0x421420;       // BikeRace bike iterator (this, int* idx)
+constexpr uintptr_t kBikeRaceVtable = 0x555DDC;
+constexpr int kUpdateSlot = 10;
+
+const uint8_t kRestartEntry[] = {0x64, 0xA1, 0x00, 0x00, 0x00, 0x00};  // mov eax, fs:[0]
+const uint8_t kGridSlotEntry[] = {0x83, 0xEC, 0x6C, 0x53, 0x55};      // sub esp,6ch; push ebx; push ebp
+
+using RestartFn = void(__fastcall*)(uintptr_t self, void* edx, int a, int b, int c);
+using GridSlotFn = void(__fastcall*)(uintptr_t self, void* edx, float* pos, float* dir,
+                                     uintptr_t event, int slot);
+using NextBikeFn = uintptr_t(__fastcall*)(uintptr_t self, void* edx, int* idx);
+using UpdateFn = void(__fastcall*)(uintptr_t self, void* edx, int arg);
+
+RestartFn g_restart = nullptr;
+GridSlotFn g_grid_slot = nullptr;
+UpdateFn g_update = nullptr;
+
+uintptr_t g_race = 0;    // BikeRace being watched
+int g_frame = -1;        // frames since load/restart (-1 = not watching)
+const char* g_phase = "load";
+int g_grid_calls = 0;
+
+template <typename T>
+T Rd(uintptr_t a) {
+  T v{};
+  if (a && !IsBadReadPtr(reinterpret_cast<void*>(a), sizeof(T))) std::memcpy(&v, reinterpret_cast<void*>(a), sizeof(T));
+  return v;
+}
+
+uintptr_t Game() { return Rd<uintptr_t>(kGame); }
+
+void LogGameMode(const char* what) {
+  uintptr_t g = Game();
+  if (!g) return;
+  patch::Log("restart: %s mode2d70=%d mode2d74=%d players=%d ai=%d gates=%d/%d seed=%d ev55c=%08x "
+             "ev560=%08x ev568=%08x",
+             what, Rd<int>(g + 0x2d70), Rd<int>(g + 0x2d74), Rd<int>(g + 0x18), Rd<int>(g + 0x2d94),
+             Rd<uint8_t>(g + 0x2d9c), Rd<uint8_t>(g + 0x2d9d), Rd<int>(g + 0x2da0),
+             static_cast<unsigned>(Rd<uintptr_t>(g + 0x55c)),
+             static_cast<unsigned>(Rd<uintptr_t>(g + 0x560)),
+             static_cast<unsigned>(Rd<uintptr_t>(g + 0x568)));
+}
+
+void LogVec(char*& p, char* end, const char* name, uintptr_t a) {
+  int n = std::snprintf(p, end - p, " %s=(%.2f %.2f %.2f)", name, Rd<float>(a),
+                      Rd<float>(a + 4), Rd<float>(a + 8));
+  if (n > 0) p += (n < end - p) ? n : (end - p - 1);
+}
+
+void LogFloats(const char* tag, uintptr_t a, int from, int to) {
+  char buf[2048];
+  char* p = buf;
+  char* end = buf + sizeof(buf);
+  int n = std::snprintf(p, end - p, "restart:   %s %08x +%x:", tag, static_cast<unsigned>(a), from);
+  if (n > 0) p += (n < end - p) ? n : (end - p - 1);
+  for (int off = from; off < to && p < end - 16; off += 4) {
+    n = std::snprintf(p, end - p, " %.2f", Rd<float>(a + off));
+    if (n > 0) p += (n < end - p) ? n : (end - p - 1);
+  }
+  patch::Log("%s", buf);
+}
+
+void LogBikes(uintptr_t race, bool full) {
+  auto next = reinterpret_cast<NextBikeFn>(kNextBike);
+  int idx = 0;
+  for (int guard = 0; guard < 64; ++guard) {
+    int i = idx;
+    uintptr_t bike = next(race, nullptr, &idx);
+    if (!bike) break;
+    char buf[1024];
+    char* p = buf;
+    char* end = buf + sizeof(buf);
+    int n = std::snprintf(p, end - p, "restart:  bike%d %08x rst=%d", i,
+                        static_cast<unsigned>(bike), Rd<uint8_t>(bike + 0x109));
+    if (n > 0) p += (n < end - p) ? n : (end - p - 1);
+    LogVec(p, end, "pos", bike + 0x0c);
+    LogVec(p, end, "f88", bike + 0x88);
+    LogVec(p, end, "f94", bike + 0x94);
+    LogVec(p, end, "fa0", bike + 0xa0);
+    LogVec(p, end, "gpos", bike + 0x10c);
+    LogVec(p, end, "gdir", bike + 0x118);
+    patch::Log("%s", buf);
+    if (full) {
+      LogFloats("b", bike, 0x0c, 0x130);
+      uintptr_t phys = Rd<uintptr_t>(bike + 0x3bc);
+      if (phys) LogFloats("p", phys, 0x80, 0x140);
+    }
+  }
+}
+
+void __fastcall GridSlotHook(uintptr_t self, void*, float* pos, float* dir, uintptr_t event, int slot) {
+  uint8_t cached = Rd<uint8_t>(self + 0x188);
+  g_grid_slot(self, nullptr, pos, dir, event, slot);
+  static int s_slot0 = 0;
+  if (slot == 0 && ++s_slot0 > 3) return;  // the start camera asks every frame
+  if (++g_grid_calls > 400) return;
+  uintptr_t ret = 0;
+#if defined(_MSC_VER)
+  ret = reinterpret_cast<uintptr_t>(_ReturnAddress());
+#else
+  ret = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+#endif
+  char buf[512];
+  char* p = buf;
+  char* end = buf + sizeof(buf);
+  int n = std::snprintf(p, end - p, "restart: grid from %08x race=%08x ev=%08x slot=%d cached=%d",
+                      static_cast<unsigned>(ret), static_cast<unsigned>(self),
+                      static_cast<unsigned>(event), slot, cached);
+  if (n > 0) p += (n < end - p) ? n : (end - p - 1);
+  LogVec(p, end, "pos", reinterpret_cast<uintptr_t>(pos));
+  LogVec(p, end, "dir", reinterpret_cast<uintptr_t>(dir));
+  LogVec(p, end, "base", self + 0x164);
+  LogVec(p, end, "step", self + 0x170);
+  n = std::snprintf(p, end - p, " nbikes=%d", Rd<int>(self + 0x158));
+  if (n > 0) p += (n < end - p) ? n : (end - p - 1);
+  if (event) {
+    int wp = Rd<int>(event + 0xac);
+    n = std::snprintf(p, end - p, " ev.wp=%d", wp);
+    if (n > 0) p += (n < end - p) ? n : (end - p - 1);
+    if (wp >= 0 && wp < 36) {
+      LogVec(p, end, "rec.pos", event + 0xc0 + 24 * wp);
+      LogVec(p, end, "rec.dir", event + 0xcc + 24 * wp);
+    }
+  }
+  patch::Log("%s", buf);
+  if (g_frame < 0 || g_race != self) {
+    g_race = self;
+    g_frame = 0;
+    g_phase = "load";
+  }
+}
+
+// Vehicle "place" (vtable +0x84, Vehicle 0x52ca80, KrustyBike 0x48f0e0):
+// (pos*, forward*, up*, velocity*, keep_height, reset_arg). It resets the
+// bike, sets its forward and up vectors and position, and with keep_height
+// 0 settles it on the ground. This is what the restart is missing: the
+// bike's own reset only moves it to bike+0x10c and leaves it turned the way
+// it was when the race was paused.
+using PlaceFn = int(__fastcall*)(uintptr_t self, void* edx, const float* pos, const float* fwd,
+                                 const float* up, const float* vel, int keep_height, int reset_arg);
+constexpr int kPlaceSlot = 0x84 / 4;
+
+bool IsKnownPlace(uintptr_t fn) { return fn == 0x48F0E0 || fn == 0x407870 || fn == 0x52CA80; }
+
+void PlaceBikesOnGrid(uintptr_t race) {
+  auto next = reinterpret_cast<NextBikeFn>(kNextBike);
+  int idx = 0;
+  int placed = 0, skipped = 0;
+  for (int guard = 0; guard < 64; ++guard) {
+    uintptr_t bike = next(race, nullptr, &idx);
+    if (!bike) break;
+    uintptr_t vt = Rd<uintptr_t>(bike);
+    uintptr_t place = Rd<uintptr_t>(vt + 4 * kPlaceSlot);
+    if (!Rd<uint8_t>(bike + 0x109) || !IsKnownPlace(place)) {
+      ++skipped;
+      continue;
+    }
+    float pos[3], fwd[3];
+    std::memcpy(pos, reinterpret_cast<void*>(bike + 0x10c), sizeof(pos));
+    std::memcpy(fwd, reinterpret_cast<void*>(bike + 0x118), sizeof(fwd));
+    fwd[1] = 0.0f;
+    float len = std::sqrt(fwd[0] * fwd[0] + fwd[2] * fwd[2]);
+    if (!(len > 1e-4f)) {
+      ++skipped;
+      continue;
+    }
+    fwd[0] /= len;
+    fwd[2] /= len;
+    const float up[3] = {0.0f, 1.0f, 0.0f};
+    const float vel[3] = {0.0f, 0.0f, 0.0f};
+    reinterpret_cast<PlaceFn>(place)(bike, nullptr, pos, fwd, up, vel, 0, 0);
+    // Place settles the bike on the ground and clears the pending reset.
+    // Hand the settled spot back to the game's own reset (bike+0x109), which
+    // also resets the rider and the camera on the next update.
+    std::memcpy(reinterpret_cast<void*>(bike + 0x10c), reinterpret_cast<void*>(bike + 0x0c), 12);
+    *reinterpret_cast<uint8_t*>(bike + 0x109) = 1;
+    ++placed;
+  }
+  patch::Log("restart: placed %d bikes on the grid (%d skipped)", placed, skipped);
+}
+
+void __fastcall RestartHook(uintptr_t self, void*, int a, int b, int c) {
+  if (!GetConfig().restart_log) {
+    g_restart(self, nullptr, a, b, c);
+    if (GetConfig().restart_fix) PlaceBikesOnGrid(self);
+    return;
+  }
+  patch::Log("restart: Restart Race race=%08x args=%d,%d,%d nbikes=%d", static_cast<unsigned>(self), a, b,
+             c, Rd<int>(self + 0x158));
+  LogGameMode("before");
+  patch::Log("restart: bikes before restart");
+  LogBikes(self, true);
+  g_phase = "restart";
+  g_race = self;
+  g_frame = 0;
+  g_grid_calls = 0;
+  g_restart(self, nullptr, a, b, c);
+  patch::Log("restart: bikes right after restart");
+  LogBikes(self, true);
+  if (GetConfig().restart_fix) {
+    PlaceBikesOnGrid(self);
+    patch::Log("restart: bikes after placing them");
+    LogBikes(self, true);
+  }
+}
+
+void __fastcall UpdateHook(uintptr_t self, void*, int arg) {
+  bool watch = g_frame >= 0 && self == g_race;
+  int f = watch ? g_frame : -1;
+  if (watch && (f == 0 || f == 1 || f == 2 || f == 5 || f == 30)) {
+    patch::Log("restart: %s frame %d (before update)", g_phase, f);
+    if (f == 0) LogGameMode(g_phase);
+    LogBikes(self, f <= 1);
+  }
+  g_update(self, nullptr, arg);
+  if (watch && (f == 0 || f == 1 || f == 5 || f == 30 || f == 90 || f == 200)) {
+    patch::Log("restart: %s frame %d (after update)", g_phase, f);
+    LogBikes(self, f <= 1);
+  }
+  if (watch) {
+    if (++g_frame > 200) g_frame = -1;
+  }
+}
+
+// Copies the replaced entry bytes into an executable trampoline that jumps
+// back past them.
+void* MakeTrampoline(uintptr_t addr, const uint8_t* entry, size_t len) {
+  auto* t = static_cast<uint8_t*>(
+      VirtualAlloc(nullptr, 32, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+  if (!t) return nullptr;
+  std::memcpy(t, entry, len);
+  t[len] = 0xE9;
+  int32_t rel = static_cast<int32_t>((addr + len) - (reinterpret_cast<uintptr_t>(t) + len + 5));
+  std::memcpy(t + len + 1, &rel, 4);
+  FlushInstructionCache(GetCurrentProcess(), t, len + 5);
+  return t;
+}
+
+}  // namespace
+
+void ApplyRestartFixes() {
+  const Config& c = GetConfig();
+  if (!c.restart_fix && !c.restart_log) return;
+  if (!patch::Matches(kRestart, kRestartEntry, sizeof(kRestartEntry))) {
+    patch::Log("restart: code differs, not applied");
+    return;
+  }
+  g_restart = reinterpret_cast<RestartFn>(MakeTrampoline(kRestart, kRestartEntry, sizeof(kRestartEntry)));
+  if (!g_restart) return;
+  patch::Jump(kRestart, reinterpret_cast<uintptr_t>(&RestartHook), sizeof(kRestartEntry));
+  patch::Log("restart: Restart Race fix %s", c.restart_fix ? "applied" : "off");
+  if (!c.restart_log) return;
+
+  uintptr_t slot = kBikeRaceVtable + 4 * kUpdateSlot;
+  if (!patch::Matches(kGridSlot, kGridSlotEntry, sizeof(kGridSlotEntry)) || Rd<uintptr_t>(slot) != 0x41E0B0) {
+    patch::Log("restart: grid code differs, logging not applied");
+    return;
+  }
+  g_grid_slot = reinterpret_cast<GridSlotFn>(MakeTrampoline(kGridSlot, kGridSlotEntry, sizeof(kGridSlotEntry)));
+  if (!g_grid_slot) return;
+  g_update = reinterpret_cast<UpdateFn>(Rd<uintptr_t>(slot));
+  patch::Jump(kGridSlot, reinterpret_cast<uintptr_t>(&GridSlotHook), sizeof(kGridSlotEntry));
+  uintptr_t hook = reinterpret_cast<uintptr_t>(&UpdateHook);
+  patch::Write(slot, &hook, sizeof(hook));
+  patch::Log("restart: logging applied");
+}

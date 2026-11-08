@@ -23,8 +23,11 @@ What it does:
 - Frame pacing (`src/framerate.cpp`): VSync and frame-cap settings, a precise
   frame timer, and frame-rate independence for the few simulation, rider
   animation and camera steps that the game applied once per frame.
-- Intro videos still play through Windows' DirectShow (amstream) and the
-  Indeo codec; `src/dd/hook.cpp` makes that path work with the new renderer.
+- Videos (intro, credits, menu event previews; Indeo 5 with MS ADPCM sound)
+  play through mcm2fix's own player (`src/video/`): the AVI is read and
+  decoded with FFmpeg's Indeo 5 decoder, sound goes through waveOut, and no
+  DirectShow or Indeo codec is needed. A build without FFmpeg falls back to
+  the game's DirectShow path (`src/dd/hook.cpp` keeps that working).
 
 The log is `%LOCALAPPDATA%\Motocross Madness 2\mcm2fix.log`.
 
@@ -37,10 +40,17 @@ Visual Studio:
     cmake -S code -B build -A Win32
     cmake --build build --config Release
 
-MinGW cross-compile (Linux):
+MinGW cross-compile (Linux), with the video decoder:
 
-    cmake -S code -B build -DCMAKE_TOOLCHAIN_FILE=code/toolchain-mingw32.cmake -DCMAKE_BUILD_TYPE=Release
+    tools/build-ffmpeg.sh ffmpeg-work
+    cmake -S code -B build -DCMAKE_TOOLCHAIN_FILE=code/toolchain-mingw32.cmake -DCMAKE_BUILD_TYPE=Release -DMCM2FIX_FFMPEG=$PWD/ffmpeg-work/install
     cmake --build build
+
+`tools/build-ffmpeg.sh` builds a static libavcodec with only the Indeo 5
+decoder. FFmpeg is licensed under the LGPL 2.1 or later; its source is the
+tagged FFmpeg release the script downloads, and mcm2fix's own source is
+here, so the DLL can be rebuilt against a modified FFmpeg. Without
+`MCM2FIX_FFMPEG` (e.g. the Visual Studio build) the videos use DirectShow.
 
 ## Installing
 
@@ -72,8 +82,36 @@ SimRate=30     ; races run this many simulation steps per second whatever the fr
                ; (0 = one step per frame, the original way; 10-1000)
 SimSmooth=1    ; draw the camera, bikes, riders, shadows and names blended between simulation steps
                ; (smooth motion at any frame rate, one step of delay); 0 = show each step as it is
+Fov=0          ; field of view in degrees as a 4:3 screen shows it (0 = game default, 77);
+               ; the zoom keys still step from it, widescreen adds to the sides
+Anisotropy=16  ; anisotropic texture filtering, 0/1 = off, 2-16
+Antialiasing=4 ; multisample antialiasing of the 3D scene: 0/1 = off, 2, 4 or 8
+MipBias=0      ; texture sharpness at a distance: negative = sharper (e.g. -0.5), positive = softer
+ViewDistance=1 ; multiplies how far the game draws (far clip, culling and fog move together)
+FogDistance=1  ; multiplies the fog distances on top of that (2 = fog starts twice as far away)
+TreeDetailDistance=1 ; 0 = every tree uses its sparse close-up version at any distance (looks bad; for fun)
+ModelLod=1     ; detailed models stay this many times further away before switching to simpler ones
+TextureReplace=1 ; draw pictures from textures\<hash>.png in place of the game's textures
+TextureDump=0  ; save every texture the game loads to %LOCALAPPDATA%\Motocross Madness 2\textures_dump
+ArrowFix=1     ; race direction arrow points the right way (0 = original, leans toward the screen centre)
+ArrowTurn=0.8  ; how much of that correction to apply (1.0 = full; lower if the arrow points left of a gate dead ahead)
+ArrowTilt=10   ; degrees the arrow's nose is raised so it is seen a little from above (0 = level)
+ArrowScale=2.0 ; size of the race direction arrow (1.0 = original)
+RestartFix=1   ; Restart Race puts every rider back on the grid facing the course (0 = original bug)
 OneCore=0      ; 1 = pin the game to one CPU core (old stopgap)
 ActivateLog=0  ; debugging: log window activation
 RegLog=0       ; debugging: log every registry call
 DDStats=0      ; debugging: log renderer activity every 2 seconds
+RestartLog=0   ; debugging: log the start grid at race load and on Restart Race
 ```
+
+## Texture replacements
+
+Set `TextureDump=1`, play, and every texture the game loads is saved once
+as `%LOCALAPPDATA%\Motocross Madness 2\textures_dump\<hash>.png` (the hash
+is 16 hex digits of the texture's size and pixels). Edit or upscale one,
+keep the file name (anything after the 16 digits and a `_` is ignored), and
+put it in `textures\` in the game folder or in
+`%LOCALAPPDATA%\Motocross Madness 2\textures\`. PNG, JPEG and BMP of any
+size work; mipmaps are generated on the GPU. Keep alpha where the original
+has it. Textures that change every frame (videos) are never replaced.

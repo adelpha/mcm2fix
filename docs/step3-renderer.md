@@ -37,6 +37,4 @@ own implementation in `code/src/dd/`, which draws with Direct3D 11.
 
 ## Later
 
-- Decode the Indeo videos ourselves and drop DirectShow, amstream, the system
-  DirectDraw and the Indeo codec (Windows 11 does not ship it).
 - Draw text on the GPU instead of through GDI.
