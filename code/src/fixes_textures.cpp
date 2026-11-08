@@ -40,6 +40,10 @@ constexpr uintptr_t kChosenResume = 0x4CB190;
 const uint8_t kChosenCode[] = {0x8D, 0x94, 0x24, 0xA4, 0x00, 0x00, 0x00,  // lea edx,[esp+0A4h]
                                0x89, 0x45, 0x20};                         // mov [ebp+20h],eax
 
+constexpr uintptr_t kFromList = 0x4CB030;
+const uint8_t kFromListEntry[] = {0x53,                     // push ebx
+                                  0x8B, 0x5C, 0x24, 0x10};  // mov ebx,[esp+10h]
+
 constexpr int kPal8 = 0x8, kRgb555 = 0x22b, kRgb565 = 0x235, kRgb888 = 0x378, kArgb1555 = 0x613,
               kArgb4444 = 0x115c, kArgb8888 = 0x22b8;
 
@@ -121,6 +125,8 @@ int __stdcall OnFormatChosen(int id, uintptr_t tex, uintptr_t esp) {
   // made the game write 24-bit pixels into a 16-bit buffer (truecolor2
   // crashed on the mouse cursor). Leave them alone.
   const bool display_format = (a[9] & 4) != 0;
+  // The upgrade itself happens in OnCreateFromList (0x4cb030); here we only
+  // log what the loader asked for and what it will try first.
   const int out = GetConfig().true_color_textures && !display_format ? Upgrade(id) : id;
   ++g_count;
   ++g_pairs[{id, out}];
@@ -133,7 +139,35 @@ int __stdcall OnFormatChosen(int id, uintptr_t tex, uintptr_t esp) {
     patch::Log("textures: %u created so far", g_count);
     Summary();
   }
-  return out;
+  return id;
+}
+
+// 0x4cb030 (thiscall, ret 0Ch): tex->CreateFromList(desc, flags, list):
+// tries each format id of the 0-terminated list in turn (sets tex+20h,
+// fills desc's pixel format when desc asks for one, checks the device
+// supports it, creates the surface, counts its memory). Both of the
+// loader's paths (plain and mipmapped) go through it, so this is where we
+// put the true-colour format in front of the game's own list. Surfaces
+// created without a pixel format are in the display format and keep the
+// game's list.
+uint32_t g_list[8];
+unsigned g_list_log = 0;
+const uint32_t* __stdcall OnCreateFromList(uintptr_t tex, const DDSURFACEDESC2* desc,
+                                           const uint32_t* list) {
+  if (!GetConfig().true_color_textures || !desc || !list || !list[0]) return list;
+  if (!(desc->dwFlags & DDSD_PIXELFORMAT)) return list;
+  const int up = Upgrade(static_cast<int>(list[0]));
+  if (up == static_cast<int>(list[0])) return list;
+  size_t n = 0;
+  g_list[n++] = static_cast<uint32_t>(up);
+  for (size_t i = 0; list[i] && n < 7; ++i) g_list[n++] = list[i];
+  g_list[n] = 0;
+  if (GetConfig().texture_log && ++g_list_log <= kDetailed)
+    patch::Log("texture %08x: %lux%lu caps %08lx: trying %s before the game's %s%s%s",
+               static_cast<unsigned>(tex), desc->dwWidth, desc->dwHeight, desc->ddsCaps.dwCaps,
+               Name(up), Name(static_cast<int>(list[0])), list[1] ? "/" : "",
+               list[1] ? Name(static_cast<int>(list[1])) : "");
+  return g_list;
 }
 
 }  // namespace
@@ -183,7 +217,34 @@ void ApplyTextureFixes() {
   put({0xC3});                                  // ret
   FlushInstructionCache(GetCurrentProcess(), t, n);
   patch::Jump(kChosen, reinterpret_cast<uintptr_t>(t), 7);
-  patch::Log("textures: format hook applied at %08x", static_cast<unsigned>(kChosen));
+  patch::Log("textures: format log hook applied at %08x", static_cast<unsigned>(kChosen));
+
+  if (!c.true_color_textures) return;
+  if (!patch::Matches(kFromList, kFromListEntry, sizeof(kFromListEntry))) {
+    patch::Log("textures: create-from-list code differs, true colour not applied");
+    return;
+  }
+  auto* u = static_cast<uint8_t*>(
+      VirtualAlloc(nullptr, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+  if (!u) return;
+  n = 0;
+  t = u;
+  put({0x60});                    // pushad
+  put({0xFF, 0x74, 0x24, 0x2C});  // push [esp+2Ch]  (list: arg 3)
+  put({0xFF, 0x74, 0x24, 0x28});  // push [esp+28h]  (desc: arg 1)
+  put({0x51});                    // push ecx        (texture object)
+  put({0xB8});
+  put32(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&OnCreateFromList)));  // mov eax, fn
+  put({0xFF, 0xD0});              // call eax
+  put({0x89, 0x44, 0x24, 0x2C});  // mov [esp+2Ch],eax (replace arg 3)
+  put({0x61});                    // popad
+  for (uint8_t b : kFromListEntry) put({b});  // push ebx; mov ebx,[esp+10h]
+  put({0x68});
+  put32(static_cast<uint32_t>(kFromList + sizeof(kFromListEntry)));  // push 0x4cb035
+  put({0xC3});                                                       // ret
+  FlushInstructionCache(GetCurrentProcess(), t, n);
+  patch::Jump(kFromList, reinterpret_cast<uintptr_t>(t), sizeof(kFromListEntry));
+  patch::Log("textures: true-colour list hook applied at %08x", static_cast<unsigned>(kFromList));
 }
 
 void LogTextureSummary() {
