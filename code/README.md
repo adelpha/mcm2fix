@@ -79,6 +79,7 @@ TreeDetailDistance=1 ; 0 = every tree uses its sparse close-up version at any di
 ModelLod=1     ; detailed models stay this many times further away before switching to simpler ones
 TextureReplace=1 ; draw pictures from textures\<hash>.png in place of the game's textures
 TextureDump=0  ; save every texture the game loads to %LOCALAPPDATA%\Motocross Madness 2\textures_dump
+TrueColorTextures=1 ; load textures in full colour (24-bit, 32-bit with alpha) instead of the game's 16-bit
 ArrowFix=1     ; race direction arrow points the right way (0 = original, leans toward the screen centre)
 ArrowTurn=0.8  ; how much of that correction to apply (1.0 = full; lower if the arrow points left of a gate dead ahead)
 ArrowTilt=10   ; degrees the arrow's nose is raised so it is seen a little from above (0 = level)
@@ -89,7 +90,22 @@ ActivateLog=0  ; debugging: log window activation
 RegLog=0       ; debugging: log every registry call
 DDStats=0      ; debugging: log renderer activity every 2 seconds
 RestartLog=0   ; debugging: log the start grid at race load and on Restart Race
+TextureLog=1   ; debugging: log the format of each texture the game creates
 ```
+
+## True-colour textures
+
+The game converts every picture it loads into a texture format of its own
+choosing, and it always picked a 16-bit one: 4444 (16 levels per channel)
+for pictures with alpha such as trees, smoke and the HUD, and 555/565 for
+the rest, including the 8-bit paletted terrain. It also describes its own
+32-bit format wrongly (as 24 bits per pixel), so no driver ever matched it.
+`TrueColorTextures=1` fixes that description (0x5170A0), offers 24-bit and
+32-bit texture formats, and upgrades the loader's choice (0x4CB189):
+4444/1555 become 32-bit ARGB, 565/555/paletted become 24-bit RGB. The
+game's own converter (Pixtrans) handles every pair of these formats.
+Texture hashes change with it, so replacements dumped with it off need
+dumping again.
 
 ## Texture replacements
 

@@ -18,6 +18,8 @@ void ApplyWidescreenFov();
 void ApplyDetailFixes();
 void ApplyArrowFix();
 void ApplyRestartFixes();
+void ApplyTextureFixes();
+void LogTextureSummary();
 
 namespace {
 
@@ -59,11 +61,14 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
       ApplyDetailFixes();
       ApplyArrowFix();
       ApplyRestartFixes();
+      ApplyTextureFixes();
       video::ApplyVideoPlayer();
       if (c.activate_log) ApplyDiagnostics();
     } else {
       patch::Log("not the supported Mcm2.exe; no fixes applied");
     }
+  } else if (reason == DLL_PROCESS_DETACH) {
+    LogTextureSummary();
   }
   return TRUE;
 }

@@ -250,6 +250,16 @@ HRESULT Surface::Create(DirectDraw* dd, const DDSURFACEDESC2& in, Surface** out)
     desc.ddsCaps.dwCaps |= DDSCAPS_VIDEOMEMORY | DDSCAPS_LOCALVIDMEM;
   }
   Surface* root = new Surface(dd, desc, nullptr);
+  if ((caps & DDSCAPS_TEXTURE) && GetConfig().texture_log) {
+    // TextureLog: the first few texture surfaces of each depth.
+    static unsigned per_bpp[5] = {};
+    const UINT bpp = root->layout_.bpp;
+    const UINT slot = bpp == 8 ? 0 : bpp == 16 ? 1 : bpp == 24 ? 2 : bpp == 32 ? 3 : 4;
+    if (++per_bpp[slot] <= 5)
+      Log("texture surface %lux%lu %u bpp masks %08lx/%08lx/%08lx/%08lx caps %08lx (#%u at this depth)",
+          root->desc_.dwWidth, root->desc_.dwHeight, bpp, root->layout_.mask[0], root->layout_.mask[1],
+          root->layout_.mask[2], root->layout_.mask[3], caps, per_bpp[slot]);
+  }
 
   if ((caps & DDSCAPS_FLIP) && (desc.dwFlags & DDSD_BACKBUFFERCOUNT) && desc.dwBackBufferCount) {
     DDSURFACEDESC2 bd = root->desc_;

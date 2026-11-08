@@ -653,14 +653,24 @@ HRESULT Device::GetCaps(D3DDEVICEDESC7* desc) {
 
 HRESULT Device::EnumTextureFormats(LPD3DENUMPIXELFORMATSCALLBACK cb, void* ctx) {
   if (!cb) return DDERR_INVALIDPARAMS;
+  // TrueColorTextures adds 24-bit RGB and 32-bit ARGB (the game's ids 0x378
+  // and 0x22b8, see fixes_textures.cpp). Every format ends up as BGRA8 on
+  // the GPU; these only decide how much colour the game keeps when it
+  // converts its pictures.
+  const bool true_color = GetConfig().true_color_textures;
   DDPIXELFORMAT formats[] = {
       MakeRGBFormat(16, 0xf800, 0x07e0, 0x001f, 0),
       MakeRGBFormat(16, 0x7c00, 0x03e0, 0x001f, 0),
       MakeRGBFormat(16, 0x7c00, 0x03e0, 0x001f, 0x8000),
       MakeRGBFormat(16, 0x0f00, 0x00f0, 0x000f, 0xf000),
+      MakeRGBFormat(24, 0xff0000, 0x00ff00, 0x0000ff, 0),
+      MakeRGBFormat(32, 0xff0000, 0x00ff00, 0x0000ff, 0xff000000),
   };
-  for (DDPIXELFORMAT& f : formats)
-    if (cb(&f, ctx) == D3DENUMRET_CANCEL) break;
+  const size_t count = true_color ? 6 : 4;
+  LogOnce("EnumTextureFormats: offering %u formats (TrueColorTextures=%d)",
+          static_cast<unsigned>(count), true_color ? 1 : 0);
+  for (size_t i = 0; i < count; ++i)
+    if (cb(&formats[i], ctx) == D3DENUMRET_CANCEL) break;
   return D3D_OK;
 }
 
