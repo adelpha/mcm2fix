@@ -786,25 +786,7 @@ const float* Device::Wvp() {
   if (wvp_dirty_) {
     float wv[16];
     MatMul(&world_.m[0][0], &view_.m[0][0], wv);
-    D3DMATRIX proj = proj_;
-    // Some overlays (the speedometer) use a camera that assumes a 4:3
-    // screen: its projection has y/x scale = 4/3 while the viewport is wider,
-    // so they come out stretched sideways. Narrow x back to the real aspect
-    // and keep the object against the screen edge it sits on.
-    const float aspect =
-        viewport_.dwHeight ? static_cast<float>(viewport_.dwWidth) / viewport_.dwHeight : 0;
-    if (GetConfig().wide_fov && aspect > 4.0f / 3.0f + 0.01f && proj.m[2][3] != 0 &&
-        proj.m[3][3] == 0 && proj.m[0][0] != 0 &&
-        std::fabs(proj.m[1][1] / proj.m[0][0] - 4.0f / 3.0f) < 0.01f) {
-      const float k = (4.0f / 3.0f) / aspect;
-      // Which side of the screen is the object on? (view-space origin)
-      const float cx = wv[12] * proj.m[0][0] + wv[13] * proj.m[1][0] + wv[14] * proj.m[2][0] + proj.m[3][0];
-      const float cw = wv[12] * proj.m[0][3] + wv[13] * proj.m[1][3] + wv[14] * proj.m[2][3] + proj.m[3][3];
-      const float side = (cw != 0 && cx / cw < 0) ? -1.0f : 1.0f;
-      for (int r = 0; r < 4; ++r) proj.m[r][0] = k * proj.m[r][0] + side * (1 - k) * proj.m[r][3];
-      LogOnce("4:3 camera in a %.2f:1 view: narrowed (speedometer-style overlay)", aspect);
-    }
-    MatMul(wv, &proj.m[0][0], wvp_);
+    MatMul(wv, &proj_.m[0][0], wvp_);
     wvp_dirty_ = false;
   }
   return wvp_;

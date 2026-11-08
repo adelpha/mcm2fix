@@ -57,6 +57,40 @@ void __stdcall AdjustFov(uintptr_t cam) {
   g_fov[cam] = {base, target};
 }
 
+// The speedometer (InstrumentOverlay, instr1.tga) lays itself out in
+// 640x480 units scaled by the view width and height separately (0x51e06b),
+// so on a wide screen it is stretched sideways. Right after the layout
+// (call at 0x51e1aa) we narrow its rectangle and needle length back to a
+// 4:3 shape, keeping it the same distance from its screen edge.
+constexpr uintptr_t kInstrumentLayoutCall = 0x51E1AA;
+constexpr uintptr_t kInstrumentBuild = 0x51E2E0;
+
+void __stdcall AdjustInstrument(uintptr_t inst) {
+  uintptr_t owner = *reinterpret_cast<uintptr_t*>(inst + 0x18);
+  if (!owner) return;
+  uintptr_t cam = *reinterpret_cast<uintptr_t*>(owner + 8);
+  if (!cam) return;
+  const int vx = *reinterpret_cast<int*>(cam + 0x1a0);
+  const int w = *reinterpret_cast<int*>(cam + 0x1a8);
+  const int h = *reinterpret_cast<int*>(cam + 0x1ac);
+  if (w <= 0 || h <= 0 || w * 3 <= h * 4 + 4) return;
+  const float s = (h * 4.0f / 3.0f) / w;
+  int& left = *reinterpret_cast<int*>(inst + 0x11c);
+  int& right = *reinterpret_cast<int*>(inst + 0x124);
+  float& needle = *reinterpret_cast<float*>(inst + 0x12c);
+  const int width = static_cast<int>((right - left) * s + 0.5f);
+  if (left + right > 2 * vx + w) {  // right half: keep the right margin (scaled)
+    const int margin = vx + w - right;
+    right = vx + w - static_cast<int>(margin * s + 0.5f);
+    left = right - width;
+  } else {
+    const int margin = left - vx;
+    left = vx + static_cast<int>(margin * s + 0.5f);
+    right = left + width;
+  }
+  needle *= s;
+}
+
 }  // namespace
 
 void ApplyWidescreenFov() {
@@ -90,4 +124,34 @@ void ApplyWidescreenFov() {
   FlushInstructionCache(GetCurrentProcess(), t, n);
   patch::Jump(kCameraUpdate, reinterpret_cast<uintptr_t>(t), sizeof(kCameraUpdateEntry));
   patch::Log("widescreen fov: applied");
+
+  // Speedometer: call our adjustment, then the original layout builder.
+  const uint8_t call_build[] = {0xE8, 0x31, 0x01, 0x00, 0x00};  // call 0x51e2e0
+  if (!patch::Matches(kInstrumentLayoutCall, call_build, sizeof(call_build))) {
+    patch::Log("widescreen speedometer: code differs, not applied");
+    return;
+  }
+  auto* u = static_cast<uint8_t*>(
+      VirtualAlloc(nullptr, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+  if (!u) return;
+  size_t m = 0;
+  auto emit = [&](std::initializer_list<uint8_t> b) {
+    for (uint8_t x : b) u[m++] = x;
+  };
+  auto emit32 = [&](uint32_t v) {
+    std::memcpy(u + m, &v, 4);
+    m += 4;
+  };
+  emit({0x60});        // pushad
+  emit({0x56});        // push esi (the overlay)
+  emit({0xB8});
+  emit32(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&AdjustInstrument)));
+  emit({0xFF, 0xD0});  // call eax
+  emit({0x61});        // popad
+  emit({0x68});
+  emit32(static_cast<uint32_t>(kInstrumentBuild));  // push 0x51e2e0
+  emit({0xC3});                                     // ret (= jmp, caller's return address stays)
+  FlushInstructionCache(GetCurrentProcess(), u, m);
+  patch::Call(kInstrumentLayoutCall, u, sizeof(call_build));
+  patch::Log("widescreen speedometer: applied");
 }
