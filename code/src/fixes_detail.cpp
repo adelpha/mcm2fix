@@ -7,6 +7,12 @@
 // frustum culling) and the fog both come from it. ViewDistance scales those
 // three numbers where the object is created.
 //
+// Objects (trees, fences, buildings) have their own draw distance per
+// detail level: the int at +0xc of each 32-byte row of the tables at
+// 0x5707e8 (hardware) and 0x5706a8 (software), 768 at the best level. The
+// object pass (0x45c5ef) skips anything further away. ViewDistance scales
+// those as well.
+//
 // Model LOD: each model picks a level by its projected size times
 // 1/factor (0x445d00, factor from the detail table at 0x57a548: 1.0 at the
 // best detail). ModelLod multiplies that, so a model keeps its detailed
@@ -28,6 +34,27 @@ constexpr uintptr_t kLodScale = 0x445D00;  // fld dword [0x555748] (1.0f)
 
 float g_model_lod = 1.0f;
 
+constexpr uintptr_t kObjectTables[] = {0x5707E8, 0x5706A8};
+constexpr int kObjectRange[2][10] = {{256, 256, 320, 384, 448, 512, 576, 640, 768, 768},
+                                     {256, 256, 256, 384, 384, 448, 512, 512, 640, 768}};
+
+void ScaleObjectRanges(float scale) {
+  for (int t = 0; t < 2; ++t) {
+    for (int i = 0; i < 10; ++i) {
+      const uintptr_t at = kObjectTables[t] + i * 32 + 0xC;
+      const int original = kObjectRange[t][i];
+      if (!patch::Matches(at, &original, 4)) {
+        patch::Log("object distance: table %d row %d differs, not applied", t, i);
+        return;
+      }
+    }
+    for (int i = 0; i < 10; ++i) {
+      const int v = static_cast<int>(kObjectRange[t][i] * scale + 0.5f);
+      patch::Write(kObjectTables[t] + i * 32 + 0xC, &v, 4);
+    }
+  }
+}
+
 void ScaleImmediate(uintptr_t at, float original, float scale) {
   uint32_t want;
   std::memcpy(&want, &original, 4);
@@ -47,6 +74,7 @@ void ApplyDetailFixes() {
     ScaleImmediate(kFogFar, 768.0f, c.view_distance);
     ScaleImmediate(kFogNear, 256.0f, c.view_distance);
     ScaleImmediate(kFogStart, 128.0f, c.view_distance);
+    ScaleObjectRanges(c.view_distance);
     patch::Log("view distance x%.2f", c.view_distance);
   }
   if (c.model_lod != 1.0f) {
