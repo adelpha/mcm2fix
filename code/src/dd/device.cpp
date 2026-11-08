@@ -37,7 +37,7 @@ cbuffer PSParams : register(b1) {
   float4 fog;     // start end density mode(0 off, 1 exp, 2 exp2, 3 linear)
   float4 atest;   // ref(0-255) func specular colorkey
   float4 key0;    // stage 0 colour key rgb, w = active
-  float4 acut;    // x: discard alpha below this (blended draws that write depth)
+  float4 acut;    // x: discard alpha below this (blended draws that write depth), y: alpha gain per mip level
 };
 Texture2D tex0 : register(t0);
 Texture2D tex1 : register(t1);
@@ -152,6 +152,17 @@ float4 ps_main(VSOut i) : SV_Target {
     bool ok = func == 2 ? a8 < ref : func == 3 ? a8 == ref : func == 4 ? a8 <= ref :
                 func == 5 ? a8 > ref : func == 6 ? a8 != ref : func == 7 ? a8 >= ref : false;
     if (!ok) discard;
+  }
+  if (acut.x > 0) {
+    // Smaller mip levels average the leaves' alpha down, so the cut-off
+    // eats more of the tree the further away it is. Give alpha back in
+    // proportion to the mip level being sampled.
+    uint tw, th;
+    tex0.GetDimensions(tw, th);
+    float2 sz = float2(tw, th);
+    float2 dx = ddx(i.t0 * sz), dy = ddy(i.t0 * sz);
+    float lod = 0.5 * log2(max(max(dot(dx, dx), dot(dy, dy)), 1e-8));
+    cur.a = saturate(cur.a * (1 + max(lod, 0) * acut.y));
   }
   if (cur.a < acut.x) discard;
   return cur;
@@ -1317,6 +1328,7 @@ void Device::ApplyState(bool tl, bool depth_clip, bool has_depth) {
       rs_[RS_ALPHATESTENABLE] && (rs_[RS_ALPHAFUNC] == 5 || rs_[RS_ALPHAFUNC] == 7))
   {
     pc.cut[0] = static_cast<float>(GetConfig().alpha_cut) / 255.0f;
+    pc.cut[1] = GetConfig().alpha_mip_scale;
     // What the game hands us for foliage (texture size, mip levels, mip
     // limits), to see why distant trees look soft.
     if (tex_[0]) {

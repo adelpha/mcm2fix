@@ -11,6 +11,7 @@ struct Config {
   bool reg_log = false;       // RegLog: log every registry call
   bool dd_stats = false;      // DDStats: log renderer activity every 2 seconds
   bool wide_fov = true;       // WideFov: wide modes show more to the sides instead of cropping
+  float alpha_mip_scale = 0.25f;  // AlphaMipScale: cut-outs keep their density at a distance (0 = off)
   int alpha_cut = 128;        // AlphaCut: alpha-tested blended pixels below this (0-255) are dropped
   // Graphics options.
   float fov = 0.0f;           // Fov: camera field of view in degrees at 4:3 (0 = game's own, 77)
