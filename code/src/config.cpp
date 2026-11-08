@@ -29,6 +29,8 @@ void LoadConfig() {
   g_config.frame_fix = GetPrivateProfileIntA("mcm2fix", "FrameFix", 1, ini) != 0;
   g_config.ref_rate = GetPrivateProfileIntA("mcm2fix", "RefRate", 30, ini);
   if (g_config.ref_rate < 10 || g_config.ref_rate > 240) g_config.ref_rate = 30;
+  g_config.ai_rate = GetPrivateProfileIntA("mcm2fix", "AiRate", 30, ini);
+  if (g_config.ai_rate < 0) g_config.ai_rate = 0;
   g_config.dd_stats = GetPrivateProfileIntA("mcm2fix", "DDStats", 0, ini) != 0;
   g_config.activate_log = GetPrivateProfileIntA("mcm2fix", "ActivateLog", 0, ini) != 0;
 }

@@ -16,6 +16,7 @@ struct Config {
   int frame_cap = 0;          // FrameCap: most frames per second (0 = no cap beyond VSync)
   bool precise_timer = true;  // PreciseTimer: frame time from QueryPerformanceCounter, not whole ms
   bool frame_fix = true;      // FrameFix: per-frame animation/physics steps scale with frame time
+  int ai_rate = 30;           // AiRate: computer riders re-plan this many times a second (0 = every frame)
   int ref_rate = 30;          // RefRate: frame rate those per-frame steps were tuned for        // AlphaCut: alpha-tested blended pixels below this (0-255) are dropped
 };
 

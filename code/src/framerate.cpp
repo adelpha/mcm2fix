@@ -16,6 +16,7 @@
 #include <windows.h>
 #include <cmath>
 #include <cstring>
+#include <map>
 
 #include "config.h"
 #include "patch.h"
@@ -151,6 +152,64 @@ void PatchFixSites() {
              g_ref_rate);
 }
 
+// ---------------------------------------------------------------- AI decision rate
+//
+// KrustyBike's per-frame control hook (0x493470) calls the AI planner
+// (BikeAI, 0x415170) every frame for computer riders. It picks a target point
+// and speed from the track and nearby riders; at high frame rates a choice
+// that flips between two answers flips much more often, which shows as
+// riders twitching left and right near each other. With AiRate set, we run
+// the planner at that rate per rider, handing it the time since its last
+// run, and the bike simulation keeps following the last plan in between.
+
+using AiPlanFn = int(__thiscall*)(void* bike, float dt);
+const AiPlanFn kAiPlan = reinterpret_cast<AiPlanFn>(0x415170);
+
+struct AiState {
+  float pending = 0.0f;
+  int last = 1;
+};
+std::map<void*, AiState> g_ai;
+
+int __stdcall AiPlan(void* bike, float dt) {
+  const int rate = GetConfig().ai_rate;
+  if (rate <= 0) return kAiPlan(bike, dt);
+  AiState& st = g_ai[bike];
+  st.pending += dt;
+  if (st.pending + 1e-4f < 1.0f / rate && st.pending < 0.2f) return st.last;
+  float step = st.pending;
+  st.pending = 0.0f;
+  st.last = kAiPlan(bike, step);
+  return st.last;
+}
+
+void PatchAiRate() {
+  const uint8_t call_plan[] = {0xE8, 0xEA, 0x1C, 0xF8, 0xFF};  // 00493481 call 415170
+  constexpr uintptr_t kAt = 0x493481;
+  if (!patch::Matches(kAt, call_plan, sizeof(call_plan))) {
+    patch::Log("AI rate: call site differs, not applied");
+    return;
+  }
+  // Stub: thiscall (ecx = bike, [esp+4] = dt) -> AiPlan(bike, dt).
+  auto* t = static_cast<uint8_t*>(
+      VirtualAlloc(nullptr, 32, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+  if (!t) return;
+  size_t n = 0;
+  const uint8_t head[] = {0xFF, 0x74, 0x24, 0x04, 0x51, 0xE8};  // push [esp+4]; push ecx; call
+  std::memcpy(t, head, sizeof(head));
+  n = sizeof(head);
+  int32_t rel = static_cast<int32_t>(reinterpret_cast<uintptr_t>(&AiPlan) -
+                                     (reinterpret_cast<uintptr_t>(t) + n + 4));
+  std::memcpy(t + n, &rel, 4);
+  n += 4;
+  const uint8_t tail[] = {0xC2, 0x04, 0x00};  // ret 4
+  std::memcpy(t + n, tail, sizeof(tail));
+  n += sizeof(tail);
+  FlushInstructionCache(GetCurrentProcess(), t, n);
+  patch::Call(kAt, t, sizeof(call_plan));
+  patch::Log("AI rate: planner runs at %d Hz per rider", GetConfig().ai_rate);
+}
+
 // ---------------------------------------------------------------- frame time
 
 using MsTimerFn = DWORD(__cdecl*)();
@@ -261,9 +320,10 @@ void ApplyFramePacing() {
   g_fix_frames = c.frame_fix;
   g_ref_rate = static_cast<float>(c.ref_rate);
   if (c.frame_fix) PatchFixSites();
+  if (c.ai_rate > 0) PatchAiRate();
   if (c.precise_timer || c.frame_fix) PatchFrameTime();
-  patch::Log("frame pacing: VSync=%d FrameCap=%d PreciseTimer=%d FrameFix=%d RefRate=%d", c.vsync,
-             c.frame_cap, c.precise_timer, c.frame_fix, c.ref_rate);
+  patch::Log("frame pacing: VSync=%d FrameCap=%d PreciseTimer=%d FrameFix=%d RefRate=%d AiRate=%d",
+             c.vsync, c.frame_cap, c.precise_timer, c.frame_fix, c.ref_rate, c.ai_rate);
 }
 
 void WaitForFrameSlot() {
