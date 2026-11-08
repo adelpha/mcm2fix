@@ -43,6 +43,7 @@ std::unordered_map<uint64_t, Rec> g_recs;
 std::unordered_map<uint64_t, uint32_t> g_uses;  // draws so far this frame per source
 unsigned g_frames = 0;
 unsigned g_shadow_blends = 0;  // shadows rebuilt from blended riders
+unsigned g_shadow_why[6] = {};  // calls, no meshes, no prev, moved too far, off, ok
 unsigned g_total = 0, g_blended = 0;
 unsigned g_race_frames = 0;  // frames drawn while smoothing could run
 bool g_trace = false;          // SmoothLog: tracing this frame
@@ -429,6 +430,8 @@ void SmoothNoteDraw(const char* what, bool tl, unsigned verts) {
   if (g_trace) patch::Log("trace: %s tl=%d verts=%u", what, tl ? 1 : 0, verts);
 }
 
+void LogShadowDetail();
+
 void SmoothFrameEnd() {
   g_uses.clear();
   g_vuses.clear();
@@ -458,7 +461,13 @@ void SmoothFrameEnd() {
                  g_blended, g_total, g_vblended, g_vtotal, static_cast<unsigned>(g_recs.size()),
                  static_cast<unsigned>(g_vrecs.size()));
     }
-    if (on) patch::Log("smoothing: %u shadow draws rebuilt", g_shadow_blends);
+    if (on) {
+      patch::Log("smoothing: %u shadow draws rebuilt (calls %u, no meshes %u, no previous %u, jumped %u, off %u)",
+                 g_shadow_blends, g_shadow_why[0], g_shadow_why[1], g_shadow_why[2], g_shadow_why[3],
+                 g_shadow_why[4]);
+      LogShadowDetail();
+    }
+    for (unsigned& w : g_shadow_why) w = 0;
     g_total = g_blended = g_vtotal = g_vblended = 0;
     g_shadow_blends = 0;
     for (auto it = g_recs.begin(); it != g_recs.end();) {
@@ -540,11 +549,12 @@ int __fastcall SmoothShadowDraw(void* self, void*) {
   const uintptr_t obj = reinterpret_cast<uintptr_t>(self);
   unsigned tick;
   float alpha;
-  if (!SimDrawPoint(&tick, &alpha)) return kShadowDraw(self);
+  ++g_shadow_why[0];
+  if (!SimDrawPoint(&tick, &alpha)) { ++g_shadow_why[4]; return kShadowDraw(self); }
   ShadowRec& r = g_shadows[obj];
   std::vector<float*> arrays;
   std::vector<uint32_t> counts;
-  if (!ShadowMeshes(obj, arrays, counts)) return kShadowDraw(self);
+  if (!ShadowMeshes(obj, arrays, counts)) { ++g_shadow_why[1]; return kShadowDraw(self); }
   size_t total = 0;
   for (uint32_t c : counts) total += c;
   if (r.tick != tick) {
@@ -567,11 +577,13 @@ int __fastcall SmoothShadowDraw(void* self, void*) {
       for (uint32_t i = 0; i < counts[m]; ++i, k += 3)
         std::memcpy(&r.cur[k], reinterpret_cast<uint8_t*>(arrays[m]) + i * 32, 12);
   }
-  if (r.prev_tick == 0 || r.prev_tick + 1 != tick || arrays != r.arrays || r.prev.size() != r.cur.size())
+  if (r.prev_tick == 0 || r.prev_tick + 1 != tick || arrays != r.arrays || r.prev.size() != r.cur.size()) {
+    ++g_shadow_why[2];
     return kShadowDraw(self);
+  }
   for (size_t k = 0; k < r.cur.size(); k += 3) {
     const float dx = r.cur[k] - r.prev[k], dy = r.cur[k + 1] - r.prev[k + 1], dz = r.cur[k + 2] - r.prev[k + 2];
-    if (dx * dx + dy * dy + dz * dz > kMaxStepMove * kMaxStepMove) return kShadowDraw(self);
+    if (dx * dx + dy * dy + dz * dz > kMaxStepMove * kMaxStepMove) { ++g_shadow_why[3]; return kShadowDraw(self); }
   }
   // Blended positions in, rebuild, draw, game's positions back.
   size_t k = 0;
@@ -598,6 +610,20 @@ int __fastcall SmoothShadowDraw(void* self, void*) {
 }
 
 }  // namespace
+
+// First shadow's meshes, to see what they hold.
+void LogShadowDetail() {
+      for (auto& kv : g_shadows) {
+        const ShadowRec& r = kv.second;
+        patch::Log("smoothing: shadow %08x: %u meshes, %u points, first (%.2f %.2f %.2f) was (%.2f %.2f %.2f)",
+                   static_cast<unsigned>(kv.first), static_cast<unsigned>(r.arrays.size()),
+                   static_cast<unsigned>(r.cur.size() / 3), r.cur.empty() ? 0.f : r.cur[0],
+                   r.cur.empty() ? 0.f : r.cur[1], r.cur.empty() ? 0.f : r.cur[2],
+                   r.prev.empty() ? 0.f : r.prev[0], r.prev.empty() ? 0.f : r.prev[1],
+                   r.prev.empty() ? 0.f : r.prev[2]);
+        break;
+      }
+}
 
 void InstallShadowSmoothing() {
   constexpr uintptr_t kVtable = 0x556624;
