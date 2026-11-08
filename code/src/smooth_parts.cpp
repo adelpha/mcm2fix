@@ -124,9 +124,16 @@ struct PartRec {
   unsigned out_frame = ~0u;  // `out` is this frame's blend
   bool out_ok = false;
 };
-std::unordered_map<uintptr_t, PartRec> g_parts;
+std::unordered_map<uint64_t, PartRec> g_parts;
 unsigned g_part_frame = 0;
 bool g_in_render = false;
+// The same object (and so the same part matrices) can be drawn several times
+// a frame with different matrices, e.g. one wheel model for both wheels.
+// Tell those apart by how many times this frame the object was drawn.
+std::unordered_map<uintptr_t, uint32_t> g_render_uses;
+uint32_t g_render_use = 0;
+unsigned g_reused = 0;    // renders of an object already drawn this frame
+unsigned g_changed = 0;   // matrix changed within a frame (same key)
 // renders, parts blended, unchanged, no previous, jumped, bad matrix, long way round, transform calls, normal calls
 unsigned g_pw[9] = {};
 bool g_part_sample = false;
@@ -136,7 +143,8 @@ const float* BlendPart(const float* m) {
   unsigned tick;
   float alpha;
   if (!g_in_render || !SimDrawPoint(&tick, &alpha)) return m;
-  PartRec& r = g_parts[reinterpret_cast<uintptr_t>(m)];
+  const uint64_t key = (static_cast<uint64_t>(reinterpret_cast<uintptr_t>(m)) << 8) ^ g_render_use;
+  PartRec& r = g_parts[key];
   if (r.tick != tick) {
     // New step: the turn just finished becomes the reference spin.
     if (r.tick != 0 && r.prev_tick + 1 == r.tick) {
@@ -156,7 +164,11 @@ const float* BlendPart(const float* m) {
     r.tick = tick;
     r.out_frame = ~0u;
   }
-  if (r.out_frame == g_part_frame) return r.out_ok ? r.out : m;
+  if (r.out_frame == g_part_frame) {
+    if (std::memcmp(r.cur, m, sizeof(r.cur)) == 0) return r.out_ok ? r.out : m;
+    ++g_changed;  // not the matrix we blended; leave it alone
+    return m;
+  }
   r.out_frame = g_part_frame;
   r.out_ok = false;
   std::memcpy(r.cur, m, sizeof(r.cur));
@@ -235,6 +247,8 @@ void __fastcall PartRender(void* self, void*) {
   float alpha;
   if (!SimDrawPoint(&tick, &alpha)) { kRender(self); return; }
   ++g_pw[0];
+  g_render_use = g_render_uses[reinterpret_cast<uintptr_t>(self)]++;
+  if (g_render_use) ++g_reused;
   g_in_render = true;
   kRender(self);
   g_in_render = false;
@@ -346,6 +360,7 @@ void InstallNameSmoothing() {
 
 void PartsFrameEnd(bool log) {
   ++g_part_frame;
+  g_render_uses.clear();
   if (!log) return;
   unsigned tick;
   float alpha;
@@ -355,7 +370,11 @@ void PartsFrameEnd(bool log) {
                "the long way round); skipped: unchanged %u, no previous %u, jumped %u, bad matrix %u; %u tracked",
                g_pw[0], g_pw[7], g_pw[8], g_pw[1], g_max_turn * 180 / kPi, g_pw[6], g_pw[2], g_pw[3], g_pw[4],
                g_pw[5], static_cast<unsigned>(g_parts.size()));
+    patch::Log("smoothing: parts: %u renders of objects already drawn that frame, %u matrices changed "
+               "within a frame",
+               g_reused, g_changed);
   }
+  g_reused = g_changed = 0;
   if (g_nw[0]) {
     patch::Log("smoothing: names: %u placed, %u blended; skipped: no previous %u, jumped %u, off screen %u; %u "
                "tracked",
