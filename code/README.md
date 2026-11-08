@@ -26,8 +26,8 @@ What it does:
 - Videos (intro, credits, menu event previews; Indeo 5 with MS ADPCM sound)
   play through mcm2fix's own player (`src/video/`): the AVI is read and
   decoded with FFmpeg's Indeo 5 decoder, sound goes through waveOut, and no
-  DirectShow or Indeo codec is needed. A build without FFmpeg falls back to
-  the game's DirectShow path (`src/dd/hook.cpp` keeps that working).
+  DirectShow or Indeo codec is needed. A build without FFmpeg skips the
+  videos.
 
 The log is `%LOCALAPPDATA%\Motocross Madness 2\mcm2fix.log`.
 
@@ -50,7 +50,7 @@ MinGW cross-compile (Linux), with the video decoder:
 decoder. FFmpeg is licensed under the LGPL 2.1 or later; its source is the
 tagged FFmpeg release the script downloads, and mcm2fix's own source is
 here, so the DLL can be rebuilt against a modified FFmpeg. Without
-`MCM2FIX_FFMPEG` (e.g. the Visual Studio build) the videos use DirectShow.
+`MCM2FIX_FFMPEG` (e.g. the Visual Studio build) the videos are skipped.
 
 ## Installing
 

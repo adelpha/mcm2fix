@@ -1,5 +1,5 @@
-// Placeholder until the Indeo 5 decoder is added: the player then falls
-// back to the game's DirectShow path.
+// Used when mcm2fix is built without FFmpeg (e.g. with Visual Studio): no
+// Indeo 5 decoder, so the game's videos are skipped.
 #include "indeo5.h"
 
 namespace video {

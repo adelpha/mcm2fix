@@ -1,8 +1,8 @@
 // The game's video player, without DirectShow.
 //
 // Mcm2.exe plays ui\Intro.avi, ui\Credits.avi and ui\events.avi through a
-// small overlay class (vtable 0x55a1f8). Its setup (0x4a3ad0) builds a
-// DirectShow amstream graph that decodes into a system DirectDraw surface;
+// small overlay class (vtable 0x55a1f8). Its setup (0x4a3ad0) built a
+// DirectShow amstream graph that decoded into a system DirectDraw surface;
 // every frame it copies that surface into its own texture (+0x2c). Indeo 5
 // is not part of Windows 11, so we replace the setup: the AVI is read and
 // decoded here, audio goes to waveOut, and the game's own per-frame code
@@ -21,7 +21,6 @@
 #include <algorithm>
 #include <cstring>
 #include <memory>
-#include <set>
 
 #include "../patch.h"
 #include "adpcm.h"
@@ -138,7 +137,7 @@ class Stream final : public IUnknown {
     }
     decoder = CreateIndeo5Decoder(static_cast<int>(avi.width), static_cast<int>(avi.height));
     if (!decoder) {
-      patch::Log("video: %s: no Indeo 5 decoder in this build", path);
+      patch::Log("video: %s: no Indeo 5 decoder in this build, skipped", path);
       return false;
     }
     if (!avi.audio.empty()) {
@@ -261,8 +260,6 @@ class Stream final : public IUnknown {
   bool have_pic_ = false;
 };
 
-std::set<const void*> g_samples;
-
 // Stands in for the IDirectDrawStreamSample: CompletionStatus delivers the
 // frame for the current time into the frame source surface.
 class Sample final : public IUnknown {
@@ -270,7 +267,6 @@ class Sample final : public IUnknown {
   Sample(Stream* s, IDirectDrawSurface7* target) : stream_(s), target_(target) {
     stream_->AddRef();
     target_->AddRef();
-    g_samples.insert(this);
     DDSURFACEDESC2 d{};
     d.dwSize = sizeof(d);
     if (SUCCEEDED(target_->GetSurfaceDesc(&d))) {
@@ -314,7 +310,6 @@ class Sample final : public IUnknown {
 
  private:
   ~Sample() {
-    g_samples.erase(this);
     target_->Release();
     stream_->Release();
   }
@@ -326,10 +321,6 @@ class Sample final : public IUnknown {
   int w_ = 0, h_ = 0;
 };
 
-using InitFn = void*(__fastcall*)(void* self, void* edx, void* parent, const char* file,
-                                  void* cb, void* arg);
-InitFn g_original_init = nullptr;
-
 IDirectDrawSurface7* MakeSurface(IDirectDraw7* dd, DDSURFACEDESC2 d, DWORD caps) {
   d.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT | DDSD_PIXELFORMAT;
   d.ddsCaps = DDSCAPS2{};
@@ -339,16 +330,23 @@ IDirectDrawSurface7* MakeSurface(IDirectDraw7* dd, DDSURFACEDESC2 d, DWORD caps)
   return s;
 }
 
-void* __fastcall VideoInit(void* self, void* edx, void* parent, const char* file, void* cb,
+// What the original setup did when it failed: the overlay destroys itself
+// and the caller carries on without a video.
+void* Fail(void* self) {
+  using DestroyFn = void(__fastcall*)(void*, void*);
+  reinterpret_cast<DestroyFn>((*reinterpret_cast<void***>(self))[2])(self, nullptr);
+  return nullptr;
+}
+
+void* __fastcall VideoInit(void* self, void*, void* parent, const char* file, void* cb,
                            void* arg) {
+  reinterpret_cast<void(__fastcall*)(void*, void*, void*)>(kOverlayBaseInit)(self, nullptr,
+                                                                             parent);
   Stream* stream = new Stream;
   if (!stream->Open(file)) {
     stream->Release();
-    return g_original_init(self, edx, parent, file, cb, arg);
+    return Fail(self);
   }
-
-  reinterpret_cast<void(__fastcall*)(void*, void*, void*)>(kOverlayBaseInit)(self, nullptr,
-                                                                             parent);
   auto* dd = At<IDirectDraw7*>(At<void*>(parent, 4), 0x190);
   At<IDirectDraw7*>(self, 0x58) = dd;
   At<void*>(self, 0x70) = cb;
@@ -371,9 +369,7 @@ void* __fastcall VideoInit(void* self, void* edx, void* parent, const char* file
     if (src) src->Release();
     if (tex) tex->Release();
     stream->Release();
-    using DestroyFn = void(__fastcall*)(void*, void*);
-    reinterpret_cast<DestroyFn>((*reinterpret_cast<void***>(self))[2])(self, nullptr);
-    return nullptr;
+    return Fail(self);
   }
   At<IDirectDrawSurface7*>(self, 0x2c) = tex;
   At<int>(self, 0x30) = w;
@@ -388,26 +384,11 @@ void* __fastcall VideoInit(void* self, void* edx, void* parent, const char* file
 
 }  // namespace
 
-bool IsOwnSample(const void* sample) { return g_samples.count(sample) != 0; }
-
 void ApplyVideoPlayer() {
   if (!patch::Matches(kVideoInit, kVideoInitEntry, sizeof(kVideoInitEntry))) {
     patch::Log("video player: setup code differs, not applied");
     return;
   }
-  // Trampoline to the original setup, for files we cannot play.
-  auto* t = static_cast<uint8_t*>(
-      VirtualAlloc(nullptr, 32, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
-  if (!t) return;
-  std::memcpy(t, kVideoInitEntry, sizeof(kVideoInitEntry));
-  size_t n = sizeof(kVideoInitEntry);
-  t[n++] = 0x68;  // push resume; ret
-  const uint32_t resume = static_cast<uint32_t>(kVideoInit + sizeof(kVideoInitEntry));
-  std::memcpy(t + n, &resume, 4);
-  n += 4;
-  t[n++] = 0xC3;
-  FlushInstructionCache(GetCurrentProcess(), t, n);
-  g_original_init = reinterpret_cast<InitFn>(t);
   patch::Jump(kVideoInit, reinterpret_cast<uintptr_t>(&VideoInit), sizeof(kVideoInitEntry));
   patch::Log("video player: applied");
 }

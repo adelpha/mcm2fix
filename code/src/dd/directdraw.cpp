@@ -17,9 +17,6 @@ using d3d7::D3DENUMRET_CANCEL;
 
 namespace {
 
-constexpr GUID kIID_IDirectDraw = {0x6c14db80, 0xa733, 0x11ce,
-                                   {0xa5, 0x21, 0x00, 0x20, 0xaf, 0x0b, 0xe5, 0x60}};
-
 DDPIXELFORMAT FormatFor(UINT bpp) {
   if (bpp == 32) return MakeRGBFormat(32, 0xff0000, 0xff00, 0xff, 0);
   if (bpp == 8) {
@@ -89,27 +86,7 @@ DirectDraw::DirectDraw() : d3d_(this) {
   mode_format_ = FormatFor(mode_bpp_);
 }
 
-IDirectDraw* DirectDraw::SystemDirectDraw() {
-  if (sys_dd_) return sys_dd_;
-  char path[MAX_PATH] = {};
-  GetSystemDirectoryA(path, MAX_PATH);
-  std::strncat(path, "\\ddraw.dll", MAX_PATH - std::strlen(path) - 1);
-  HMODULE m = LoadLibraryA(path);
-  using CreateFn = HRESULT(WINAPI*)(GUID*, IDirectDraw**, IUnknown*);
-  auto create = m ? reinterpret_cast<CreateFn>(reinterpret_cast<void*>(GetProcAddress(m, "DirectDrawCreate")))
-                  : nullptr;
-  if (!create || FAILED(create(nullptr, &sys_dd_, nullptr)) || !sys_dd_) {
-    Log("system DirectDraw unavailable (%s)", path);
-    sys_dd_ = nullptr;
-    return nullptr;
-  }
-  HRESULT hr = sys_dd_->SetCooperativeLevel(hwnd_, DDSCL_NORMAL);
-  Log("system DirectDraw created for video playback (cooperative level %08lx)", hr);
-  return sys_dd_;
-}
-
 DirectDraw::~DirectDraw() {
-  SafeRelease(sys_dd_);
   if (g_current == this) g_current = nullptr;
   Log("DirectDraw released");
 }
@@ -127,19 +104,8 @@ HRESULT DirectDraw::QueryInterface(REFIID riid, void** out) {
     *out = static_cast<d3d7::IDirect3D7*>(&d3d_);
     return S_OK;
   }
-  if (riid == kIID_IDirectDraw) {
-    // The intro video player (DirectShow) needs a real DirectDraw for its
-    // own surfaces; the game copies each frame into ours.
-    if (IDirectDraw* sys = SystemDirectDraw()) {
-      sys->AddRef();
-      *out = sys;
-      return S_OK;
-    }
-    LogOnce("IDirectDraw (v1) requested but the system DirectDraw is unavailable");
-  } else {
-    LogOnce("DirectDraw::QueryInterface for unsupported {%08lx-%04x-%04x}", riid.Data1,
-            riid.Data2, riid.Data3);
-  }
+  LogOnce("DirectDraw::QueryInterface for unsupported {%08lx-%04x-%04x}", riid.Data1,
+          riid.Data2, riid.Data3);
   return E_NOINTERFACE;
 }
 

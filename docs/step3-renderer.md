@@ -29,11 +29,10 @@ own implementation in `code/src/dd/`, which draws with Direct3D 11.
   terrain detail layer has alpha test off and is not affected.
 - **Transparent texels** get the average colour of their visible neighbours
   on upload, so filtering and mip levels do not mix grey into leaf edges.
-- **Intro videos** use DirectShow amstream with Windows' own DirectDraw (an
-  `IDirectDraw` v1 query returns the system DirectDraw in normal mode). The
-  game's stream is switched to 16-bit (`GetFormat` patch at 0x4A3C28) and its
-  frame wait (0x4A3DE0) falls back to a synchronous `Update` when the
-  asynchronous one does not complete. Each frame is copied into our surface.
+- **Videos** (intro, credits, main menu preview) no longer go through
+  DirectShow: `code/src/video/` replaces the game's video setup (0x4A3AD0),
+  decodes Indeo 5 with FFmpeg and MS ADPCM itself, plays sound with waveOut
+  and writes each frame into one of our surfaces.
 
 ## Later
 

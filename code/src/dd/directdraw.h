@@ -93,8 +93,6 @@ class DirectDraw : public IDirectDraw7 {
   DDPIXELFORMAT mode_format_{};
   Surface* primary_ = nullptr;
   HWND hwnd_ = nullptr;
-  IDirectDraw* sys_dd_ = nullptr;  // Windows' DirectDraw, for the video player
-  IDirectDraw* SystemDirectDraw();
 };
 
 // The hook for Mcm2.exe's DirectDrawCreateEx import.
