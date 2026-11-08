@@ -11,6 +11,7 @@ struct Config {
   bool reg_log = false;       // RegLog: log every registry call
   bool dd_stats = false;      // DDStats: log renderer activity every 2 seconds
   bool wide_fov = true;       // WideFov: wide modes show more to the sides instead of cropping
+  bool restart_log = true;   // RestartLog: log the start grid at race load and Restart Race
   int alpha_cut = 128;        // AlphaCut: alpha-tested blended pixels below this (0-255) are dropped
 };
 

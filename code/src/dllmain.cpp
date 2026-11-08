@@ -15,6 +15,7 @@ void ApplyDiagnostics();
 void ApplyRegistryTrace();
 void ApplyD3D11Backend();
 void ApplyWidescreenFov();
+void ApplyRestartFixes();
 
 namespace {
 
@@ -39,15 +40,16 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
       ApplyStep1Fixes();
       const Config& c = GetConfig();
       patch::Log("config: OneCore=%d Startup=%d Registry=%d Files=%d ActivateLog=%d RegLog=%d DDStats=%d "
-                 "AlphaCut=%d WideFov=%d",
+                 "AlphaCut=%d WideFov=%d RestartLog=%d",
                  c.one_core, c.startup, c.registry, c.files, c.activate_log, c.reg_log, c.dd_stats,
-                 c.alpha_cut, c.wide_fov);
+                 c.alpha_cut, c.wide_fov, c.restart_log);
       if (c.startup) ApplyStartupFixes();
       if (c.registry) ApplyRegistryFixes();
       if (c.files) ApplyFileFixes();
       if (c.reg_log) ApplyRegistryTrace();
       ApplyD3D11Backend();
       ApplyWidescreenFov();
+      ApplyRestartFixes();
       video::ApplyVideoPlayer();
       if (c.activate_log) ApplyDiagnostics();
     } else {

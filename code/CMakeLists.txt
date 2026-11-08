@@ -17,6 +17,7 @@ add_library(mcm2fix SHARED
   src/fixes_registry.cpp
   src/fixes_files.cpp
   src/fixes_widescreen.cpp
+  src/fixes_restart.cpp
   src/diagnostics.cpp
   src/regtrace.cpp
   src/config.cpp
