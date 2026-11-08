@@ -12,6 +12,7 @@
 // operand at a value of our own, recomputed every tick so that it does per
 // frame what the original constant did per frame at RefRate (30 by default).
 #include "framerate.h"
+#include "smooth.h"
 
 #include <windows.h>
 #include <cmath>
@@ -560,6 +561,7 @@ void ApplyFramePacing() {
   if (c.ai_steer_rate > 0) PatchAiSteering();
   if (c.sim_rate > 0) {
     PatchFixedTick();  // replaces the whole tick, frame time included
+    if (c.sim_smooth) InstallTextSmoothing();
   } else if (c.precise_timer || c.frame_fix || c.ai_steer_rate > 0) {
     PatchFrameTime();
   }

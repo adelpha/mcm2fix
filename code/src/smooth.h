@@ -19,3 +19,6 @@ void SmoothNoteDraw(const char* what, bool tl, unsigned verts);
 // Only the position (first 12 bytes of each vertex) is blended.
 const uint8_t* SmoothVertices(const uint8_t* verts, uint32_t stride, uint32_t count,
                               const void* idx);
+
+// Hook the game's GDI text so names over riders move with the blend.
+void InstallTextSmoothing();

@@ -14,6 +14,8 @@
 
 #include "smooth.h"
 
+#include <windows.h>
+
 #include <cmath>
 #include <cstring>
 #include <unordered_map>
@@ -140,6 +142,119 @@ struct VertRec {
   bool has_prev = false;
 };
 std::unordered_map<uint64_t, VertRec> g_vrecs;
+struct TextRec {
+  int prev[2] = {}, cur[2] = {};
+  unsigned prev_tick = 0, tick = 0;
+};
+std::unordered_map<uint64_t, TextRec> g_trecs;
+std::unordered_map<uint64_t, uint32_t> g_tuses;
+using TextOutFn = BOOL(WINAPI*)(HDC, int, int, LPCSTR, int);
+TextOutFn g_text_out = nullptr;
+
+// Names over riders are drawn with GDI at the spot the game projected for
+// this step. Each piece of text is followed by its string (and how many
+// times it was drawn so far this frame) and moved between its last two spots.
+BOOL WINAPI SmoothTextOut(HDC dc, int x, int y, LPCSTR text, int len) {
+  unsigned tick;
+  float alpha;
+  if (text && len > 0 && SimDrawPoint(&tick, &alpha)) {
+    uint64_t h = 1469598103934665603ull;
+    for (int i = 0; i < len; ++i) h = (h ^ static_cast<uint8_t>(text[i])) * 1099511628211ull;
+    const uint32_t use = g_tuses[h]++;
+    TextRec& r = g_trecs[h * 0x9E3779B97F4A7C15ull ^ use];
+    if (r.tick != tick) {
+      r.prev[0] = r.cur[0];
+      r.prev[1] = r.cur[1];
+      r.prev_tick = r.tick;
+      r.tick = tick;
+    }
+    r.cur[0] = x;
+    r.cur[1] = y;
+    const int dx = r.cur[0] - r.prev[0], dy = r.cur[1] - r.prev[1];
+    if (r.prev_tick != 0 && r.prev_tick + 1 == tick && dx * dx + dy * dy < 400 * 400) {
+      x = r.prev[0] + static_cast<int>(std::lround(dx * alpha));
+      y = r.prev[1] + static_cast<int>(std::lround(dy * alpha));
+    }
+  }
+  return g_text_out(dc, x, y, text, len);
+}
+
+struct CentreRec {
+  float prev[3] = {}, cur[3] = {};
+  unsigned prev_tick = 0, tick = 0;
+};
+std::unordered_map<uint64_t, CentreRec> g_crecs;
+std::unordered_map<uint64_t, uint32_t> g_luses;
+
+// Rotation (unit quaternion w,x,y,z) that best turns the points `a` onto
+// `b` about their centres (Horn's method: the top eigenvector of a 4x4
+// matrix, found by power iteration).
+void FitRotation(const float* a, const float* b, uint32_t n, float* q) {
+  double ca[3] = {0, 0, 0}, cb[3] = {0, 0, 0};
+  for (uint32_t i = 0; i < n; ++i)
+    for (int c = 0; c < 3; ++c) {
+      ca[c] += a[i * 3 + c];
+      cb[c] += b[i * 3 + c];
+    }
+  for (int c = 0; c < 3; ++c) {
+    ca[c] /= n;
+    cb[c] /= n;
+  }
+  double S[3][3] = {};
+  for (uint32_t i = 0; i < n; ++i)
+    for (int x = 0; x < 3; ++x)
+      for (int y = 0; y < 3; ++y) S[x][y] += (a[i * 3 + x] - ca[x]) * (b[i * 3 + y] - cb[y]);
+  const double N[4][4] = {
+      {S[0][0] + S[1][1] + S[2][2], S[1][2] - S[2][1], S[2][0] - S[0][2], S[0][1] - S[1][0]},
+      {S[1][2] - S[2][1], S[0][0] - S[1][1] - S[2][2], S[0][1] + S[1][0], S[2][0] + S[0][2]},
+      {S[2][0] - S[0][2], S[0][1] + S[1][0], -S[0][0] + S[1][1] - S[2][2], S[1][2] + S[2][1]},
+      {S[0][1] - S[1][0], S[2][0] + S[0][2], S[1][2] + S[2][1], -S[0][0] - S[1][1] + S[2][2]}};
+  double shift = 0.0;  // make every eigenvalue positive so the largest wins
+  for (auto& row : N)
+    for (double v : row) shift += std::fabs(v);
+  double v[4] = {1, 0, 0, 0};
+  for (int it = 0; it < 60; ++it) {
+    double w[4];
+    for (int r = 0; r < 4; ++r) {
+      w[r] = shift * v[r];
+      for (int c = 0; c < 4; ++c) w[r] += N[r][c] * v[c];
+    }
+    double l = std::sqrt(w[0] * w[0] + w[1] * w[1] + w[2] * w[2] + w[3] * w[3]);
+    if (l < 1e-30) break;
+    for (int r = 0; r < 4; ++r) v[r] = w[r] / l;
+  }
+  if (v[0] < 0)
+    for (double& x : v) x = -x;
+  for (int r = 0; r < 4; ++r) q[r] = static_cast<float>(v[r]);
+}
+
+// The rotation that undoes the fraction `f` of q.
+void PartialInverse(const float* q, float f, float* out) {
+  const float s = std::sqrt(q[1] * q[1] + q[2] * q[2] + q[3] * q[3]);
+  if (s < 1e-7f) {
+    out[0] = 1.0f;
+    out[1] = out[2] = out[3] = 0.0f;
+    return;
+  }
+  const float angle = 2.0f * std::atan2(s, q[0]);
+  const float half = -angle * f * 0.5f;
+  const float k = std::sin(half) / s;
+  out[0] = std::cos(half);
+  out[1] = q[1] * k;
+  out[2] = q[2] * k;
+  out[3] = q[3] * k;
+}
+
+void Rotate(const float* q, const float* v, float* o) {
+  // o = v + 2w(u x v) + 2 u x (u x v)
+  const float ux = q[1], uy = q[2], uz = q[3], w = q[0];
+  const float tx = 2.0f * (uy * v[2] - uz * v[1]);
+  const float ty = 2.0f * (uz * v[0] - ux * v[2]);
+  const float tz = 2.0f * (ux * v[1] - uy * v[0]);
+  o[0] = v[0] + w * tx + (uy * tz - uz * ty);
+  o[1] = v[1] + w * ty + (uz * tx - ux * tz);
+  o[2] = v[2] + w * tz + (ux * ty - uy * tx);
+}
 std::unordered_map<uint64_t, uint32_t> g_vuses;
 std::vector<uint8_t> g_vout;
 unsigned g_vtotal = 0, g_vblended = 0;
@@ -179,7 +294,39 @@ const uint8_t* SmoothVertices(const uint8_t* verts, uint32_t stride, uint32_t co
   r.cur.resize(static_cast<size_t>(count) * 3);
   for (uint32_t i = 0; i < count; ++i) std::memcpy(&r.cur[i * 3], verts + static_cast<size_t>(i) * stride, 12);
   ++g_vtotal;
-  if (!r.has_prev || r.prev_tick + 1 != tick || r.prev.size() != r.cur.size()) return verts;
+  // Centre of this draw, also kept per slot regardless of size: a shadow cast
+  // on bumpy ground changes its number of points every step, so for those
+  // only the centre can be followed.
+  double centre[3] = {0, 0, 0};
+  for (size_t i = 0; i < r.cur.size(); i += 3)
+    for (int c = 0; c < 3; ++c) centre[c] += r.cur[i + c];
+  for (double& c : centre) c /= count;
+  uint64_t loose = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(verts));
+  loose = loose * 0x9E3779B97F4A7C15ull ^ static_cast<uint64_t>(reinterpret_cast<uintptr_t>(idx));
+  const uint32_t loose_use = g_luses[loose]++;
+  CentreRec& cr = g_crecs[loose * 0x9E3779B97F4A7C15ull ^ loose_use];
+  if (cr.tick != tick) {
+    std::memcpy(cr.prev, cr.cur, sizeof(cr.prev));
+    cr.prev_tick = cr.tick;
+    cr.tick = tick;
+  }
+  for (int c = 0; c < 3; ++c) cr.cur[c] = static_cast<float>(centre[c]);
+  const float back = 1.0f - alpha;
+
+  if (!r.has_prev || r.prev_tick + 1 != tick || r.prev.size() != r.cur.size()) {
+    if (cr.prev_tick == 0 || cr.prev_tick + 1 != tick) return verts;
+    float d[3];
+    for (int c = 0; c < 3; ++c) d[c] = cr.cur[c] - cr.prev[c];
+    if (d[0] * d[0] + d[1] * d[1] + d[2] * d[2] > kMaxStepMove * kMaxStepMove) return verts;
+    g_vout.assign(verts, verts + static_cast<size_t>(count) * stride);
+    for (uint32_t i = 0; i < count; ++i) {
+      float p[3];
+      for (int c = 0; c < 3; ++c) p[c] = r.cur[i * 3 + c] - d[c] * back;
+      std::memcpy(g_vout.data() + static_cast<size_t>(i) * stride, p, 12);
+    }
+    ++g_vblended;
+    return g_vout.data();
+  }
   // Check the whole object moved like one thing: no vertex jumped far, and
   // every vertex moved close to the object's average move (a different
   // object that happens to land in the same slot moves every vertex
@@ -200,18 +347,34 @@ const uint8_t* SmoothVertices(const uint8_t* verts, uint32_t stride, uint32_t co
   }
   if (bend > kMaxBend * kMaxBend) return verts;
   g_vout.assign(verts, verts + static_cast<size_t>(count) * stride);
-  // A shape that changes a lot in one step (a spinning wheel, a shadow cast
-  // on bumpy ground) can't be blended point by point without squashing it:
-  // draw its current shape, moved back along its average move instead.
-  const bool whole = bend > kMaxPointBlend * kMaxPointBlend;
-  const float back = 1.0f - alpha;
-  for (uint32_t i = 0; i < count; ++i) {
-    float p[3];
-    for (int c = 0; c < 3; ++c) {
-      p[c] = whole ? r.cur[i * 3 + c] - static_cast<float>(mean[c]) * back
-                   : r.prev[i * 3 + c] + (r.cur[i * 3 + c] - r.prev[i * 3 + c]) * alpha;
+  if (bend <= kMaxPointBlend * kMaxPointBlend) {
+    for (uint32_t i = 0; i < count; ++i) {
+      float p[3];
+      for (int c = 0; c < 3; ++c) p[c] = r.prev[i * 3 + c] + (r.cur[i * 3 + c] - r.prev[i * 3 + c]) * alpha;
+      std::memcpy(g_vout.data() + static_cast<size_t>(i) * stride, p, 12);
     }
-    std::memcpy(g_vout.data() + static_cast<size_t>(i) * stride, p, 12);
+  } else {
+    // A shape that turns or changes a lot in one step (a wheel spinning while
+    // the bike turns) can't be blended point by point without squashing it:
+    // find how it turned as a whole, and draw its current shape turned and
+    // moved back by the part of the step not yet shown.
+    float q[4];
+    FitRotation(r.prev.data(), r.cur.data(), count, q);
+    float qb[4];
+    PartialInverse(q, back, qb);
+    float cc[3], cp[3];
+    for (int c = 0; c < 3; ++c) {
+      cc[c] = static_cast<float>(centre[c]);
+      cp[c] = static_cast<float>(centre[c] - mean[c]);
+    }
+    for (uint32_t i = 0; i < count; ++i) {
+      float v[3], o[3];
+      for (int c = 0; c < 3; ++c) v[c] = r.cur[i * 3 + c] - cc[c];
+      Rotate(qb, v, o);
+      float p[3];
+      for (int c = 0; c < 3; ++c) p[c] = o[c] + cp[c] + (cc[c] - cp[c]) * alpha;
+      std::memcpy(g_vout.data() + static_cast<size_t>(i) * stride, p, 12);
+    }
   }
   ++g_vblended;
   return g_vout.data();
@@ -264,6 +427,8 @@ void SmoothNoteDraw(const char* what, bool tl, unsigned verts) {
 void SmoothFrameEnd() {
   g_uses.clear();
   g_vuses.clear();
+  g_luses.clear();
+  g_tuses.clear();
   {
     unsigned tick;
     float alpha;
@@ -293,9 +458,24 @@ void SmoothFrameEnd() {
       if (!on || it->second.tick + 30 < tick) it = g_recs.erase(it);
       else ++it;
     }
+    for (auto it = g_crecs.begin(); it != g_crecs.end();) {
+      if (!on || it->second.tick + 30 < tick) it = g_crecs.erase(it);
+      else ++it;
+    }
+    for (auto it = g_trecs.begin(); it != g_trecs.end();) {
+      if (!on || it->second.tick + 30 < tick) it = g_trecs.erase(it);
+      else ++it;
+    }
     for (auto it = g_vrecs.begin(); it != g_vrecs.end();) {
       if (!on || it->second.tick + 30 < tick) it = g_vrecs.erase(it);
       else ++it;
     }
   }
+}
+
+void InstallTextSmoothing() {
+  constexpr uintptr_t kIatTextOutA = 0x555088;
+  void* old = patch::HookIat(kIatTextOutA, reinterpret_cast<void*>(&SmoothTextOut));
+  if (old) g_text_out = reinterpret_cast<TextOutFn>(old);
+  patch::Log("smoothing: text over riders %s", old ? "follows the blend" : "not hooked");
 }
