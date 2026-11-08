@@ -97,6 +97,33 @@ bool Blend(const float* a, const float* b, float t, float* out) {
   return true;
 }
 
+// Camera position of a view matrix (row vectors: view = world * R + t, so the
+// camera sits at -t * R^T for a rotation R; scale is divided out).
+void ViewEye(const float* m, float* eye) {
+  for (int r = 0; r < 3; ++r) {
+    const float l2 = m[r * 4] * m[r * 4] + m[r * 4 + 1] * m[r * 4 + 1] + m[r * 4 + 2] * m[r * 4 + 2];
+    eye[r] = 0.0f;
+    for (int c = 0; c < 3; ++c) eye[r] -= m[12 + c] * m[r * 4 + c];
+    if (l2 > 1e-12f) eye[r] /= l2;
+  }
+}
+
+// Blend two view matrices: the camera's turn as in Blend, and its position
+// along a straight line (blending the raw translation instead would swing
+// the camera sideways while it turns).
+bool BlendView(const float* a, const float* b, float t, float* out) {
+  float ea[3], eb[3];
+  ViewEye(a, ea);
+  ViewEye(b, eb);
+  if (!Blend(a, b, t, out)) return false;
+  float eye[3];
+  for (int c = 0; c < 3; ++c) eye[c] = ea[c] + (eb[c] - ea[c]) * t;
+  for (int c = 0; c < 3; ++c) {
+    out[12 + c] = -(eye[0] * out[0 * 4 + c] + eye[1] * out[1 * 4 + c] + eye[2] * out[2 * 4 + c]);
+  }
+  return true;
+}
+
 struct VertRec {
   std::vector<float> prev, cur;  // positions, 3 floats each
   unsigned prev_tick = 0, tick = 0;
@@ -110,6 +137,10 @@ unsigned g_vtotal = 0, g_vblended = 0;
 // Largest distance a vertex may move in one step and still be treated as the
 // same object moving (the game's units are about a foot; ~600 mph).
 constexpr float kMaxStepMove = 30.0f;
+// Largest distance a vertex may move apart from the object's average move in
+// one step (turning, leaning, legs and arms) before the pair is taken to be
+// two different objects.
+constexpr float kMaxBend = 4.0f;
 
 }  // namespace
 
@@ -140,10 +171,21 @@ const uint8_t* SmoothVertices(const uint8_t* verts, uint32_t stride, uint32_t co
   for (uint32_t i = 0; i < count; ++i) std::memcpy(&r.cur[i * 3], verts + static_cast<size_t>(i) * stride, 12);
   ++g_vtotal;
   if (!r.has_prev || r.prev_tick + 1 != tick || r.prev.size() != r.cur.size()) return verts;
-  // Check the whole object moved like one thing, then blend.
+  // Check the whole object moved like one thing: no vertex jumped far, and
+  // every vertex moved close to the object's average move (a different
+  // object that happens to land in the same slot moves every vertex
+  // differently, and blending it shows up as flickering triangles).
+  double mean[3] = {0, 0, 0};
   for (size_t i = 0; i < r.cur.size(); i += 3) {
     const float dx = r.cur[i] - r.prev[i], dy = r.cur[i + 1] - r.prev[i + 1], dz = r.cur[i + 2] - r.prev[i + 2];
     if (dx * dx + dy * dy + dz * dz > kMaxStepMove * kMaxStepMove) return verts;
+    mean[0] += dx; mean[1] += dy; mean[2] += dz;
+  }
+  for (double& m : mean) m /= count;
+  for (size_t i = 0; i < r.cur.size(); i += 3) {
+    const double dx = r.cur[i] - r.prev[i] - mean[0], dy = r.cur[i + 1] - r.prev[i + 1] - mean[1],
+                 dz = r.cur[i + 2] - r.prev[i + 2] - mean[2];
+    if (dx * dx + dy * dy + dz * dz > kMaxBend * kMaxBend) return verts;
   }
   g_vout.assign(verts, verts + static_cast<size_t>(count) * stride);
   for (uint32_t i = 0; i < count; ++i) {
@@ -176,7 +218,9 @@ void SmoothTransform(uint32_t type, const float* in, const void* src, float* out
   ++g_total;
   if (!r.has_prev || r.prev_tick + 1 != tick) return;
   float blended[16];
-  if (Blend(r.prev, r.cur, alpha, blended)) {
+  const bool ok = type == 2 ? BlendView(r.prev, r.cur, alpha, blended)
+                            : Blend(r.prev, r.cur, alpha, blended);
+  if (ok) {
     std::memcpy(out, blended, sizeof(blended));
     ++g_blended;
   }
