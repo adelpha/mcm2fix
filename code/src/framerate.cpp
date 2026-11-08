@@ -569,6 +569,17 @@ void ApplyFramePacing() {
              c.ai_steer_rate, c.sim_rate);
 }
 
+bool SimDrawPoint(unsigned* tick, float* alpha) {
+  if (!g_sim_fixed || !GetConfig().sim_smooth) return false;
+  const double step = 1.0 / GetConfig().sim_rate;
+  float a = static_cast<float>(g_sim_acc / step);
+  if (a < 0.0f) a = 0.0f;
+  if (a > 1.0f) a = 1.0f;
+  *tick = g_tick;
+  *alpha = a;
+  return true;
+}
+
 void WaitForFrameSlot() {
   const int cap = GetConfig().frame_cap;
   if (cap <= 0 || !g_freq.QuadPart) return;

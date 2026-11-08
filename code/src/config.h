@@ -17,6 +17,7 @@ struct Config {
   bool precise_timer = true;  // PreciseTimer: frame time from QueryPerformanceCounter, not whole ms
   bool frame_fix = true;      // FrameFix: per-frame animation/physics steps scale with frame time
   int ai_rate = 30;           // AiRate: computer riders re-plan this many times a second (0 = every frame)
+  int sim_smooth = 1;         // SimSmooth: draw objects between simulation steps (needs SimRate)
   int sim_rate = 30;          // SimRate: race simulation steps per second, drawing stays per frame (0 = one step per frame)
   int ai_steer_rate = 0;    // AiSteerRate: fastest a computer rider's front wheel turns, degrees/s (0 = no limit)
   int ref_rate = 30;          // RefRate: frame rate those per-frame steps were tuned for        // AlphaCut: alpha-tested blended pixels below this (0-255) are dropped
