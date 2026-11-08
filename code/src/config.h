@@ -11,8 +11,6 @@ struct Config {
   bool reg_log = false;       // RegLog: log every registry call
   bool dd_stats = false;      // DDStats: log renderer activity every 2 seconds
   bool wide_fov = true;       // WideFov: wide modes show more to the sides instead of cropping
-  float alpha_mip_scale = 0.25f;  // AlphaMipScale: cut-outs keep their density at a distance (0 = off)
-  bool foliage_full_res = false;  // FoliageFullRes: trees/fences always use their full-size texture
   int alpha_cut = 128;        // AlphaCut: alpha-tested blended pixels below this (0-255) are dropped
   // Graphics options.
   float fov = 0.0f;           // Fov: camera field of view in degrees at 4:3 (0 = game's own, 77)
@@ -21,8 +19,7 @@ struct Config {
   float mip_bias = 0.0f;      // MipBias: texture mip level bias (negative = sharper at a distance)
   float fog_scale = 1.0f;     // FogDistance: multiplies the game's fog distances
   float view_distance = 1.0f; // ViewDistance: multiplies the game's view (far clip) distance
-  float tree_detail = 1.0f;   // TreeDetailDistance: trees use their near, full-res version this many times further
-  float texture_lod = 0.0f;   // TextureLod: levels of extra resolution the game streams textures at
+  bool tree_always_near = false;  // TreeDetailDistance=0: trees always use their close-up version
   float model_lod = 1.0f;     // ModelLod: detailed models are kept this many times further away
   bool texture_replace = true;  // TextureReplace: load replacement textures from textures\ folder
   bool texture_dump = false;    // TextureDump: save every texture the game uploads as PNG

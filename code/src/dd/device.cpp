@@ -37,7 +37,7 @@ cbuffer PSParams : register(b1) {
   float4 fog;     // start end density mode(0 off, 1 exp, 2 exp2, 3 linear)
   float4 atest;   // ref(0-255) func specular colorkey
   float4 key0;    // stage 0 colour key rgb, w = active
-  float4 acut;    // x: discard alpha below this (blended draws that write depth), y: alpha gain per mip level
+  float4 acut;    // x: discard alpha below this (blended draws that write depth)
 };
 Texture2D tex0 : register(t0);
 Texture2D tex1 : register(t1);
@@ -152,17 +152,6 @@ float4 ps_main(VSOut i) : SV_Target {
     bool ok = func == 2 ? a8 < ref : func == 3 ? a8 == ref : func == 4 ? a8 <= ref :
                 func == 5 ? a8 > ref : func == 6 ? a8 != ref : func == 7 ? a8 >= ref : false;
     if (!ok) discard;
-  }
-  if (acut.x > 0) {
-    // Smaller mip levels average the leaves' alpha down, so the cut-off
-    // eats more of the tree the further away it is. Give alpha back in
-    // proportion to the mip level being sampled.
-    uint tw, th;
-    tex0.GetDimensions(tw, th);
-    float2 sz = float2(tw, th);
-    float2 dx = ddx(i.t0 * sz), dy = ddy(i.t0 * sz);
-    float lod = 0.5 * log2(max(max(dot(dx, dx), dot(dy, dy)), 1e-8));
-    cur.a = saturate(cur.a * (1 + max(lod, 0) * acut.y));
   }
   if (cur.a < acut.x) discard;
   return cur;
@@ -1227,14 +1216,14 @@ ID3D11RasterizerState* Device::GetRaster(bool depth_clip) {
   return s;
 }
 
-ID3D11SamplerState* Device::GetSampler(int stage, bool top_only) {
+ID3D11SamplerState* Device::GetSampler(int stage) {
   const DWORD* t = tss_[stage];
   DWORD mag = t[TSS_MAGFILTER] & 7, min = t[TSS_MINFILTER] & 7, mip = t[TSS_MIPFILTER] & 3;
   DWORD au = t[TSS_ADDRESSU] & 7, av = t[TSS_ADDRESSV] & 7;
   int bias = static_cast<int>(AsFloat(t[TSS_MIPMAPLODBIAS]) * 4.0f) & 0xff;
   DWORD maxlevel = t[TSS_MAXMIPLEVEL] & 0xf;
   uint32_t key = mag | (min << 3) | (mip << 6) | (au << 8) | (av << 11) | (maxlevel << 14) |
-                 (static_cast<uint32_t>(bias) << 18) | (top_only ? 1u << 31 : 0u);
+                 (static_cast<uint32_t>(bias) << 18);
   auto it = sampler_cache_.find(key);
   if (it != sampler_cache_.end()) return it->second;
   D3D11_SAMPLER_DESC s{};
@@ -1252,7 +1241,7 @@ ID3D11SamplerState* Device::GetSampler(int stage, bool top_only) {
   }
   s.MipLODBias = AsFloat(t[TSS_MIPMAPLODBIAS]) + cfg.mip_bias;
   s.MinLOD = static_cast<float>(maxlevel);
-  s.MaxLOD = mip == 1 || top_only ? static_cast<float>(maxlevel) : D3D11_FLOAT32_MAX;
+  s.MaxLOD = mip == 1 ? static_cast<float>(maxlevel) : D3D11_FLOAT32_MAX;
   s.ComparisonFunc = D3D11_COMPARISON_NEVER;
   ColorToFloat(t[TSS_BORDERCOLOR], s.BorderColor);
   ID3D11SamplerState* out = nullptr;
@@ -1266,26 +1255,6 @@ void Device::ApplyState(bool tl, bool depth_clip, bool has_depth) {
   b.ctx->OMSetBlendState(GetBlend(), nullptr, 0xffffffff);
   b.ctx->OMSetDepthStencilState(GetDepth(has_depth), 0);
   b.ctx->RSSetState(GetRaster(depth_clip));
-
-  // Blended cut-outs (trees, fences, flags) that also write depth. The
-  // game marks them with alpha test GREATER 0, which lets every filtered
-  // edge pixel through; soft layers (terrain detail, shadows) have alpha
-  // test off and are left alone.
-  const bool cutout =
-      rs_[RS_ALPHABLENDENABLE] && rs_[RS_ZWRITEENABLE] && rs_[RS_ZENABLE] &&
-      (rs_[RS_SRCBLEND] == 5 || rs_[RS_SRCBLEND] == 12) &&  // SRCALPHA, BOTHSRCALPHA
-      rs_[RS_ALPHATESTENABLE] && (rs_[RS_ALPHAFUNC] == 5 || rs_[RS_ALPHAFUNC] == 7);
-
-  // Foliage in general: those cut-outs, plus anything drawn with alpha test
-  // or a colour key (the vegetation billboards use KeyColorTrees).
-  const bool foliage = cutout || rs_[RS_ALPHATESTENABLE] ||
-                       (rs_[RS_COLORKEYENABLE] && tex_[0] && tex_[0]->HasColorKey());
-  if (foliage && tex_[0] && !cutout) {
-    GpuTexture* g = tex_[0]->Gpu();
-    LogOnce("keyed/alpha-tested texture %ux%u levels %u: blend %lu atest %lu func %lu ckey %lu mip %lu",
-            g->width, g->height, g->levels, rs_[RS_ALPHABLENDENABLE], rs_[RS_ALPHATESTENABLE],
-            rs_[RS_ALPHAFUNC], rs_[RS_COLORKEYENABLE], tss_[0][TSS_MIPFILTER]);
-  }
 
   // Textures and samplers.
   ID3D11ShaderResourceView* srv[2] = {};
@@ -1308,8 +1277,7 @@ void Device::ApplyState(bool tl, bool depth_clip, bool has_depth) {
         pc.scol[s][3] = srv[s] ? 1 : 0;
       }
     }
-    // ini FoliageFullRes: cut-outs always use their full-size texture.
-    smp[s] = GetSampler(s, foliage && GetConfig().foliage_full_res);
+    smp[s] = GetSampler(s);
   }
   smp[2] = g_pipe.key_sampler;
   b.ctx->PSSetShaderResources(0, 2, srv);
@@ -1341,21 +1309,13 @@ void Device::ApplyState(bool tl, bool depth_clip, bool has_depth) {
   // Blended cut-outs (leaves, flags) that also write depth hide whatever is
   // drawn behind them later, even where they are nearly transparent; the
   // original game shows a stair-step fringe there. Drop those pixels.
-  if (cutout) {
+  if (rs_[RS_ALPHABLENDENABLE] && rs_[RS_ZWRITEENABLE] && rs_[RS_ZENABLE] &&
+      (rs_[RS_SRCBLEND] == 5 || rs_[RS_SRCBLEND] == 12) &&  // SRCALPHA, BOTHSRCALPHA
+      // The game marks its cut-outs with alpha test GREATER 0, which lets
+      // every filtered edge pixel through; soft layers (terrain detail,
+      // shadows) have alpha test off and are left alone.
+      rs_[RS_ALPHATESTENABLE] && (rs_[RS_ALPHAFUNC] == 5 || rs_[RS_ALPHAFUNC] == 7))
     pc.cut[0] = static_cast<float>(GetConfig().alpha_cut) / 255.0f;
-    pc.cut[1] = GetConfig().foliage_full_res ? 0.0f : GetConfig().alpha_mip_scale;
-    // What the game hands us for foliage (texture size, mip levels, mip
-    // limits), to see why distant trees look soft.
-    if (tex_[0]) {
-      const DWORD* t = tss_[0];
-      GpuTexture* g = tex_[0]->Gpu();
-      LogOnce("cut-out texture %ux%u levels %u (surface %ux%u lod %lu): filter mag %lu min %lu mip %lu, "
-              "maxmip %lu, bias %.2f",
-              g->width, g->height, g->levels, tex_[0]->Width(), tex_[0]->Height(), tex_[0]->LodValue(),
-              t[TSS_MAGFILTER], t[TSS_MINFILTER], t[TSS_MIPFILTER], t[TSS_MAXMIPLEVEL],
-              AsFloat(t[TSS_MIPMAPLODBIAS]));
-    }
-  }
   b.ctx->UpdateSubresource(ps_cb_, 0, nullptr, &pc, 0, 0);
 
   bool flat = rs_[RS_SHADEMODE] == 1;

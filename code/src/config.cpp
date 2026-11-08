@@ -47,13 +47,7 @@ void LoadConfig() {
   g_config.fog_scale = fog >= 0.1f && fog <= 20.0f ? fog : 1.0f;
   float view = ReadFloat("ViewDistance", 1.0f, ini);
   g_config.view_distance = view >= 0.25f && view <= 10.0f ? view : 1.0f;
-  float ams = ReadFloat("AlphaMipScale", 0.25f, ini);
-  g_config.alpha_mip_scale = ams >= 0.0f && ams <= 2.0f ? ams : 0.25f;
-  g_config.foliage_full_res = GetPrivateProfileIntA("mcm2fix", "FoliageFullRes", 0, ini) != 0;
-  float tree = ReadFloat("TreeDetailDistance", 1.0f, ini);
-  g_config.tree_detail = tree == 0.0f || (tree >= 0.1f && tree <= 50.0f) ? tree : 1.0f;
-  float tlod = ReadFloat("TextureLod", 0.0f, ini);
-  g_config.texture_lod = tlod >= -4.0f && tlod <= 9.0f ? tlod : 0.0f;
+  g_config.tree_always_near = ReadFloat("TreeDetailDistance", 1.0f, ini) == 0.0f;
   float lod = ReadFloat("ModelLod", 1.0f, ini);
   g_config.model_lod = lod >= 0.25f && lod <= 10.0f ? lod : 1.0f;
   g_config.texture_replace = GetPrivateProfileIntA("mcm2fix", "TextureReplace", 1, ini) != 0;

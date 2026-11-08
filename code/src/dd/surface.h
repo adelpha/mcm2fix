@@ -109,7 +109,6 @@ class Surface : public IDirectDrawSurface7 {
   bool HasColorKey() const { return has_key_; }
   void KeyColor(float out[3]) const;
   Surface* ZBuffer() const { return zbuffer_; }
-  DWORD LodValue() const { return lod_; }
 
   // Make the GPU copy current (uploading CPU changes) and return it.
   GpuTexture* Gpu();

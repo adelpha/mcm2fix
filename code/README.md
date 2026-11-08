@@ -57,8 +57,6 @@ Registry=1     ; keep settings in HKCU instead of HKLM
 Files=1        ; send file writes to %LOCALAPPDATA%\Motocross Madness 2
 AlphaCut=128   ; trees and flags: drop pixels less opaque than this (0-255), which
                ; removes the fringe where trees hide flags behind them (0 = original look)
-AlphaMipScale=0.25 ; trees and fences keep their density at a distance instead of thinning out (0 = off)
-FoliageFullRes=0 ; 1 = trees and fences always use their full-size texture, at any distance
 WideFov=1      ; widescreen modes show more to the sides (0 = crop top and bottom like the original)
 Fov=0          ; field of view in degrees as a 4:3 screen shows it (0 = game default, 77);
                ; the zoom keys still step from it, widescreen adds to the sides
@@ -67,10 +65,7 @@ Antialiasing=4 ; multisample antialiasing of the 3D scene: 0/1 = off, 2, 4 or 8
 MipBias=0      ; texture sharpness at a distance: negative = sharper (e.g. -0.5), positive = softer
 ViewDistance=1 ; multiplies how far the game draws (far clip, culling and fog move together)
 FogDistance=1  ; multiplies the fog distances on top of that (2 = fog starts twice as far away)
-TreeDetailDistance=1 ; trees switch from a dense low-res billboard to their sparse full-res version
-               ; within 150 units at best detail; this multiplies that distance (10 = further, 0 = always)
-TextureLod=0   ; the game loads smaller texture versions for far objects (trees!); each step
-               ; up loads twice the resolution (2-3 keeps trees sharp; the cap is 512 px)
+TreeDetailDistance=1 ; 0 = every tree uses its sparse close-up version at any distance (looks bad; for fun)
 ModelLod=1     ; detailed models stay this many times further away before switching to simpler ones
 TextureReplace=1 ; draw pictures from textures\<hash>.png in place of the game's textures
 TextureDump=0  ; save every texture the game loads to %LOCALAPPDATA%\Motocross Madness 2\textures_dump

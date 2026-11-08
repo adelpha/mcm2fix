@@ -13,16 +13,10 @@
 // object pass (0x45c5ef) skips anything further away. ViewDistance scales
 // those as well.
 //
-// Tree detail: vegetation within the first two ints of the same rows
-// (150 / 75 at the best level) is drawn with its near, full-resolution
-// version, blended out between the two; beyond, it is a dense low-res
-// billboard (0x457650). TreeDetailDistance scales both.
-//
-// Texture detail: the game streams each texture at a resolution chosen from
-// how big it is on screen (0x444efe computes log2 of the wanted size and
-// passes it to 0x515f90, capped at 9 = 512 px); far objects such as trees
-// get small versions, which MipBias can't sharpen. TextureLod adds that
-// many levels to every request (1 = twice the resolution).
+// Trees: the Vegetation system draws a tree far away as a dense low-res
+// billboard and close up as a sparse full-resolution one; 0x457650 decides
+// per tree from the first two ints of the rows above (150 / 75 units at
+// the best level). TreeDetailDistance=0 makes it always answer "near".
 //
 // Model LOD: each model picks a level by its projected size times
 // 1/factor (0x445d00, factor from the detail table at 0x57a548: 1.0 at the
@@ -32,7 +26,6 @@
 
 #include <cstdint>
 #include <cstring>
-#include <initializer_list>
 
 #include "config.h"
 #include "patch.h"
@@ -45,76 +38,10 @@ constexpr uintptr_t kFogStart = 0x4E3C2A;  // push 128.0f
 constexpr uintptr_t kLodScale = 0x445D00;  // fld dword [0x555748] (1.0f)
 
 float g_model_lod = 1.0f;
-float g_texture_lod = 0.0f;
-
-constexpr uintptr_t kTextureRequest = 0x515F90;
-constexpr uintptr_t kTextureRequestResume = 0x515F9A;
-const uint8_t kTextureRequestEntry[] = {0xD9, 0x44, 0x24, 0x04,                // fld [esp+4]
-                                        0xD8, 0x1D, 0x08, 0xD8, 0x55, 0x00};  // fcomp [0x55d808]
-
-void ApplyTextureLod(float levels) {
-  if (!patch::Matches(kTextureRequest, kTextureRequestEntry, sizeof(kTextureRequestEntry))) {
-    patch::Log("texture lod: code differs, not applied");
-    return;
-  }
-  g_texture_lod = levels;
-  auto* t = static_cast<uint8_t*>(
-      VirtualAlloc(nullptr, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
-  if (!t) return;
-  size_t n = 0;
-  auto put = [&](std::initializer_list<uint8_t> b) {
-    for (uint8_t x : b) t[n++] = x;
-  };
-  auto put32 = [&](uint32_t v) {
-    std::memcpy(t + n, &v, 4);
-    n += 4;
-  };
-  put({0xD9, 0x44, 0x24, 0x04});  // fld [esp+4]
-  put({0xD8, 0x05});              // fadd [g_texture_lod]
-  put32(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&g_texture_lod)));
-  put({0xD9, 0x5C, 0x24, 0x04});  // fstp [esp+4]
-  for (uint8_t b : kTextureRequestEntry) put({b});
-  put({0x68});
-  put32(static_cast<uint32_t>(kTextureRequestResume));  // push resume
-  put({0xC3});                                          // ret
-  FlushInstructionCache(GetCurrentProcess(), t, n);
-  patch::Jump(kTextureRequest, reinterpret_cast<uintptr_t>(t), sizeof(kTextureRequestEntry));
-  patch::Log("texture lod +%.2f", levels);
-}
 
 constexpr uintptr_t kObjectTables[] = {0x5707E8, 0x5706A8};
 constexpr int kObjectRange[2][10] = {{256, 256, 320, 384, 448, 512, 576, 640, 768, 768},
                                      {256, 256, 256, 384, 384, 448, 512, 512, 640, 768}};
-
-// TreeDetailDistance=0: every tree uses its near version, whatever the
-// distance (0x457650 always answers "near, not blended").
-void ForceTreeDetail() {
-  const uint8_t entry[] = {0x83, 0xEC, 0x0C, 0x56, 0x57};  // sub esp,0Ch; push esi; push edi
-  if (!patch::Matches(0x457650, entry, sizeof(entry))) {
-    patch::Log("tree detail: code differs, not applied");
-    return;
-  }
-  const uint8_t stub[] = {0x8B, 0x44, 0x24, 0x04,              // mov eax,[esp+4]
-                          0xC7, 0x00, 0, 0, 0, 0,              // mov dword [eax],0
-                          0x8B, 0x44, 0x24, 0x08,              // mov eax,[esp+8]
-                          0xC7, 0x00, 0, 0, 0, 0,              // mov dword [eax],0
-                          0xC2, 0x08, 0x00};                   // ret 8
-  patch::Write(0x457650, stub, sizeof(stub));
-  patch::Log("tree detail: always near");
-}
-
-void ScaleTreeDetail(float scale) {
-  for (int t = 0; t < 2; ++t) {
-    for (int i = 0; i < 10; ++i) {
-      for (int f = 0; f < 2; ++f) {
-        int* p = reinterpret_cast<int*>(kObjectTables[t] + i * 32 + f * 4);
-        const int v = static_cast<int>(*p * scale + 0.5f);
-        patch::Write(reinterpret_cast<uintptr_t>(p), &v, 4);
-      }
-    }
-  }
-  patch::Log("tree detail distance x%.2f", scale);
-}
 
 void ScaleObjectRanges(float scale) {
   for (int t = 0; t < 2; ++t) {
@@ -144,6 +71,21 @@ void ScaleImmediate(uintptr_t at, float original, float scale) {
   patch::Write(at, &v, 4);
 }
 
+void ForceTreeDetail() {
+  const uint8_t entry[] = {0x83, 0xEC, 0x0C, 0x56, 0x57};  // sub esp,0Ch; push esi; push edi
+  if (!patch::Matches(0x457650, entry, sizeof(entry))) {
+    patch::Log("tree detail: code differs, not applied");
+    return;
+  }
+  const uint8_t stub[] = {0x8B, 0x44, 0x24, 0x04,  // mov eax,[esp+4]   (out: far flag)
+                          0xC7, 0x00, 0, 0, 0, 0,  // mov dword [eax],0
+                          0x8B, 0x44, 0x24, 0x08,  // mov eax,[esp+8]   (out: blend)
+                          0xC7, 0x00, 0, 0, 0, 0,  // mov dword [eax],0
+                          0xC2, 0x08, 0x00};       // ret 8
+  patch::Write(0x457650, stub, sizeof(stub));
+  patch::Log("tree detail: always the close-up version");
+}
+
 }  // namespace
 
 void ApplyDetailFixes() {
@@ -155,9 +97,7 @@ void ApplyDetailFixes() {
     ScaleObjectRanges(c.view_distance);
     patch::Log("view distance x%.2f", c.view_distance);
   }
-  if (c.tree_detail == 0.0f) ForceTreeDetail();
-  else if (c.tree_detail != 1.0f) ScaleTreeDetail(c.tree_detail);
-  if (c.texture_lod != 0.0f) ApplyTextureLod(c.texture_lod);
+  if (c.tree_always_near) ForceTreeDetail();
   if (c.model_lod != 1.0f) {
     const uint8_t original[] = {0xD9, 0x05, 0x48, 0x57, 0x55, 0x00};  // fld dword [0x555748]
     if (!patch::Matches(kLodScale, original, sizeof(original))) {

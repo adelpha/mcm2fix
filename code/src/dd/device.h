@@ -163,7 +163,7 @@ class Device : public d3d7::IDirect3DDevice7 {
   ID3D11BlendState* GetBlend();
   ID3D11DepthStencilState* GetDepth(bool has_depth);
   ID3D11RasterizerState* GetRaster(bool depth_clip);
-  ID3D11SamplerState* GetSampler(int stage, bool top_only = false);
+  ID3D11SamplerState* GetSampler(int stage);
   UINT PushVertices(const void* data, UINT bytes);
   UINT PushIndices(const void* data, UINT bytes);
 
