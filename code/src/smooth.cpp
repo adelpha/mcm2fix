@@ -672,6 +672,89 @@ unsigned g_ps_why[8] = {};
 // texture re-renders: game asked, we forced, rendered something (+0x130), last period seen (+0x120)
 unsigned g_ps_tex[4] = {};
 bool g_ps_logged_sample = false;
+
+// The shadow texture is drawn in software from each caster's mesh vertices,
+// which the game keeps in world space and only moves once per step. Blend
+// them in place for the texture render and put them back right after.
+using GetMeshFn = int(__thiscall*)(void*, int, uintptr_t*, int*, uintptr_t*, int*, int, int);
+const GetMeshFn kGetMesh = reinterpret_cast<GetMeshFn>(0x444390);
+using MeshCountFn = int(__thiscall*)(void*, int);
+const MeshCountFn kMeshCount = reinterpret_cast<MeshCountFn>(0x445FD0);
+constexpr int kMeshStride = 32;
+struct MeshRec {
+  std::vector<float> prev, cur;  // xyz per vertex
+  unsigned prev_tick = 0, tick = 0;
+};
+std::unordered_map<uintptr_t, MeshRec> g_meshes;
+struct MeshWritten { uintptr_t verts; int count; };
+std::vector<MeshWritten> g_meshes_written;
+// meshes seen, blended, count changed, no previous, jumped, vertices blended, dirty (+0x18c) seen, sum of mean move
+unsigned g_pm_why[7] = {};
+double g_pm_move = 0.0;
+bool g_pm_logged_sample = false;
+
+void MeshRestore() {
+  for (const MeshWritten& w : g_meshes_written) {
+    auto it = g_meshes.find(w.verts);
+    if (it == g_meshes.end() || static_cast<int>(it->second.cur.size()) != w.count * 3) continue;
+    const float* src = it->second.cur.data();
+    for (int i = 0; i < w.count; ++i) {
+      float* v = reinterpret_cast<float*>(w.verts + static_cast<uintptr_t>(i) * kMeshStride);
+      v[0] = src[i * 3]; v[1] = src[i * 3 + 1]; v[2] = src[i * 3 + 2];
+    }
+  }
+  g_meshes_written.clear();
+}
+
+void BlendCasterMeshes(uintptr_t c, unsigned tick, float alpha) {
+  void* caster = reinterpret_cast<void*>(c);
+  if (*reinterpret_cast<int*>(c + 0x18c)) ++g_pm_why[6];
+  const int meshes = kMeshCount(caster, -1);
+  if (meshes <= 0 || meshes > 256) return;
+  for (int j = 0; j < meshes; ++j) {
+    uintptr_t verts = 0, idx = 0;
+    int count = 0, nidx = 0;
+    kGetMesh(caster, j, &verts, &count, &idx, &nidx, 0, -1);
+    if (!verts || count <= 0 || count > 65536) continue;
+    ++g_pm_why[0];
+    MeshRec& r = g_meshes[verts];
+    if (r.tick != tick) {
+      r.prev.swap(r.cur);
+      r.prev_tick = r.tick;
+      r.tick = tick;
+      r.cur.resize(static_cast<size_t>(count) * 3);
+      for (int i = 0; i < count; ++i) {
+        const float* v = reinterpret_cast<const float*>(verts + static_cast<uintptr_t>(i) * kMeshStride);
+        r.cur[i * 3] = v[0]; r.cur[i * 3 + 1] = v[1]; r.cur[i * 3 + 2] = v[2];
+      }
+    }
+    if (r.prev.size() != r.cur.size() || static_cast<int>(r.cur.size()) != count * 3) { ++g_pm_why[2]; continue; }
+    if (r.prev_tick == 0 || r.prev_tick + 1 != tick) { ++g_pm_why[3]; continue; }
+    double move = 0.0;
+    for (int i = 0; i < count; ++i) {
+      const float dx = r.cur[i * 3] - r.prev[i * 3], dy = r.cur[i * 3 + 1] - r.prev[i * 3 + 1],
+                  dz = r.cur[i * 3 + 2] - r.prev[i * 3 + 2];
+      move += std::sqrt(dx * dx + dy * dy + dz * dz);
+    }
+    move /= count;
+    if (move > kMaxStepMove) { ++g_pm_why[4]; continue; }
+    for (int i = 0; i < count; ++i) {
+      float* v = reinterpret_cast<float*>(verts + static_cast<uintptr_t>(i) * kMeshStride);
+      for (int k = 0; k < 3; ++k) v[k] = r.prev[i * 3 + k] + (r.cur[i * 3 + k] - r.prev[i * 3 + k]) * alpha;
+    }
+    g_meshes_written.push_back({verts, count});
+    ++g_pm_why[1];
+    g_pm_why[5] += count;
+    g_pm_move += move;
+    if (!g_pm_logged_sample) {
+      g_pm_logged_sample = true;
+      patch::Log("smoothing: shadow mesh %08x of caster %08x: %d vertices, first at (%.2f %.2f %.2f) was "
+                 "(%.2f %.2f %.2f), mean move %.3f, drawn at a=%.2f",
+                 static_cast<unsigned>(verts), static_cast<unsigned>(c), count, r.cur[0], r.cur[1], r.cur[2],
+                 r.prev[0], r.prev[1], r.prev[2], move, alpha);
+    }
+  }
+}
 unsigned g_ps_casters_max = 0;
 
 void PsRestore() {
@@ -699,6 +782,7 @@ int __fastcall SmoothPsPreDraw(void* self, void*) {
     const uintptr_t c = casters[i];
     if (!c) continue;
     ++g_ps_why[3];
+    BlendCasterMeshes(c, tick, alpha);
     CasterRec& r = g_casters[c];
     float* m = reinterpret_cast<float*>(c + kCasterMatrix);
     if (r.tick != tick) {
@@ -737,6 +821,7 @@ int __fastcall SmoothPsPreDraw(void* self, void*) {
   if (*want) ++g_ps_tex[0];
   else { *want = 1; ++g_ps_tex[1]; }
   const int result = kPsPreDraw(self);
+  MeshRestore();  // the scene draws read these too; give them back the step's values
   if (*reinterpret_cast<int*>(obj + 0x130)) ++g_ps_tex[2];
   return result;
 }
@@ -777,13 +862,22 @@ void ProjectedShadowFrameEnd() {
       patch::Log("smoothing: shadow texture renders: game asked %u, forced %u, drew casters %u; period %u steps",
                  g_ps_tex[0], g_ps_tex[1], g_ps_tex[2], g_ps_tex[3]);
     }
+    if (g_ps_why[0]) {
+      patch::Log("smoothing: shadow meshes: %u seen, %u blended (%u vertices, mean move %.3f); skipped: count "
+                 "changed %u, no previous %u, jumped %u; caster rebuilds pending %u; %u meshes tracked",
+                 g_pm_why[0], g_pm_why[1], g_pm_why[5], g_pm_why[1] ? g_pm_move / g_pm_why[1] : 0.0, g_pm_why[2],
+                 g_pm_why[3], g_pm_why[4], g_pm_why[6], static_cast<unsigned>(g_meshes.size()));
+    }
+    for (unsigned& w : g_pm_why) w = 0;
+    g_pm_move = 0.0;
+    g_pm_logged_sample = false;
     for (unsigned& w : g_ps_tex) w = 0;
     for (unsigned& w : g_ps_why) w = 0;
     g_ps_logged_sample = false;
     g_ps_casters_max = 0;
     unsigned tick;
     float alpha;
-    if (!SimDrawPoint(&tick, &alpha)) g_casters.clear();
+    if (!SimDrawPoint(&tick, &alpha)) { g_casters.clear(); g_meshes.clear(); }
   }
 }
 
