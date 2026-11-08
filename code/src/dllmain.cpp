@@ -17,6 +17,7 @@ void ApplyD3D11Backend();
 void ApplyWidescreenFov();
 void ApplyDetailFixes();
 void ApplyArrowFix();
+void ApplyRestartFixes();
 
 namespace {
 
@@ -41,9 +42,10 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
       ApplyStep1Fixes();
       const Config& c = GetConfig();
       patch::Log("config: OneCore=%d Startup=%d Registry=%d Files=%d ActivateLog=%d RegLog=%d DDStats=%d "
-                 "AlphaCut=%d WideFov=%d ArrowFix=%d ArrowScale=%.2f",
+                 "AlphaCut=%d WideFov=%d ArrowFix=%d ArrowScale=%.2f RestartFix=%d RestartLog=%d",
                  c.one_core, c.startup, c.registry, c.files, c.activate_log, c.reg_log, c.dd_stats,
-                 c.alpha_cut, c.wide_fov, c.arrow_heading, static_cast<double>(c.arrow_scale));
+                 c.alpha_cut, c.wide_fov, c.arrow_heading, static_cast<double>(c.arrow_scale),
+                 c.restart_fix, c.restart_log);
       patch::Log("graphics: Fov=%.1f Anisotropy=%d Antialiasing=%d MipBias=%.2f FogDistance=%.2f "
                  "ViewDistance=%.2f ModelLod=%.2f TreeDetailDistance=%d TextureReplace=%d TextureDump=%d",
                  c.fov, c.anisotropy, c.msaa, c.mip_bias, c.fog_scale, c.view_distance, c.model_lod, c.tree_always_near ? 0 : 1,
@@ -56,6 +58,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
       ApplyWidescreenFov();
       ApplyDetailFixes();
       ApplyArrowFix();
+      ApplyRestartFixes();
       video::ApplyVideoPlayer();
       if (c.activate_log) ApplyDiagnostics();
     } else {

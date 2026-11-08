@@ -83,10 +83,12 @@ ArrowFix=1     ; race direction arrow points the right way (0 = original, leans 
 ArrowTurn=0.8  ; how much of that correction to apply (1.0 = full; lower if the arrow points left of a gate dead ahead)
 ArrowTilt=10   ; degrees the arrow's nose is raised so it is seen a little from above (0 = level)
 ArrowScale=2.0 ; size of the race direction arrow (1.0 = original)
+RestartFix=1   ; Restart Race puts every rider back on the grid facing the course (0 = original bug)
 OneCore=0      ; 1 = pin the game to one CPU core (old stopgap)
 ActivateLog=0  ; debugging: log window activation
 RegLog=0       ; debugging: log every registry call
 DDStats=0      ; debugging: log renderer activity every 2 seconds
+RestartLog=0   ; debugging: log the start grid at race load and on Restart Race
 ```
 
 ## Texture replacements
