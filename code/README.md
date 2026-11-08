@@ -79,6 +79,10 @@ TreeDetailDistance=1 ; 0 = every tree uses its sparse close-up version at any di
 ModelLod=1     ; detailed models stay this many times further away before switching to simpler ones
 TextureReplace=1 ; draw pictures from textures\<hash>.png in place of the game's textures
 TextureDump=0  ; save every texture the game loads to %LOCALAPPDATA%\Motocross Madness 2\textures_dump
+ArrowFix=1     ; race direction arrow points the right way (0 = original, leans toward the screen centre)
+ArrowTurn=0.8  ; how much of that correction to apply (1.0 = full; lower if the arrow points left of a gate dead ahead)
+ArrowTilt=10   ; degrees the arrow's nose is raised so it is seen a little from above (0 = level)
+ArrowScale=2.0 ; size of the race direction arrow (1.0 = original)
 OneCore=0      ; 1 = pin the game to one CPU core (old stopgap)
 ActivateLog=0  ; debugging: log window activation
 RegLog=0       ; debugging: log every registry call

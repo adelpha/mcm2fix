@@ -34,6 +34,17 @@ void LoadConfig() {
   g_config.reg_log = GetPrivateProfileIntA("mcm2fix", "RegLog", 0, ini) != 0;
   g_config.wide_fov = GetPrivateProfileIntA("mcm2fix", "WideFov", 1, ini) != 0;
   g_config.alpha_cut = GetPrivateProfileIntA("mcm2fix", "AlphaCut", 128, ini);
+  g_config.arrow_heading = GetPrivateProfileIntA("mcm2fix", "ArrowFix", 1, ini) != 0;
+  char buf[32] = {};
+  GetPrivateProfileStringA("mcm2fix", "ArrowScale", "2.0", buf, sizeof(buf), ini);
+  float scale = static_cast<float>(std::atof(buf));
+  g_config.arrow_scale = (scale >= 0.25f && scale <= 8.0f) ? scale : 2.0f;
+  GetPrivateProfileStringA("mcm2fix", "ArrowTurn", "0.8", buf, sizeof(buf), ini);
+  float turn = static_cast<float>(std::atof(buf));
+  g_config.arrow_turn = (turn >= 0.0f && turn <= 2.0f) ? turn : 0.8f;
+  GetPrivateProfileStringA("mcm2fix", "ArrowTilt", "10", buf, sizeof(buf), ini);
+  float tilt = static_cast<float>(std::atof(buf));
+  g_config.arrow_tilt = (tilt >= -45.0f && tilt <= 45.0f) ? tilt : 10.0f;
   g_config.dd_stats = GetPrivateProfileIntA("mcm2fix", "DDStats", 0, ini) != 0;
   g_config.activate_log = GetPrivateProfileIntA("mcm2fix", "ActivateLog", 0, ini) != 0;
 
