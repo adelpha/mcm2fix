@@ -314,7 +314,11 @@ const uint8_t* SmoothVertices(const uint8_t* verts, uint32_t stride, uint32_t co
   const float back = 1.0f - alpha;
 
   if (!r.has_prev || r.prev_tick + 1 != tick || r.prev.size() != r.cur.size()) {
-    if (cr.prev_tick == 0 || cr.prev_tick + 1 != tick) return verts;
+    // Following only the centre also caught batches of ground and trees whose
+    // size changes as pieces come into view, which moved the world around.
+    // Kept for a future, narrower match (shadows only); off for now.
+    constexpr bool kFollowCentres = false;
+    if (!kFollowCentres || cr.prev_tick == 0 || cr.prev_tick + 1 != tick) return verts;
     float d[3];
     for (int c = 0; c < 3; ++c) d[c] = cr.cur[c] - cr.prev[c];
     if (d[0] * d[0] + d[1] * d[1] + d[2] * d[2] > kMaxStepMove * kMaxStepMove) return verts;
