@@ -879,6 +879,7 @@ HRESULT Device::DrawPrimitive(DWORD prim, DWORD fvf, void* v, DWORD n, DWORD) {
   d.layout = FvfLayout::From(fvf);
   d.count = n;
   SmoothNoteDraw("draw", d.layout.tl, n);
+  if (!d.layout.tl) d.verts = SmoothVertices(d.verts, d.layout.stride, n, nullptr);
   Submit(d);
   return D3D_OK;
 }
@@ -895,6 +896,7 @@ HRESULT Device::DrawIndexedPrimitive(DWORD prim, DWORD fvf, void* v, DWORD nv, W
   d.idx = idx;
   d.nidx = ni;
   SmoothNoteDraw("drawidx", d.layout.tl, d.count);
+  if (!d.layout.tl) d.verts = SmoothVertices(d.verts, d.layout.stride, nv, idx);
   Submit(d);
   return D3D_OK;
 }
@@ -960,6 +962,7 @@ HRESULT Device::DrawIndexedPrimitiveStrided(DWORD prim, DWORD fvf, D3DDRAWPRIMIT
   d.idx = idx;
   d.nidx = ni;
   SmoothNoteDraw("drawidx", d.layout.tl, d.count);
+  if (!d.layout.tl) d.verts = SmoothVertices(d.verts, d.layout.stride, nv, idx);
   Submit(d);
   return D3D_OK;
 }

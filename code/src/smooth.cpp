@@ -17,6 +17,7 @@
 #include <cmath>
 #include <cstring>
 #include <unordered_map>
+#include <vector>
 
 #include "framerate.h"
 #include "patch.h"
@@ -96,7 +97,63 @@ bool Blend(const float* a, const float* b, float t, float* out) {
   return true;
 }
 
+struct VertRec {
+  std::vector<float> prev, cur;  // positions, 3 floats each
+  unsigned prev_tick = 0, tick = 0;
+  bool has_prev = false;
+};
+std::unordered_map<uint64_t, VertRec> g_vrecs;
+std::unordered_map<uint64_t, uint32_t> g_vuses;
+std::vector<uint8_t> g_vout;
+unsigned g_vtotal = 0, g_vblended = 0;
+
+// Largest distance a vertex may move in one step and still be treated as the
+// same object moving (the game's units are about a foot; ~600 mph).
+constexpr float kMaxStepMove = 30.0f;
+
 }  // namespace
+
+const uint8_t* SmoothVertices(const uint8_t* verts, uint32_t stride, uint32_t count,
+                              const void* idx) {
+  unsigned tick;
+  float alpha;
+  if (!verts || stride < 12 || !count || !SimDrawPoint(&tick, &alpha)) return verts;
+  // Same vertex memory, same index list, same size: same object (counted per frame,
+  // since the game may reuse one scratch buffer for several objects).
+  uint64_t source = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(verts));
+  source = source * 0x9E3779B97F4A7C15ull ^ static_cast<uint64_t>(reinterpret_cast<uintptr_t>(idx));
+  source = source * 0x9E3779B97F4A7C15ull ^ count;
+  const uint32_t use = g_vuses[source]++;
+  const uint64_t key = source * 0x9E3779B97F4A7C15ull ^ use;
+  VertRec& r = g_vrecs[key];
+  if (r.tick != tick) {
+    if (r.tick != 0 && r.cur.size() == static_cast<size_t>(count) * 3) {
+      r.prev.swap(r.cur);
+      r.prev_tick = r.tick;
+      r.has_prev = true;
+    } else {
+      r.has_prev = false;
+    }
+    r.tick = tick;
+  }
+  r.cur.resize(static_cast<size_t>(count) * 3);
+  for (uint32_t i = 0; i < count; ++i) std::memcpy(&r.cur[i * 3], verts + static_cast<size_t>(i) * stride, 12);
+  ++g_vtotal;
+  if (!r.has_prev || r.prev_tick + 1 != tick || r.prev.size() != r.cur.size()) return verts;
+  // Check the whole object moved like one thing, then blend.
+  for (size_t i = 0; i < r.cur.size(); i += 3) {
+    const float dx = r.cur[i] - r.prev[i], dy = r.cur[i + 1] - r.prev[i + 1], dz = r.cur[i + 2] - r.prev[i + 2];
+    if (dx * dx + dy * dy + dz * dz > kMaxStepMove * kMaxStepMove) return verts;
+  }
+  g_vout.assign(verts, verts + static_cast<size_t>(count) * stride);
+  for (uint32_t i = 0; i < count; ++i) {
+    float p[3];
+    for (int c = 0; c < 3; ++c) p[c] = r.prev[i * 3 + c] + (r.cur[i * 3 + c] - r.prev[i * 3 + c]) * alpha;
+    std::memcpy(g_vout.data() + static_cast<size_t>(i) * stride, p, 12);
+  }
+  ++g_vblended;
+  return g_vout.data();
+}
 
 void SmoothTransform(uint32_t type, const float* in, const void* src, float* out) {
   std::memcpy(out, in, 16 * sizeof(float));
@@ -137,6 +194,7 @@ void SmoothNoteDraw(const char* what, bool tl, unsigned verts) {
 
 void SmoothFrameEnd() {
   g_uses.clear();
+  g_vuses.clear();
   {
     unsigned tick;
     float alpha;
@@ -154,12 +212,18 @@ void SmoothFrameEnd() {
     float alpha;
     const bool on = SimDrawPoint(&tick, &alpha);
     if (on && g_total) {
-      patch::Log("smoothing: %u of %u matrices blended over 600 frames, %u objects tracked",
-                 g_blended, g_total, static_cast<unsigned>(g_recs.size()));
+      patch::Log("smoothing: %u of %u matrices and %u of %u vertex draws blended over 600 frames, "
+                 "%u + %u tracked",
+                 g_blended, g_total, g_vblended, g_vtotal, static_cast<unsigned>(g_recs.size()),
+                 static_cast<unsigned>(g_vrecs.size()));
     }
-    g_total = g_blended = 0;
+    g_total = g_blended = g_vtotal = g_vblended = 0;
     for (auto it = g_recs.begin(); it != g_recs.end();) {
       if (!on || it->second.tick + 30 < tick) it = g_recs.erase(it);
+      else ++it;
+    }
+    for (auto it = g_vrecs.begin(); it != g_vrecs.end();) {
+      if (!on || it->second.tick + 30 < tick) it = g_vrecs.erase(it);
       else ++it;
     }
   }

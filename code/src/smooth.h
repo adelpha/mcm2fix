@@ -12,3 +12,10 @@ void SmoothFrameEnd();
 
 // Debug (SmoothLog=1): note a draw or vertex processing call for the trace.
 void SmoothNoteDraw(const char* what, bool tl, unsigned verts);
+
+// The game draws most objects (bikes, riders, trees) with vertices it placed
+// in the world itself. Returns the vertices to draw: the game's, or a blend
+// with the same draw one simulation step earlier (valid until the next call).
+// Only the position (first 12 bytes of each vertex) is blended.
+const uint8_t* SmoothVertices(const uint8_t* verts, uint32_t stride, uint32_t count,
+                              const void* idx);
