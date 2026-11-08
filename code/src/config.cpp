@@ -49,6 +49,7 @@ void LoadConfig() {
   g_config.view_distance = view >= 0.25f && view <= 10.0f ? view : 1.0f;
   float ams = ReadFloat("AlphaMipScale", 0.25f, ini);
   g_config.alpha_mip_scale = ams >= 0.0f && ams <= 2.0f ? ams : 0.25f;
+  g_config.foliage_full_res = GetPrivateProfileIntA("mcm2fix", "FoliageFullRes", 0, ini) != 0;
   float tlod = ReadFloat("TextureLod", 0.0f, ini);
   g_config.texture_lod = tlod >= -4.0f && tlod <= 9.0f ? tlod : 0.0f;
   float lod = ReadFloat("ModelLod", 1.0f, ini);

@@ -1227,14 +1227,14 @@ ID3D11RasterizerState* Device::GetRaster(bool depth_clip) {
   return s;
 }
 
-ID3D11SamplerState* Device::GetSampler(int stage) {
+ID3D11SamplerState* Device::GetSampler(int stage, bool top_only) {
   const DWORD* t = tss_[stage];
   DWORD mag = t[TSS_MAGFILTER] & 7, min = t[TSS_MINFILTER] & 7, mip = t[TSS_MIPFILTER] & 3;
   DWORD au = t[TSS_ADDRESSU] & 7, av = t[TSS_ADDRESSV] & 7;
   int bias = static_cast<int>(AsFloat(t[TSS_MIPMAPLODBIAS]) * 4.0f) & 0xff;
   DWORD maxlevel = t[TSS_MAXMIPLEVEL] & 0xf;
   uint32_t key = mag | (min << 3) | (mip << 6) | (au << 8) | (av << 11) | (maxlevel << 14) |
-                 (static_cast<uint32_t>(bias) << 18);
+                 (static_cast<uint32_t>(bias) << 18) | (top_only ? 1u << 31 : 0u);
   auto it = sampler_cache_.find(key);
   if (it != sampler_cache_.end()) return it->second;
   D3D11_SAMPLER_DESC s{};
@@ -1252,7 +1252,7 @@ ID3D11SamplerState* Device::GetSampler(int stage) {
   }
   s.MipLODBias = AsFloat(t[TSS_MIPMAPLODBIAS]) + cfg.mip_bias;
   s.MinLOD = static_cast<float>(maxlevel);
-  s.MaxLOD = mip == 1 ? static_cast<float>(maxlevel) : D3D11_FLOAT32_MAX;
+  s.MaxLOD = mip == 1 || top_only ? static_cast<float>(maxlevel) : D3D11_FLOAT32_MAX;
   s.ComparisonFunc = D3D11_COMPARISON_NEVER;
   ColorToFloat(t[TSS_BORDERCOLOR], s.BorderColor);
   ID3D11SamplerState* out = nullptr;
@@ -1266,6 +1266,15 @@ void Device::ApplyState(bool tl, bool depth_clip, bool has_depth) {
   b.ctx->OMSetBlendState(GetBlend(), nullptr, 0xffffffff);
   b.ctx->OMSetDepthStencilState(GetDepth(has_depth), 0);
   b.ctx->RSSetState(GetRaster(depth_clip));
+
+  // Blended cut-outs (trees, fences, flags) that also write depth. The
+  // game marks them with alpha test GREATER 0, which lets every filtered
+  // edge pixel through; soft layers (terrain detail, shadows) have alpha
+  // test off and are left alone.
+  const bool cutout =
+      rs_[RS_ALPHABLENDENABLE] && rs_[RS_ZWRITEENABLE] && rs_[RS_ZENABLE] &&
+      (rs_[RS_SRCBLEND] == 5 || rs_[RS_SRCBLEND] == 12) &&  // SRCALPHA, BOTHSRCALPHA
+      rs_[RS_ALPHATESTENABLE] && (rs_[RS_ALPHAFUNC] == 5 || rs_[RS_ALPHAFUNC] == 7);
 
   // Textures and samplers.
   ID3D11ShaderResourceView* srv[2] = {};
@@ -1288,7 +1297,8 @@ void Device::ApplyState(bool tl, bool depth_clip, bool has_depth) {
         pc.scol[s][3] = srv[s] ? 1 : 0;
       }
     }
-    smp[s] = GetSampler(s);
+    // ini FoliageFullRes: cut-outs always use their full-size texture.
+    smp[s] = GetSampler(s, cutout && GetConfig().foliage_full_res);
   }
   smp[2] = g_pipe.key_sampler;
   b.ctx->PSSetShaderResources(0, 2, srv);
@@ -1320,15 +1330,9 @@ void Device::ApplyState(bool tl, bool depth_clip, bool has_depth) {
   // Blended cut-outs (leaves, flags) that also write depth hide whatever is
   // drawn behind them later, even where they are nearly transparent; the
   // original game shows a stair-step fringe there. Drop those pixels.
-  if (rs_[RS_ALPHABLENDENABLE] && rs_[RS_ZWRITEENABLE] && rs_[RS_ZENABLE] &&
-      (rs_[RS_SRCBLEND] == 5 || rs_[RS_SRCBLEND] == 12) &&  // SRCALPHA, BOTHSRCALPHA
-      // The game marks its cut-outs with alpha test GREATER 0, which lets
-      // every filtered edge pixel through; soft layers (terrain detail,
-      // shadows) have alpha test off and are left alone.
-      rs_[RS_ALPHATESTENABLE] && (rs_[RS_ALPHAFUNC] == 5 || rs_[RS_ALPHAFUNC] == 7))
-  {
+  if (cutout) {
     pc.cut[0] = static_cast<float>(GetConfig().alpha_cut) / 255.0f;
-    pc.cut[1] = GetConfig().alpha_mip_scale;
+    pc.cut[1] = GetConfig().foliage_full_res ? 0.0f : GetConfig().alpha_mip_scale;
     // What the game hands us for foliage (texture size, mip levels, mip
     // limits), to see why distant trees look soft.
     if (tex_[0]) {

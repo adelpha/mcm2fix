@@ -58,6 +58,7 @@ Files=1        ; send file writes to %LOCALAPPDATA%\Motocross Madness 2
 AlphaCut=128   ; trees and flags: drop pixels less opaque than this (0-255), which
                ; removes the fringe where trees hide flags behind them (0 = original look)
 AlphaMipScale=0.25 ; trees and fences keep their density at a distance instead of thinning out (0 = off)
+FoliageFullRes=0 ; 1 = trees and fences always use their full-size texture, at any distance
 WideFov=1      ; widescreen modes show more to the sides (0 = crop top and bottom like the original)
 Fov=0          ; field of view in degrees as a 4:3 screen shows it (0 = game default, 77);
                ; the zoom keys still step from it, widescreen adds to the sides
