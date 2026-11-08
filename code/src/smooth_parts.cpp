@@ -22,6 +22,8 @@
 #include <cmath>
 #include <cstring>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include "framerate.h"
 #include "patch.h"
@@ -124,27 +126,26 @@ struct PartRec {
   unsigned out_frame = ~0u;  // `out` is this frame's blend
   bool out_ok = false;
 };
-std::unordered_map<uint64_t, PartRec> g_parts;
+std::unordered_map<uintptr_t, PartRec> g_parts;
 unsigned g_part_frame = 0;
-bool g_in_render = false;
-// The same object (and so the same part matrices) can be drawn several times
-// a frame with different matrices, e.g. one wheel model for both wheels.
-// Tell those apart by how many times this frame the object was drawn.
-std::unordered_map<uintptr_t, uint32_t> g_render_uses;
-uint32_t g_render_use = 0;
-unsigned g_reused = 0;    // renders of an object already drawn this frame
-unsigned g_changed = 0;   // matrix changed within a frame (same key)
-// renders, parts blended, unchanged, no previous, jumped, bad matrix, long way round, transform calls, normal calls
-unsigned g_pw[9] = {};
+bool g_drawing = false;  // inside the game's Draw for this frame
+unsigned g_changed = 0;  // matrix changed within a frame
+// Objects the game rebuilt (0x441ce0) during a race, with the tick it last did.
+std::unordered_map<uintptr_t, unsigned> g_objs;
+// Vertex ranges we filled with blended positions this frame.
+std::vector<std::pair<uintptr_t, uintptr_t>> g_ranges;
+// draw-start rebuilds, parts blended, unchanged, no previous, jumped, bad matrix, long way round,
+// transform calls, normal calls, game rebuilds in sim, game rebuilds in draw, objects dropped (bad vtable),
+// draws left to us
+unsigned g_pw[13] = {};
 bool g_part_sample = false;
 float g_max_turn = 0.0f;
 
 const float* BlendPart(const float* m) {
   unsigned tick;
   float alpha;
-  if (!g_in_render || !SimDrawPoint(&tick, &alpha)) return m;
-  const uint64_t key = (static_cast<uint64_t>(reinterpret_cast<uintptr_t>(m)) << 8) ^ g_render_use;
-  PartRec& r = g_parts[key];
+  if (!g_drawing || !SimDrawPoint(&tick, &alpha)) return m;
+  PartRec& r = g_parts[reinterpret_cast<uintptr_t>(m)];
   if (r.tick != tick) {
     // New step: the turn just finished becomes the reference spin.
     if (r.tick != 0 && r.prev_tick + 1 == r.tick) {
@@ -229,7 +230,12 @@ using XformFn = void(__cdecl*)(void*, const void*, const float*, int, int, int);
 const XformFn kXform = reinterpret_cast<XformFn>(0x4A3070);
 void __cdecl PartXform(void* dst, const void* src, const float* m, int n, int ds, int ss) {
   ++g_pw[7];
-  kXform(dst, src, BlendPart(m), n, ds, ss);
+  const float* use = BlendPart(m);
+  if (use != m && dst && n > 0) {
+    const uintptr_t a = reinterpret_cast<uintptr_t>(dst);
+    g_ranges.emplace_back(a, a + static_cast<uintptr_t>(n) * static_cast<uintptr_t>(ds));
+  }
+  kXform(dst, src, use, n, ds, ss);
 }
 
 // 0x49fa50(matrix, count, a, b, c, d), thiscall on the lighting object.
@@ -240,22 +246,68 @@ int __fastcall PartLight(void* self, void*, const float* m, int n, int a, int b,
   return kLight(self, BlendPart(m), n, a, b, c, d);
 }
 
-using RenderFn = void(__thiscall*)(void*);
-const RenderFn kRender = reinterpret_cast<RenderFn>(0x4417B0);
-void __fastcall PartRender(void* self, void*) {
+// 0x441ce0(level): rebuild an object's world-space vertices. Hooked at its
+// entry (trampoline) to learn which objects exist.
+using RebuildFn = void(__thiscall*)(void*, int);
+RebuildFn g_rebuild = nullptr;  // trampoline to the original
+
+bool LooksAlive(uintptr_t obj) {
+  // Freed or reused memory won't still hold one of the game's vtables and meshes.
+  const uintptr_t vt = *reinterpret_cast<const uintptr_t*>(obj);
+  return vt >= 0x555000 && vt < 0x570000 && *reinterpret_cast<const uintptr_t*>(obj + 0x28c) != 0;
+}
+
+void __fastcall RebuildHook(void* self, void*, int level) {
   unsigned tick;
   float alpha;
-  if (!SimDrawPoint(&tick, &alpha)) { kRender(self); return; }
-  ++g_pw[0];
-  g_render_use = g_render_uses[reinterpret_cast<uintptr_t>(self)]++;
-  if (g_render_use) ++g_reused;
-  g_in_render = true;
-  kRender(self);
-  g_in_render = false;
-  // The vertices now hold the blend; make the next reader (the shadow, or
-  // the next step) rebuild them from the step's own matrices.
-  *reinterpret_cast<int*>(reinterpret_cast<uintptr_t>(self) + 0x18c) = 1;
+  if (SimDrawPoint(&tick, &alpha)) {
+    ++g_pw[g_drawing ? 10 : 9];
+    g_objs[reinterpret_cast<uintptr_t>(self)] = tick;
+  }
+  g_rebuild(self, level);
 }
+
+}  // namespace
+
+// Called around the game's Draw. Rebuild every object the game keeps in
+// world space from its parts placed between steps, so everything that reads
+// the vertices this frame (drawing, the shadow texture) sees the blend.
+void SmoothDrawBegin() {
+  g_ranges.clear();
+  unsigned tick;
+  float alpha;
+  if (!g_rebuild || !SimDrawPoint(&tick, &alpha)) return;
+  g_drawing = true;
+  for (auto it = g_objs.begin(); it != g_objs.end();) {
+    if (it->second + 2 < tick || !LooksAlive(it->first)) {
+      if (it->second + 2 >= tick) ++g_pw[11];
+      it = g_objs.erase(it);
+      continue;
+    }
+    ++g_pw[0];
+    g_rebuild(reinterpret_cast<void*>(it->first), -1);
+    ++it;
+  }
+}
+
+void SmoothDrawEnd() {
+  if (!g_drawing) return;
+  g_drawing = false;
+  // The vertices hold the blend: have the next reader rebuild from the step.
+  for (const auto& o : g_objs)
+    if (LooksAlive(o.first)) *reinterpret_cast<int*>(o.first + 0x18c) = 1;
+}
+
+bool SmoothPartsOwn(const void* verts) {
+  const uintptr_t v = reinterpret_cast<uintptr_t>(verts);
+  for (const auto& r : g_ranges)
+    if (v >= r.first && v < r.second) { ++g_pw[12]; return true; }
+  return false;
+}
+
+bool SmoothPartsActive() { return g_drawing; }
+
+namespace {
 
 // ---- names over riders ----
 
@@ -329,19 +381,26 @@ asm(".text\n"
     "  jmp *_g_name_project_fn\n");
 #endif
 
-bool SmoothPartsDrawing() { return g_in_render; }
-
 void InstallPartSmoothing() {
-  static const uint8_t render_call[] = {0x8b, 0xce, 0xe8, 0xca, 0x07, 0x00, 0x00};
+  static const uint8_t rebuild_entry[] = {0x83, 0xec, 0x20, 0x8b, 0x44, 0x24, 0x24};
   static const uint8_t xform_call[] = {0x55, 0xe8, 0x2c, 0x12, 0x06, 0x00};
   static const uint8_t light_call[] = {0xe8, 0x25, 0xdc, 0x05, 0x00};
-  if (!patch::Matches(0x440FDF, render_call, sizeof(render_call)) ||
+  if (!patch::Matches(0x441CE0, rebuild_entry, sizeof(rebuild_entry)) ||
       !patch::Matches(0x441E3E, xform_call, sizeof(xform_call)) ||
       !patch::Matches(0x441E26, light_call, sizeof(light_call))) {
     patch::Log("smoothing: parts NOT hooked (unexpected bytes)");
     return;
   }
-  patch::Call(0x440FE1, reinterpret_cast<void*>(&PartRender), 5);
+  // Trampoline: the 7 moved bytes (sub esp,20h; mov eax,[esp+24h]) then jmp back.
+  auto* t = static_cast<uint8_t*>(VirtualAlloc(nullptr, 16, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+  if (!t) { patch::Log("smoothing: parts NOT hooked (no memory)"); return; }
+  std::memcpy(t, rebuild_entry, sizeof(rebuild_entry));
+  t[7] = 0xe9;
+  const int32_t back = static_cast<int32_t>(0x441CE7 - reinterpret_cast<uintptr_t>(t + 12));
+  std::memcpy(t + 8, &back, 4);
+  FlushInstructionCache(GetCurrentProcess(), t, 16);
+  g_rebuild = reinterpret_cast<RebuildFn>(t);
+  patch::Jump(0x441CE0, reinterpret_cast<uintptr_t>(&RebuildHook), 7);
   patch::Call(0x441E3F, reinterpret_cast<void*>(&PartXform), 5);
   patch::Call(0x441E26, reinterpret_cast<void*>(&PartLight), 5);
   patch::Log("smoothing: bike and rider parts placed between steps before the game builds them");
@@ -360,21 +419,20 @@ void InstallNameSmoothing() {
 
 void PartsFrameEnd(bool log) {
   ++g_part_frame;
-  g_render_uses.clear();
   if (!log) return;
   unsigned tick;
   float alpha;
   const bool on = SimDrawPoint(&tick, &alpha);
   if (g_pw[0] || g_pw[7]) {
-    patch::Log("smoothing: parts: %u renders, %u transforms + %u lightings; %u blended (most turn %.1f deg, %u "
+    patch::Log("smoothing: parts: %u rebuilds at draw start, %u transforms + %u lightings; %u blended (most turn %.1f deg, %u "
                "the long way round); skipped: unchanged %u, no previous %u, jumped %u, bad matrix %u; %u tracked",
                g_pw[0], g_pw[7], g_pw[8], g_pw[1], g_max_turn * 180 / kPi, g_pw[6], g_pw[2], g_pw[3], g_pw[4],
                g_pw[5], static_cast<unsigned>(g_parts.size()));
-    patch::Log("smoothing: parts: %u renders of objects already drawn that frame, %u matrices changed "
-               "within a frame",
-               g_reused, g_changed);
+    patch::Log("smoothing: parts: game rebuilds %u during steps, %u while drawing; %u objects tracked, %u "
+               "dropped; %u draws left unblended by the vertex smoother; %u matrices changed within a frame",
+               g_pw[9], g_pw[10], static_cast<unsigned>(g_objs.size()), g_pw[11], g_pw[12], g_changed);
   }
-  g_reused = g_changed = 0;
+  g_changed = 0;
   if (g_nw[0]) {
     patch::Log("smoothing: names: %u placed, %u blended; skipped: no previous %u, jumped %u, off screen %u; %u "
                "tracked",
@@ -388,6 +446,7 @@ void PartsFrameEnd(bool log) {
     if (!on || it->second.tick + 30 < tick) it = g_parts.erase(it);
     else ++it;
   }
+  if (!on) g_objs.clear();
   for (auto it = g_names.begin(); it != g_names.end();) {
     if (!on || it->second.tick + 30 < tick) it = g_names.erase(it);
     else ++it;

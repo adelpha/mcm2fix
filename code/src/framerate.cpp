@@ -464,7 +464,9 @@ int __stdcall FixedTick(uintptr_t g) {
 
   if (!(*reinterpret_cast<uint8_t*>(g + 0x2d5) & 1)) {
     kProfilerFrame(*reinterpret_cast<void**>(0x5724F0));
+    SmoothDrawBegin();
     VFunc<ThisFn>(reinterpret_cast<void*>(g), 0x20)(reinterpret_cast<void*>(g));
+    SmoothDrawEnd();
     VFunc<ThisFn>(reinterpret_cast<void*>(g), 0x24)(reinterpret_cast<void*>(g));
     kStatePostFrame(*reinterpret_cast<void**>(g + 0x2f4));
     kPostFrame10(*reinterpret_cast<void**>(g + 0x10));

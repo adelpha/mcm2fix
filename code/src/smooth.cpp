@@ -275,7 +275,7 @@ const uint8_t* SmoothVertices(const uint8_t* verts, uint32_t stride, uint32_t co
                               const void* idx) {
   unsigned tick;
   float alpha;
-  if (!verts || stride < 12 || !count || SmoothPartsDrawing() || !SimDrawPoint(&tick, &alpha)) return verts;
+  if (!verts || stride < 12 || !count || SmoothPartsOwn(verts) || !SimDrawPoint(&tick, &alpha)) return verts;
   // Same vertex memory, same index list, same size: same object (counted per frame,
   // since the game may reuse one scratch buffer for several objects).
   uint64_t source = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(verts));
@@ -783,7 +783,7 @@ int __fastcall SmoothPsPreDraw(void* self, void*) {
     const uintptr_t c = casters[i];
     if (!c) continue;
     ++g_ps_why[3];
-    BlendCasterMeshes(c, tick, alpha);
+    if (!SmoothPartsActive()) BlendCasterMeshes(c, tick, alpha);  // else already built from blended parts
     CasterRec& r = g_casters[c];
     float* m = reinterpret_cast<float*>(c + kCasterMatrix);
     if (r.tick != tick) {

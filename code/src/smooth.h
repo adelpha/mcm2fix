@@ -32,8 +32,14 @@ void InstallProjectedShadowSmoothing();
 // Blend each bike/rider part's matrix between steps before the game builds
 // the object's vertices from it (smooth_parts.cpp).
 void InstallPartSmoothing();
-// True while the game draws an object whose parts were blended that way.
-bool SmoothPartsDrawing();
+// Around the game's Draw: rebuild objects from blended parts, then mark them
+// for rebuilding from the step afterwards.
+void SmoothDrawBegin();
+void SmoothDrawEnd();
+// True if `verts` were filled from blended parts this frame.
+bool SmoothPartsOwn(const void* verts);
+// True while drawing with blended parts.
+bool SmoothPartsActive();
 
 // Blend the screen position of the names over riders between steps.
 void InstallNameSmoothing();
