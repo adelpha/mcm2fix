@@ -1276,6 +1276,17 @@ void Device::ApplyState(bool tl, bool depth_clip, bool has_depth) {
       (rs_[RS_SRCBLEND] == 5 || rs_[RS_SRCBLEND] == 12) &&  // SRCALPHA, BOTHSRCALPHA
       rs_[RS_ALPHATESTENABLE] && (rs_[RS_ALPHAFUNC] == 5 || rs_[RS_ALPHAFUNC] == 7);
 
+  // Foliage in general: those cut-outs, plus anything drawn with alpha test
+  // or a colour key (the vegetation billboards use KeyColorTrees).
+  const bool foliage = cutout || rs_[RS_ALPHATESTENABLE] ||
+                       (rs_[RS_COLORKEYENABLE] && tex_[0] && tex_[0]->HasColorKey());
+  if (foliage && tex_[0] && !cutout) {
+    GpuTexture* g = tex_[0]->Gpu();
+    LogOnce("keyed/alpha-tested texture %ux%u levels %u: blend %lu atest %lu func %lu ckey %lu mip %lu",
+            g->width, g->height, g->levels, rs_[RS_ALPHABLENDENABLE], rs_[RS_ALPHATESTENABLE],
+            rs_[RS_ALPHAFUNC], rs_[RS_COLORKEYENABLE], tss_[0][TSS_MIPFILTER]);
+  }
+
   // Textures and samplers.
   ID3D11ShaderResourceView* srv[2] = {};
   ID3D11SamplerState* smp[3] = {};
@@ -1298,7 +1309,7 @@ void Device::ApplyState(bool tl, bool depth_clip, bool has_depth) {
       }
     }
     // ini FoliageFullRes: cut-outs always use their full-size texture.
-    smp[s] = GetSampler(s, cutout && GetConfig().foliage_full_res);
+    smp[s] = GetSampler(s, foliage && GetConfig().foliage_full_res);
   }
   smp[2] = g_pipe.key_sampler;
   b.ctx->PSSetShaderResources(0, 2, srv);
