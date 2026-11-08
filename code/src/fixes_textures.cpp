@@ -112,15 +112,21 @@ void Summary() {
 // stdcall: called from the thunk with eax (chosen format), ebp (the texture
 // object) and esp at the hook point. Returns the format to use.
 int __stdcall OnFormatChosen(int id, uintptr_t tex, uintptr_t esp) {
-  const int out = GetConfig().true_color_textures ? Upgrade(id) : id;
+  // 0x4cb110 has pushed 4 registers after "sub esp,0C4h": the return
+  // address is at +0D4h, argument k at +0D4h + 4k.
+  const auto* a = reinterpret_cast<const uint32_t*>(esp + 0xd4);
+  // Argument 9 bit 2: the picture is a plain off-screen surface in the
+  // display's own format (cursor, 2D blits). The game creates those without
+  // a pixel format, so they are 16-bit whatever we choose; upgrading them
+  // made the game write 24-bit pixels into a 16-bit buffer (truecolor2
+  // crashed on the mouse cursor). Leave them alone.
+  const bool display_format = (a[9] & 4) != 0;
+  const int out = GetConfig().true_color_textures && !display_format ? Upgrade(id) : id;
   ++g_count;
   ++g_pairs[{id, out}];
   if (GetConfig().texture_log && g_count <= kDetailed) {
-    // 0x4cb110 has pushed 4 registers after "sub esp,0C4h": the return
-    // address is at +0D4h, argument k at +0D4h + 4k.
-    const auto* a = reinterpret_cast<const uint32_t*>(esp + 0xd4);
-    patch::Log("texture #%u: format %s(0x%x) -> %s caller=%08x tex=%08x args %x %x %x %x %x %x %x %x %x %x",
-               g_count, Name(id), id, Name(out), a[0], static_cast<unsigned>(tex), a[1], a[2], a[3], a[4],
+    patch::Log("texture #%u: format %s(0x%x) -> %s%s caller=%08x tex=%08x args %x %x %x %x %x %x %x %x %x %x",
+               g_count, Name(id), id, Name(out), display_format ? " (display format, kept)" : "", a[0], static_cast<unsigned>(tex), a[1], a[2], a[3], a[4],
                a[5], a[6], a[7], a[8], a[9], a[10]);
   }
   if (GetConfig().texture_log && g_count % kSummaryEvery == 0) {
