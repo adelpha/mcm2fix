@@ -20,6 +20,7 @@
 #include <ddraw.h>
 
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <initializer_list>
 #include <map>
@@ -176,6 +177,13 @@ std::string SafeName(const char* p) {
   return s.size() < 128 ? s : "";
 }
 
+#ifdef _MSC_VER
+#include <intrin.h>
+#define ReturnAddress() _ReturnAddress()
+#else
+#define ReturnAddress() __builtin_return_address(0)
+#endif
+
 uintptr_t __cdecl LoadTexMapHook(uintptr_t a1, const char* name, uintptr_t a3, uintptr_t a4,
                                  uintptr_t a5, uintptr_t a6, uintptr_t a7, uintptr_t a8,
                                  uintptr_t a9, uintptr_t a10, uintptr_t a11, uintptr_t a12) {
@@ -186,7 +194,8 @@ uintptr_t __cdecl LoadTexMapHook(uintptr_t a1, const char* name, uintptr_t a3, u
   if (r && !g_loading.empty()) g_obj_names[r] = g_loading;
   static unsigned logged = 0;
   if (GetConfig().texture_log && ++logged <= 300)
-    patch::Log("texture map \"%s\" -> %08x", g_loading.c_str(), static_cast<unsigned>(r));
+    patch::Log("texture map \"%s\" -> %08x (called from %08x)", g_loading.c_str(), static_cast<unsigned>(r),
+               static_cast<unsigned>(reinterpret_cast<uintptr_t>(ReturnAddress())));
   g_loading.swap(saved);
   return r;
 }
@@ -312,6 +321,30 @@ int __stdcall OnFormatChosen(int id, uintptr_t tex, uintptr_t esp) {
   const char* name_src = NameTexture(tex, a[1], tex_name);
   if (tex_name.empty()) ++g_unnamed;
   else ++g_named;
+  if (tex_name.empty() && !display_format && GetConfig().texture_log) {
+    // Who created an unnamed texture: the return addresses on the stack
+    // (values in the game's code that follow a call instruction).
+    static unsigned traced = 0;
+    if (++traced <= 150) {
+      char buf[160];
+      int len = 0;
+      const auto* p = reinterpret_cast<const uint32_t*>(esp);
+      int found = 0;
+      for (int i = 0; i < 1024 && found < 8; ++i) {
+        if (!Readable(p + i, 4)) break;
+        const uint32_t v = p[i];
+        if (v < 0x401005 || v >= 0x555000) continue;
+        const auto* c = reinterpret_cast<const uint8_t*>(v);
+        if (c[-5] != 0xE8 && !(c[-6] == 0xFF && (c[-5] & 0x38) == 0x10) &&
+            !(c[-3] == 0xFF && (c[-2] & 0x38) == 0x10) && !(c[-2] == 0xFF && (c[-1] & 0x38) == 0x10))
+          continue;
+        len += std::snprintf(buf + len, sizeof(buf) - len, " %08x", v);
+        ++found;
+      }
+      buf[len] = 0;
+      patch::Log("texture #%u unnamed (%ux%u), call chain:%s", g_count + 1, a[2], a[3], buf);
+    }
+  }
   // Display-format surfaces are not textures to the renderer; the name is
   // only used for texture surfaces anyway.
   g_next_name = dd::TextureKey(tex_name.c_str());
