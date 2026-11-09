@@ -12,6 +12,7 @@
 #include <windows.h>
 
 #include "backend.h"
+#include "gdihook.h"
 
 namespace dd {
 
@@ -20,17 +21,9 @@ bool GpuTextActive();
 // whose GPU copy is `base` (w x h). Null if GPU text cannot be used.
 HDC GpuTextBeginDC(const GpuTexture& base, UINT w, UINT h);
 void GpuTextEndDC(HDC dc);
-// Record-only: GDI still draws on `dc` (a texture's CPU copy), and its text
-// is also drawn into an overlay keyed by `key` at GpuTextTextureScale().
-// GpuTextEndDC ends it. false: not recording.
-bool GpuTextRecordDC(HDC dc, const void* key, UINT w, UINT h);
-float GpuTextTextureScale();
-void GpuTextSetTextureScale(float s);
-// Blend the overlay text of r (surface pixels) of `key`, tinted rgba
-// (0..1, straight), over the same pixels of another surface whose copy
-// `dst` has dst_sx x dst_sy copy pixels per surface pixel. false: no text there.
-bool GpuTextBake(const void* key, const RECT& r, const GpuTexture& dst, float dst_sx, float dst_sy,
-                 const float rgba[4]);
+// Draw one GDI call on a DC from GpuTextBeginDC (calls mcm2fix makes itself,
+// which the GDI hooks do not see). Uses the DC's font, colours and clip.
+bool GpuTextRun(const GdiCall& call);
 
 // The game drew over r (surface pixels; null = everything) of `native`.
 void GpuTextOcclude(const void* native, const RECT* r, const char* why);

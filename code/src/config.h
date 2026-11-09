@@ -13,6 +13,7 @@ struct Config {
   int renderer = 11;          // Renderer: 11 = Direct3D 11, 9 = Direct3D 9 (also used when D3D11 is missing)
   bool renderer_label = true;  // RendererLabel: name the active renderer in the corner of the menus
   bool gpu_text = true;       // GpuText: draw the game's GDI text on the GPU at screen resolution
+  float hud_scale = 2.0f;     // HudScale: race HUD text panels drawn this many times larger (1..4)
   bool hud_text = true;       // HudText: race HUD panel text (GDI turned into textures) drawn sharp too
   bool text_log = false;      // TextLog: log GPU text drawing (first calls, what erases it)
   bool gdi_log = false;       // GdiLog: log the GDI calls the game draws text and boxes with

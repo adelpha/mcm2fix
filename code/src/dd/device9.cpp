@@ -270,7 +270,6 @@ void Device::ApplyState9(int mode, bool has_depth) {
 
   // Texture stages.
   bool keyed = false;
-  bool sharp = false;
   for (DWORD s = 0; s < 2; ++s) {
     const DWORD* t = tss_[s];
     DWORD cop = t[d3d7::TSS_COLOROP], aop = t[d3d7::TSS_ALPHAOP];
@@ -281,16 +280,8 @@ void Device::ApplyState9(int mode, bool has_depth) {
     if (aop < 1 || aop > 26) aop = D3DTOP_DISABLE;
     IDirect3DBaseTexture9* tex = nullptr;
     if (cop != D3DTOP_DISABLE && tex_[s]) {
-      const GpuTexture* sharp_tex =
-          s == 0 && UsesTexture(aop, t[d3d7::TSS_ALPHAARG1], t[d3d7::TSS_ALPHAARG2]) ? tex_[s]->SharpTex() : nullptr;
       if (tex_[s] == rt_) {
         LogOnce("texture is the current render target; ignored");
-      } else if (sharp_tex) {
-        // A sharper copy with premultiplied alpha (hudtext.cpp), colour key
-        // included: blended below.
-        tex = sharp_tex->tex9;
-        sharp = true;
-        keyed = rs_[d3d7::RS_COLORKEYENABLE] && tex_[s]->HasColorKey();
       } else if (s == 0 && rs_[d3d7::RS_COLORKEYENABLE] && tex_[s]->HasColorKey()) {
         DDCOLORKEY k{};
         tex_[s]->GetColorKey(DDCKEY_SRCBLT, &k);
@@ -356,21 +347,6 @@ void Device::ApplyState9(int mode, bool has_depth) {
   TSS9(2, D3DTSS_COLOROP, D3DTOP_DISABLE);
   TSS9(2, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
 
-  if (sharp) {
-    // Premultiplied alpha: blend it in (ONE, 1 - alpha), also where the game
-    // used a colour key or no blending at all.
-    DWORD src = blend ? rs_[d3d7::RS_SRCBLEND] : static_cast<DWORD>(D3DBLEND_ONE);
-    DWORD dst = blend ? rs_[d3d7::RS_DESTBLEND] : static_cast<DWORD>(D3DBLEND_INVSRCALPHA);
-    if (src == D3DBLEND_SRCALPHA) src = D3DBLEND_ONE;
-    if (!blend || dst == D3DBLEND_ZERO) dst = D3DBLEND_INVSRCALPHA;
-    RS9(D3DRS_ALPHABLENDENABLE, TRUE);
-    RS9(D3DRS_SRCBLEND, src);
-    RS9(D3DRS_DESTBLEND, dst);
-    static unsigned logged = 0;
-    if (++logged <= 5)
-      Log("hud text: panel drawn sharp (game blend %d %lu/%lu, colour key %d, alpha test %d) as %lu/%lu", blend,
-          rs_[d3d7::RS_SRCBLEND], rs_[d3d7::RS_DESTBLEND], keyed, atest, src, dst);
-  }
   if (keyed && !atest) {
     atest = true;
     afunc = D3DCMP_GREATER;

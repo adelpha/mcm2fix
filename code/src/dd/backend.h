@@ -159,7 +159,6 @@ struct BlitParams {
   bool tint = false;        // output = texture x fill (GPU text glyphs)
   bool premul = false;      // blend premultiplied colour and alpha over the destination
   bool erase = false;       // destination x (1 - source alpha): cut the source's shape out
-  bool premultiply = false; // output = texture colour x texture alpha (premultiplied copy)
   // D3D9 colour key: src9 is a keyed copy whose key texels have alpha 0.
   bool alpha_key = false;
   bool HasSrc() const { return src || src9; }

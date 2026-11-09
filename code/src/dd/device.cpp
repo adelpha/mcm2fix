@@ -1420,23 +1420,13 @@ void Device::OccludeText(const Draw& d) {
 }
 
 void Device::Submit(const Draw& d) {
+  SubmitDraw(d);
+  // A race HUD text panel: its text goes over it (hudtext.cpp).
+  if (d.layout.tl) HudTextAfterDraw(rt_, d.verts, d.first, d.count, d.layout.stride);
+}
+
+void Device::SubmitDraw(const Draw& d) {
   OccludeText(d);
-  // A HUD panel with a sharp copy drawn on screen: how many screen pixels
-  // one of its texels covers (hudtext.cpp sizes the copy to match).
-  if (tex_[0] && d.layout.tl && d.layout.ntex > 0 && d.verts && d.count && tex_[0]->Hires()->Valid()) {
-    float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f, u0 = 1e9f, v0 = 1e9f, u1 = -1e9f, v1 = -1e9f;
-    for (DWORD i = 0; i < d.count; ++i) {
-      const uint8_t* v = d.verts + static_cast<size_t>(d.first + i) * d.layout.stride;
-      const float* p = reinterpret_cast<const float*>(v);
-      const float* t = reinterpret_cast<const float*>(v + d.layout.tex[0]);
-      x0 = std::min(x0, p[0]), x1 = std::max(x1, p[0]);
-      y0 = std::min(y0, p[1]), y1 = std::max(y1, p[1]);
-      u0 = std::min(u0, t[0]), u1 = std::max(u1, t[0]);
-      v0 = std::min(v0, t[1]), v1 = std::max(v1, t[1]);
-    }
-    const float tw = (u1 - u0) * tex_[0]->Width(), th = (v1 - v0) * tex_[0]->Height();
-    if (tw >= 8 && th >= 8) NoteHudDraw(tex_[0], std::min((x1 - x0) / tw, (y1 - y0) / th));
-  }
   if (IsD3D9()) return Submit9(d);
   bool has_depth = false;
   if (!BindTarget(has_depth)) return;

@@ -2,227 +2,301 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdint>
 #include <cstring>
+#include <map>
+#include <set>
+#include <string>
+#include <vector>
 
 #include "../config.h"
 #include "../patch.h"
 #include "backend.h"
+#include "gdihook.h"
 #include "gputext.h"
 #include "surface.h"
 
 namespace dd {
 namespace {
 
-// The game's HUD panel object (thiscall, ecx): its texture wrappers. Each
-// wrapper holds the IDirectDrawSurface7 at +0x70.
-constexpr uintptr_t kConvert = 0x4bafd0;  // (int first_row, int rows, colour); ret 0xc
+// The game's HUD panel object (an overlay; thiscall, ecx).
+constexpr uintptr_t kConvert = 0x4bafd0;  // (int first_row, int rows, pixel colour); ret 0xc
 constexpr uintptr_t kRestore = 0x4bae60;  // (const RECT*); ret 4
-constexpr uintptr_t kPanelTexture = 0x2c;
-constexpr uintptr_t kPanelScratch = 0x34;
-constexpr uintptr_t kWrapperSurface = 0x70;
+constexpr uintptr_t kLayout = 0x4baad0;   // (); lays out the quad below
+constexpr uintptr_t kPanelTexture = 0x2c;  // texture wrapper: +0x14 width, +0x18 height, +0x70 IDDS7
+constexpr uintptr_t kPanelScratch = 0x34;  // scratch texture wrapper
+constexpr uintptr_t kOwner = 0x18;         // view: +8 camera (+0x1a8 w, +0x1ac h), else +0xc w, +0x10 h
+constexpr uintptr_t kVerts = 0x44;         // 4 TL vertices, 0x20 bytes: x y z rhw diffuse specular u v
+constexpr uintptr_t kScaledUnits = 0xe4;   // nonzero: rectangle in 640x480 units, else pixels
+constexpr uintptr_t kRect = 0xe8;          // x1 y1 x2 y2
+constexpr uintptr_t kWrapperW = 0x14, kWrapperH = 0x18, kWrapperSurface = 0x70;
 constexpr uintptr_t kConvertCalls[] = {0x51f43c, 0x51faa7, 0x520067, 0x5204b0, 0x5236d9, 0x523824, 0x52407b};
 constexpr uintptr_t kRestoreCalls[] = {0x51f2f7, 0x51f952, 0x51ff2c, 0x52039e, 0x523473,
                                        0x5238f0, 0x523e9a, 0x523f99, 0x523fc1};
+// Return addresses of the panels' GetDC calls on their scratch textures.
+constexpr uintptr_t kScratchGetDC[] = {0x51f311, 0x51f96c, 0x51ff46, 0x5203b8, 0x52348d, 0x5236ec, 0x523fdb};
 
 using ConvertFn = void(__fastcall*)(uintptr_t self, void* edx, int first_row, int rows, DWORD colour);
 using RestoreFn = void(__fastcall*)(uintptr_t self, void* edx, const RECT* r);
+using LayoutFn = void(__fastcall*)(uintptr_t self, void* edx);
 const ConvertFn g_convert = reinterpret_cast<ConvertFn>(kConvert);
 const RestoreFn g_restore = reinterpret_cast<RestoreFn>(kRestore);
 
+// One text call, in scratch (= panel) pixels.
+struct Item {
+  bool draw_text = false;  // DrawText (rect, fmt), else TextOut (x, y)
+  std::string s;
+  RECT rect{};
+  int x = 0, y = 0;
+  UINT fmt = 0, align = 0;
+  int extra = 0;
+  LOGFONTA font{};
+  RECT box{};  // where its pixels are
+  COLORREF colour = RGB(255, 255, 255);
+};
+
+struct Panel {
+  std::vector<Item> items;
+  bool laid_out = false;
+  int orig[4] = {}, written[4] = {};  // the game's rectangle and what we stored
+  bool have_rect = false;
+  unsigned draws = 0;
+};
+
+std::map<uintptr_t, Panel> g_panels;
+std::map<const Surface*, std::vector<Item>> g_pending;  // captured, not yet converted
+std::map<HDC, Surface*> g_scratch_dc;
+std::set<const Surface*> g_scratch;
+
 struct Stats {
-  unsigned converts = 0, baked = 0, no_text = 0, restores = 0, rebuilds = 0, samples = 0, skipped = 0, carries = 0;
+  unsigned captured = 0, converted = 0, moved = 0, wipes = 0, wiped = 0, draws = 0, drawn = 0, no_dc = 0;
 } g_st;
 DWORD g_last_report = 0;
+
+bool Active() { return GetConfig().gpu_text && GetConfig().hud_text && GpuTextActive(); }
 
 void Report() {
   const DWORD now = GetTickCount();
   if (!g_last_report) g_last_report = now;
   if (now - g_last_report < 5000) return;
   g_last_report = now;
-  if (!g_st.converts && !g_st.restores && !g_st.samples) return;
-  Log("hud text 5s: %u text conversions (%u drawn sharp, %u without text), %u wipes, %u full rebuilds, "
-      "%u copies to other textures, %u draws with a sharp panel, %u skipped",
-      g_st.converts, g_st.baked, g_st.no_text, g_st.restores, g_st.rebuilds, g_st.carries, g_st.samples, g_st.skipped);
+  if (g_st.captured || g_st.converted || g_st.wipes || g_st.draws) {
+    size_t items = 0;
+    for (auto& p : g_panels) items += p.second.items.size();
+    Log("hud text 5s: %u text calls captured, %u conversions (%u texts to panels), %u wipes (%u texts removed), "
+        "%u panel draws (%u texts drawn), %u without a GPU text DC; %u panels hold %u texts",
+        g_st.captured, g_st.converted, g_st.moved, g_st.wipes, g_st.wiped, g_st.draws, g_st.drawn, g_st.no_dc,
+        static_cast<unsigned>(g_panels.size()), static_cast<unsigned>(items));
+  }
+  // A panel with text whose quad was never seen drawn: say where it is.
+  for (auto& p : g_panels) {
+    if (!p.second.items.empty() && !p.second.draws) {
+      static unsigned logged = 0;
+      if (++logged <= 5) {
+        const float* v = reinterpret_cast<const float*>(p.first + kVerts);
+        Log("hud text: panel %08x has %u texts but no draw matched its quad (%.1f,%.1f %.1f,%.1f %.1f,%.1f %.1f,%.1f)",
+            static_cast<unsigned>(p.first), static_cast<unsigned>(p.second.items.size()), v[0], v[1], v[8], v[9],
+            v[16], v[17], v[24], v[25]);
+      }
+    }
+    p.second.draws = 0;
+  }
   g_st = Stats{};
 }
 
+uintptr_t Wrapper(uintptr_t self, uintptr_t field) {
+  return self ? *reinterpret_cast<const uintptr_t*>(self + field) : 0;
+}
+
 Surface* SurfaceAt(uintptr_t self, uintptr_t field) {
-  if (!self) return nullptr;
-  const uintptr_t wrapper = *reinterpret_cast<const uintptr_t*>(self + field);
-  if (!wrapper) return nullptr;
-  auto* dds = *reinterpret_cast<IDirectDrawSurface7* const*>(wrapper + kWrapperSurface);
+  const uintptr_t w = Wrapper(self, field);
+  if (!w) return nullptr;
+  auto* dds = *reinterpret_cast<IDirectDrawSurface7* const*>(w + kWrapperSurface);
   return dds ? Surface::From(dds) : nullptr;
 }
 
-// Bring r (null: all) of the sharper copy up to date with the panel: the
-// panel premultiplied by its alpha (colour-keyed texels transparent) at its
-// own size, then scaled up.
-bool Refresh(Surface* t, const RECT* r) {
-  GpuTexture* g = t->Gpu();
-  if (!g->Valid() || !g->CanSample()) return false;
-  const float s = GpuTextTextureScale();
-  const UINT tw = t->Width(), th = t->Height();
-  const UINT w = std::max<UINT>(1, static_cast<UINT>(std::lround(tw * s)));
-  const UINT h = std::max<UINT>(1, static_cast<UINT>(std::lround(th * s)));
-  GpuTexture* hi = t->Hires();
-  GpuTexture* tmp = t->HiresScratch();
-  if (!hi->Valid() || hi->width != w || hi->height != h) {
-    if (r) return false;  // only a whole refresh makes a new copy
-    hi->Reset();
-    if (!CreateGpuTexture(*hi, w, h, 1, true, false, true)) {
-      LogOnce("hud text: a %ux%u copy could not be made", w, h);
-      return false;
-    }
-    Log("hud text: %ux%u panel texture gets a %ux%u sharp copy (x%.2f)", tw, th, w, h, s);
+bool Intersects(const RECT& a, const RECT& b) {
+  return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+}
+
+float Scale() { return std::max(1.0f, std::min(4.0f, GetConfig().hud_scale)); }
+
+// The panel's quad was laid out at its normal size; make it Scale() times
+// larger, keeping it against the nearest screen edges (distance scaled too).
+void ScaleRect(uintptr_t inst, Panel& p) {
+  int* r = reinterpret_cast<int*>(inst + kRect);
+  int o[4] = {r[0], r[1], r[2], r[3]};
+  if (p.have_rect && std::equal(r, r + 4, p.written)) std::copy(p.orig, p.orig + 4, o);
+  int vw = 640, vh = 480;
+  if (!*reinterpret_cast<const int*>(inst + kScaledUnits)) {
+    const uintptr_t owner = Wrapper(inst, kOwner);
+    if (!owner) return;
+    const uintptr_t cam = *reinterpret_cast<const uintptr_t*>(owner + 8);
+    vw = cam ? *reinterpret_cast<const int*>(cam + 0x1a8) : *reinterpret_cast<const int*>(owner + 0xc);
+    vh = cam ? *reinterpret_cast<const int*>(cam + 0x1ac) : *reinterpret_cast<const int*>(owner + 0x10);
+    if (vw <= 0 || vh <= 0) return;
   }
-  if (!tmp->Valid() || tmp->width != tw || tmp->height != th) {
-    tmp->Reset();
-    if (!CreateGpuTexture(*tmp, tw, th, 1, true, false, true)) return false;
-  }
-  DDCOLORKEY k{};
-  const bool keyed = SUCCEEDED(t->GetColorKey(DDCKEY_SRCBLT, &k));
-  const GpuTexture* src = g;
-  bool shader_key = false;
-  if (keyed) {
-    if (IsD3D9()) {
-      src = t->KeyedTex(k.dwColorSpaceLowValue);  // key texels have alpha 0
-      if (!src) return false;
+  const float k = Scale();
+  int n[4];
+  auto axis = [k](int a, int b, int size, int* na, int* nb) {
+    const int len = static_cast<int>(std::lround((b - a) * k));
+    if (a + b <= size) {  // nearer the left / top edge
+      *na = static_cast<int>(std::lround(a * k));
+      *nb = *na + len;
     } else {
-      shader_key = true;
+      *nb = size - static_cast<int>(std::lround((size - b) * k));
+      *na = *nb - len;
     }
+  };
+  axis(o[0], o[2], vw, &n[0], &n[2]);
+  axis(o[1], o[3], vh, &n[1], &n[3]);
+  std::copy(o, o + 4, p.orig);
+  std::copy(n, n + 4, p.written);
+  std::copy(n, n + 4, r);
+  p.have_rect = true;
+  static unsigned logged = 0;
+  if (++logged <= 10)
+    Log("hud text: panel %08x (%s units, view %dx%d) %d,%d-%d,%d laid out x%.2f as %d,%d-%d,%d",
+        static_cast<unsigned>(inst), vw == 640 && vh == 480 ? "640x480" : "pixel", vw, vh, o[0], o[1], o[2], o[3], k,
+        n[0], n[1], n[2], n[3]);
+}
+
+// First sight of a text panel: lay it out again, now scaled.
+Panel& Register(uintptr_t self) {
+  Panel& p = g_panels[self];
+  if (!p.laid_out) {
+    p.laid_out = true;
+    Surface* t = SurfaceAt(self, kPanelTexture);
+    Log("hud text: text panel %08x (vtable %08x, texture %ux%u)", static_cast<unsigned>(self),
+        *reinterpret_cast<const unsigned*>(self), t ? t->Width() : 0, t ? t->Height() : 0);
+    if (Scale() != 1.0f) reinterpret_cast<LayoutFn>(kLayout)(self, nullptr);
   }
-  RECT rr{0, 0, static_cast<LONG>(tw), static_cast<LONG>(th)};
-  if (r && !IntersectRect(&rr, &rr, r)) return true;
-  if (shader_key) {
-    BlitParams c;
-    c.SetDst(*tmp);
-    c.dst_rect = rr;
-    c.fill[0] = c.fill[1] = c.fill[2] = c.fill[3] = 0;
-    c.opaque = false;
-    Blit(c);
+  return p;
+}
+
+COLORREF PixelColour(const Surface* t, DWORD px) {
+  const PixelLayout& l = t->Layout();
+  int c[3] = {255, 255, 255};
+  for (int i = 0; i < 3; ++i) {
+    const DWORD m = l.mask[i];
+    if (!m) continue;
+    DWORD shift = 0;
+    while (!((m >> shift) & 1)) ++shift;
+    const DWORD max = m >> shift;
+    c[i] = static_cast<int>(((px & m) >> shift) * 255 / max);
   }
-  BlitParams p;
-  p.SetDst(*tmp);
-  p.dst_rect = rr;
-  p.SetSrc(*src);
-  p.src_rect = rr;
-  p.premultiply = true;
-  p.opaque = false;
-  if (shader_key) {
-    p.color_key = true;
-    t->KeyColor(p.key);
-  }
-  Blit(p);
-  const float kx = static_cast<float>(w) / tw, ky = static_cast<float>(h) / th;
-  BlitParams q;
-  q.SetDst(*hi);
-  q.dst_rect = {static_cast<LONG>(std::lround(rr.left * kx)), static_cast<LONG>(std::lround(rr.top * ky)),
-                static_cast<LONG>(std::lround(rr.right * kx)), static_cast<LONG>(std::lround(rr.bottom * ky))};
-  q.SetSrc(*tmp);
-  q.src_rect = rr;
-  q.linear = true;
-  q.opaque = false;
-  if (q.dst_rect.left < q.dst_rect.right && q.dst_rect.top < q.dst_rect.bottom) Blit(q);
-  if (!r) {
-    ++g_st.rebuilds;
+  return RGB(c[0], c[1], c[2]);
+}
+
+// The game's text calls on a scratch texture: kept, not drawn.
+class Capture : public GdiTarget {
+ public:
+  bool Draw(const GdiCall& call) override {
+    if (call.fn != GdiFn::kTextOut && call.fn != GdiFn::kDrawText) return false;
+    auto it = g_scratch_dc.find(call.dc);
+    if (it == g_scratch_dc.end() || !call.s) return false;
+    HDC dc = call.dc;
+    Item item;
+    item.align = GetTextAlign(dc);
+    if (item.align & TA_UPDATECP) return false;  // not used by the panels; let GDI have it
+    const int len = call.len >= 0 ? call.len : static_cast<int>(std::strlen(call.s));
+    item.s.assign(call.s, static_cast<size_t>(std::max(len, 0)));
+    GetObjectA(GetCurrentObject(dc, OBJ_FONT), sizeof(item.font), &item.font);
+    item.extra = GetTextCharacterExtra(dc);
+    if (call.fn == GdiFn::kTextOut) {
+      SIZE ext{};
+      GetTextExtentPoint32A(dc, item.s.c_str(), len, &ext);
+      TEXTMETRICA tm{};
+      GetTextMetricsA(dc, &tm);
+      item.x = call.x;
+      item.y = call.y;
+      LONG left = call.x, top = call.y;
+      if ((item.align & TA_CENTER) == TA_CENTER) left -= ext.cx / 2;
+      else if (item.align & TA_RIGHT) left -= ext.cx;
+      if ((item.align & TA_BASELINE) == TA_BASELINE) top -= tm.tmAscent;
+      else if (item.align & TA_BOTTOM) top -= ext.cy;
+      item.box = {left, top, left + ext.cx, top + ext.cy};
+    } else {
+      if (!call.rect) return false;
+      item.draw_text = true;
+      item.rect = *call.rect;
+      item.fmt = call.fmt;
+      RECT calc = *call.rect;
+      DrawTextA(dc, item.s.c_str(), len, &calc, (call.fmt & ~DT_NOCLIP) | DT_CALCRECT);
+      const LONG w = calc.right - calc.left, h = calc.bottom - calc.top;
+      LONG left = call.rect->left, top = call.rect->top;
+      if (call.fmt & DT_CENTER) left = (call.rect->left + call.rect->right - w) / 2;
+      else if (call.fmt & DT_RIGHT) left = call.rect->right - w;
+      if ((call.fmt & DT_SINGLELINE) && (call.fmt & DT_VCENTER)) top = (call.rect->top + call.rect->bottom - h) / 2;
+      else if ((call.fmt & DT_SINGLELINE) && (call.fmt & DT_BOTTOM)) top = call.rect->bottom - h;
+      item.box = {left, top, left + w, top + h};
+    }
+    ++g_st.captured;
     static unsigned logged = 0;
-    if (++logged <= 10) Log("hud text: %ux%u panel copied%s", tw, th, keyed ? " (colour-keyed)" : "");
+    if (++logged <= 30)
+      Log("hud text: captured %s \"%s\" font \"%s\" %ld%s, at %ld,%ld-%ld,%ld (fmt %x align %x)",
+          item.draw_text ? "DrawText" : "TextOut", item.s.c_str(), item.font.lfFaceName, item.font.lfHeight,
+          item.font.lfWeight >= FW_BOLD ? " bold" : "", item.box.left, item.box.top, item.box.right, item.box.bottom,
+          item.fmt, item.align);
+    auto& pending = g_pending[it->second];
+    // Text drawn again over the same place replaces what was there.
+    pending.erase(std::remove_if(pending.begin(), pending.end(),
+                                 [&](const Item& o) { return Intersects(o.box, item.box); }),
+                  pending.end());
+    if (pending.size() < 256) pending.push_back(std::move(item));
+    return true;
   }
-  t->SetHiresSerial(t->ContentSerial());
-  return true;
-}
-
-bool Rebuild(Surface* t) { return Refresh(t, nullptr); }
-
-// The sharp copy exists at the size the current scale asks for.
-bool Fits(Surface* t) {
-  const GpuTexture* hi = t->Hires();
-  const float s = GpuTextTextureScale();
-  return hi->Valid() && hi->width == std::max<UINT>(1, static_cast<UINT>(std::lround(t->Width() * s))) &&
-         hi->height == std::max<UINT>(1, static_cast<UINT>(std::lround(t->Height() * s)));
-}
-
-bool Current(Surface* t) { return t->HiresCurrent() && Fits(t); }
-
-bool Active() { return GpuTextActive() && GetConfig().hud_text; }
+};
+Capture g_capture;
 
 void __fastcall ConvertHook(uintptr_t self, void* edx, int first_row, int rows, DWORD colour) {
   Surface* t = Active() ? SurfaceAt(self, kPanelTexture) : nullptr;
   Surface* s = t ? SurfaceAt(self, kPanelScratch) : nullptr;
-  if (!t || !s || rows <= 0) {
-    if (Active()) ++g_st.skipped;
-    g_convert(self, edx, first_row, rows, colour);
-    return;
-  }
-  Report();
-  ++g_st.converts;
-  // Bring the sharp copy up to date with the panel before the text goes in.
-  t->Gpu();
-  if (!Current(t)) Rebuild(t);
-  // A pixel the game is about to turn into text: its colour afterwards is
-  // the text colour (in the panel's own format, alpha included).
-  const LONG y0 = std::max(first_row, 0);
-  const LONG y1 = std::min<LONG>(first_row + rows, static_cast<LONG>(s->Height()));
-  LONG px = -1, py = -1;
-  for (LONG y = y0; y < y1 && px < 0; ++y)
-    for (LONG x = 0; x < static_cast<LONG>(s->Width()); ++x) {
-      uint8_t c[4];
-      if (s->CpuPixelBGRA(x, y, c) && c[0] >= 0xf0 && c[1] >= 0xf0 && c[2] >= 0xf0) {
-        px = x;
-        py = y;
-        break;
+  if (s) {
+    Report();
+    g_scratch.insert(s);
+    Panel& p = Register(self);
+    ++g_st.converted;
+    const LONG y0 = first_row, y1 = first_row + rows;
+    const COLORREF c = PixelColour(t, colour);
+    auto& pending = g_pending[s];
+    unsigned moved = 0;
+    for (auto it = pending.begin(); it != pending.end();) {
+      const LONG mid = (it->box.top + it->box.bottom) / 2;
+      if (mid < y0 || mid >= y1) {
+        ++it;
+        continue;
       }
+      it->colour = c;
+      const RECT box = it->box;
+      p.items.erase(std::remove_if(p.items.begin(), p.items.end(),
+                                   [&](const Item& o) { return Intersects(o.box, box); }),
+                    p.items.end());
+      p.items.push_back(std::move(*it));
+      it = pending.erase(it);
+      ++moved;
     }
-  const bool was_current = Current(t);
-  g_convert(self, edx, first_row, rows, colour);
-  t->Gpu();
-  const RECT r{0, y0, static_cast<LONG>(s->Width()), y1};
-  if (!was_current) {
-    GpuTextOcclude(s, &r, "converted");
-    return;
-  }
-  // The scratch can be larger than the panel (a 256 scratch for a 128 panel).
-  const RECT rb{0, y0, std::min<LONG>(r.right, static_cast<LONG>(t->Width())),
-                std::min<LONG>(y1, static_cast<LONG>(t->Height()))};
-  float rgba[4] = {1, 1, 1, 1};
-  uint8_t c[4];
-  if (px >= 0 && t->CpuPixelBGRA(px, py, c)) {
-    rgba[0] = c[2] / 255.0f;
-    rgba[1] = c[1] / 255.0f;
-    rgba[2] = c[0] / 255.0f;
-    rgba[3] = t->Layout().mask[3] ? c[3] / 255.0f : 1.0f;
-  }
-  if (px >= 0 && GpuTextBake(s, rb, *t->Hires(), static_cast<float>(t->Hires()->width) / t->Width(),
-                              static_cast<float>(t->Hires()->height) / t->Height(), rgba)) {
-    ++g_st.baked;
+    g_st.moved += moved;
     static unsigned logged = 0;
     if (++logged <= 20)
-      Log("hud text: rows %ld-%ld of a %ux%u panel drawn sharp in %02x%02x%02x alpha %.2f", y0, y1, t->Width(),
-          t->Height(), c[2], c[1], c[0], rgba[3]);
-  } else {
-    ++g_st.no_text;
+      Log("hud text: panel %08x rows %d-%d converted in %06lx (pixel %08lx): %u texts, panel now has %u",
+          static_cast<unsigned>(self), y0, y1, static_cast<unsigned long>(c), static_cast<unsigned long>(colour),
+          moved, static_cast<unsigned>(p.items.size()));
   }
-  // The game cleared the converted pixels of the scratch texture.
-  GpuTextOcclude(s, &r, "converted");
-  t->SetHiresSerial(t->ContentSerial());
+  // The game still converts the rest (lines, boxes) as before.
+  g_convert(self, edx, first_row, rows, colour);
 }
 
 void __fastcall RestoreHook(uintptr_t self, void* edx, const RECT* rect) {
-  Surface* t = Active() ? SurfaceAt(self, kPanelTexture) : nullptr;
-  if (!t || !rect) {
-    g_restore(self, edx, rect);
-    return;
-  }
-  Report();
-  ++g_st.restores;
-  t->Gpu();
-  const bool was_current = Current(t);
   g_restore(self, edx, rect);
-  t->Gpu();
-  if (!was_current) return;
-  // The panel's background came back in rect: copy it over, scaled up.
-  Refresh(t, rect);
+  if (!Active() || !rect || !SurfaceAt(self, kPanelScratch)) return;
+  Report();
+  Panel& p = Register(self);
+  ++g_st.wipes;
+  const size_t before = p.items.size();
+  p.items.erase(std::remove_if(p.items.begin(), p.items.end(),
+                               [&](const Item& o) { return Intersects(o.box, *rect); }),
+                p.items.end());
+  g_st.wiped += static_cast<unsigned>(before - p.items.size());
 }
 
 bool PatchCall(uintptr_t site, uintptr_t original, const void* hook) {
@@ -235,67 +309,130 @@ bool PatchCall(uintptr_t site, uintptr_t original, const void* hook) {
   return patch::Replace("hud text call", site, expect, 5, repl, 5);
 }
 
-}  // namespace
+struct FontKey {
+  LOGFONTA lf;
+  bool operator<(const FontKey& o) const { return std::memcmp(&lf, &o.lf, sizeof(lf)) < 0; }
+};
+std::map<FontKey, HFONT> g_fonts;
 
-void NoteHiresSample() { ++g_st.samples; }
-
-void NoteHudDraw(Surface* tex, float scale) {
-  if (!Active() || !(scale > 0)) return;
-  // Quarter steps, at least 1 (text is never drawn smaller than the game's).
-  const float want = std::max(1.0f, std::min(4.0f, std::round(scale * 4.0f) / 4.0f));
-  const float now = GpuTextTextureScale();
-  if (std::fabs(want - now) < 0.01f) return;
-  static unsigned changes = 0;
-  if (++changes > 20) return;  // do not chase panels drawn at different sizes
-  Log("hud text: a %ux%u panel is drawn at %.2f screen pixels per texel; sharp copies now x%.2f (were x%.2f)",
-      tex->Width(), tex->Height(), scale, want, now);
-  GpuTextSetTextureScale(want);
+HFONT ScaledFont(const LOGFONTA& lf, float kx, float ky) {
+  FontKey key{lf};
+  key.lf.lfHeight = static_cast<LONG>(std::lround(lf.lfHeight * ky));
+  key.lf.lfWidth = static_cast<LONG>(std::lround(lf.lfWidth * kx));
+  key.lf.lfQuality = ANTIALIASED_QUALITY;
+  auto it = g_fonts.find(key);
+  if (it != g_fonts.end()) return it->second;
+  HFONT f = CreateFontIndirectA(&key.lf);
+  g_fonts[key] = f;
+  return f;
 }
 
-HiresCarry::HiresCarry(Surface* src, const RECT& sr, Surface* dst, const RECT& dr, bool key)
-    : src_(src), dst_(dst), sr_(sr), dr_(dr), key_(key) {
-  if (!Active() || !src || src == dst || !src->Hires()->Valid()) {
-    src_ = nullptr;
-    return;
+// Draw a panel's text over its quad (screen pixels of the render target).
+void DrawPanel(Surface* rt, uintptr_t self, Panel& p) {
+  const uintptr_t tw = Wrapper(self, kPanelTexture);
+  if (!tw) return;
+  const int texw = *reinterpret_cast<const int*>(tw + kWrapperW), texh = *reinterpret_cast<const int*>(tw + kWrapperH);
+  const float* v = reinterpret_cast<const float*>(self + kVerts);  // 8 floats per vertex
+  // Texel -> screen, from the two vertices furthest apart on each axis.
+  int ix0 = 0, ix1 = 0, iy0 = 0, iy1 = 0;
+  for (int i = 1; i < 4; ++i) {
+    if (v[i * 8] < v[ix0 * 8]) ix0 = i;
+    if (v[i * 8] > v[ix1 * 8]) ix1 = i;
+    if (v[i * 8 + 1] < v[iy0 * 8 + 1]) iy0 = i;
+    if (v[i * 8 + 1] > v[iy1 * 8 + 1]) iy1 = i;
   }
-  dst_current_ = Current(dst);
-}
+  const float du = (v[ix1 * 8 + 6] - v[ix0 * 8 + 6]) * texw, dv = (v[iy1 * 8 + 7] - v[iy0 * 8 + 7]) * texh;
+  if (texw <= 0 || texh <= 0 || std::fabs(du) < 1 || std::fabs(dv) < 1) return;
+  const float kx = (v[ix1 * 8] - v[ix0 * 8]) / du, ky = (v[iy1 * 8 + 1] - v[iy0 * 8 + 1]) / dv;
+  const float ox = v[ix0 * 8] - v[ix0 * 8 + 6] * texw * kx, oy = v[iy0 * 8 + 1] - v[iy0 * 8 + 7] * texh * ky;
+  auto X = [&](LONG x) { return static_cast<LONG>(std::lround(ox + x * kx)); };
+  auto Y = [&](LONG y) { return static_cast<LONG>(std::lround(oy + y * ky)); };
 
-HiresCarry::~HiresCarry() {
-  if (!src_ || !Current(src_)) return;
-  Surface* d = dst_;
-  if (!(d->Caps() & DDSCAPS_TEXTURE)) {
-    LogOnce("hud text: a panel was copied to a %ux%u surface that is not a texture (caps %08lx); not sharp there",
-            d->Width(), d->Height(), d->Caps());
+  HDC dc = rt->BeginGpuText();
+  if (!dc) {
+    ++g_st.no_dc;
     return;
   }
-  d->Gpu();
-  if (!dst_current_ && !Refresh(d, nullptr)) return;
-  GpuTexture* sh = src_->Hires();
-  GpuTexture* dh = d->Hires();
-  if (!dh->Valid() || !dh->CanRender()) return;
-  const float skx = static_cast<float>(sh->width) / src_->Width(), sky = static_cast<float>(sh->height) / src_->Height();
-  const float dkx = static_cast<float>(dh->width) / d->Width(), dky = static_cast<float>(dh->height) / d->Height();
-  BlitParams p;
-  p.SetDst(*dh);
-  p.dst_rect = {static_cast<LONG>(std::lround(dr_.left * dkx)), static_cast<LONG>(std::lround(dr_.top * dky)),
-                static_cast<LONG>(std::lround(dr_.right * dkx)), static_cast<LONG>(std::lround(dr_.bottom * dky))};
-  p.SetSrc(*sh);
-  p.src_rect = {static_cast<LONG>(std::lround(sr_.left * skx)), static_cast<LONG>(std::lround(sr_.top * sky)),
-                static_cast<LONG>(std::lround(sr_.right * skx)), static_cast<LONG>(std::lround(sr_.bottom * sky))};
-  p.linear = (p.dst_rect.right - p.dst_rect.left) != (p.src_rect.right - p.src_rect.left) ||
-             (p.dst_rect.bottom - p.dst_rect.top) != (p.src_rect.bottom - p.src_rect.top);
-  // A colour-keyed copy leaves the destination where the key is: blend.
-  p.premul = key_;
-  p.opaque = false;
-  if (p.dst_rect.left >= p.dst_rect.right || p.dst_rect.top >= p.dst_rect.bottom) return;
-  Blit(p);
-  d->SetHiresSerial(d->ContentSerial());
-  ++g_st.carries;
+  HRGN clip = CreateRectRgn(static_cast<int>(std::floor(v[ix0 * 8])), static_cast<int>(std::floor(v[iy0 * 8 + 1])),
+                            static_cast<int>(std::ceil(v[ix1 * 8])), static_cast<int>(std::ceil(v[iy1 * 8 + 1])));
+  SelectClipRgn(dc, clip);
+  DeleteObject(clip);
+  SetBkMode(dc, TRANSPARENT);
+  for (const Item& it : p.items) {
+    SelectObject(dc, ScaledFont(it.font, kx, ky));
+    SetTextColor(dc, it.colour);
+    SetTextAlign(dc, it.align);
+    SetTextCharacterExtra(dc, static_cast<int>(std::lround(it.extra * kx)));
+    GdiCall call{};
+    call.dc = dc;
+    call.s = it.s.c_str();
+    call.len = static_cast<int>(it.s.size());
+    RECT r{};
+    if (it.draw_text) {
+      call.fn = GdiFn::kDrawText;
+      r = {X(it.rect.left), Y(it.rect.top), X(it.rect.right), Y(it.rect.bottom)};
+      call.rect = &r;
+      call.fmt = it.fmt;
+    } else {
+      call.fn = GdiFn::kTextOut;
+      call.x = X(it.x);
+      call.y = Y(it.y);
+    }
+    if (GpuTextRun(call)) ++g_st.drawn;
+  }
+  SelectObject(dc, GetStockObject(SYSTEM_FONT));
+  GpuTextEndDC(dc);
   static unsigned logged = 0;
   if (++logged <= 5)
-    Log("hud text: panel %ux%u copied to a %ux%u texture (caps %08lx)%s; sharp copy carried along", src_->Width(),
-        src_->Height(), d->Width(), d->Height(), d->Caps(), key_ ? " with its colour key" : "");
+    Log("hud text: panel %08x drawn at %.1f,%.1f, %.2f x %.2f screen pixels per texel, %u texts",
+        static_cast<unsigned>(self), ox, oy, kx, ky, static_cast<unsigned>(p.items.size()));
+}
+
+}  // namespace
+
+bool HudTextScratchDC(HDC dc, Surface* s, void* caller) {
+  if (!dc || !s || !Active()) return false;
+  const uintptr_t ret = reinterpret_cast<uintptr_t>(caller);
+  const bool site = std::find(std::begin(kScratchGetDC), std::end(kScratchGetDC), ret) != std::end(kScratchGetDC);
+  if (!site && !g_scratch.count(s)) return false;
+  if (g_scratch.insert(s).second)
+    Log("hud text: %ux%u scratch texture (GetDC from %08x): its text is captured", s->Width(), s->Height(),
+        static_cast<unsigned>(ret));
+  g_scratch_dc[dc] = s;
+  GdiTrack(dc, &g_capture, s->Width(), s->Height(), "hud text capture");
+  return true;
+}
+
+void HudTextAfterDraw(Surface* rt, const uint8_t* verts, DWORD first, DWORD count, UINT stride) {
+  if (g_panels.empty() || !rt || !verts || count < 3 || !Active()) return;
+  float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
+  for (DWORD i = 0; i < count; ++i) {
+    const float* p = reinterpret_cast<const float*>(verts + static_cast<size_t>(first + i) * stride);
+    x0 = std::min(x0, p[0]), x1 = std::max(x1, p[0]);
+    y0 = std::min(y0, p[1]), y1 = std::max(y1, p[1]);
+  }
+  for (auto& e : g_panels) {
+    if (e.second.items.empty()) continue;
+    const float* v = reinterpret_cast<const float*>(e.first + kVerts);
+    float px0 = 1e9f, py0 = 1e9f, px1 = -1e9f, py1 = -1e9f;
+    for (int i = 0; i < 4; ++i) {
+      px0 = std::min(px0, v[i * 8]), px1 = std::max(px1, v[i * 8]);
+      py0 = std::min(py0, v[i * 8 + 1]), py1 = std::max(py1, v[i * 8 + 1]);
+    }
+    if (std::fabs(px0 - x0) > 0.5f || std::fabs(px1 - x1) > 0.5f || std::fabs(py0 - y0) > 0.5f ||
+        std::fabs(py1 - y1) > 0.5f)
+      continue;
+    ++g_st.draws;
+    ++e.second.draws;
+    DrawPanel(rt, e.first, e.second);
+    break;
+  }
+}
+
+void HudPanelLayout(uintptr_t inst) {
+  if (!Active() || Scale() == 1.0f) return;
+  auto it = g_panels.find(inst);
+  if (it != g_panels.end()) ScaleRect(inst, it->second);
 }
 
 void InstallHudTextHooks() {
@@ -309,7 +446,7 @@ void InstallHudTextHooks() {
     ++total;
     ok += PatchCall(site, kRestore, reinterpret_cast<const void*>(&RestoreHook));
   }
-  Log("hud text: %u of %u HUD panel calls hooked", ok, total);
+  Log("hud text: %u of %u HUD panel calls hooked; panels drawn x%.2f", ok, total, Scale());
 }
 
 }  // namespace dd

@@ -115,7 +115,8 @@ RegLog=0       ; debugging: log every registry call
 DDStats=0      ; debugging: log renderer activity every 2 seconds
 D3D9Log=1      ; debugging: extra Direct3D 9 renderer logging (device caps, first frames, fallbacks)
 GpuText=1      ; draw the game's menu and HUD text (GDI) on the GPU, antialiased, at screen resolution
-HudText=1      ; with GpuText: also the race HUD panels' text (which the game turns into textures)
+HudText=1      ; with GpuText: the race HUD panels' text is drawn by mcm2fix on screen, sharp
+HudScale=2     ; race HUD text panels (position, lap, times) drawn this many times larger (1 = original)
 TextLog=0      ; debugging: log GPU text drawing and what erases it
 GdiLog=0       ; debugging: log the GDI calls (text, boxes, lines) the game draws onto the screen with
 RestartLog=0   ; debugging: log the start grid at race load and on Restart Race

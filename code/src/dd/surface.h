@@ -107,6 +107,11 @@ class Surface : public IDirectDrawSurface7 {
   bool IsVisible() const { return (desc_.ddsCaps.dwCaps & DDSCAPS_FRONTBUFFER) != 0; }
   void SetUsedAsRenderTarget() { rt_used_ = true; }
   const PixelLayout& Layout() const { return layout_; }
+  // A GPU text DC for this render target (GpuTextEndDC ends it), or null.
+  HDC BeginGpuText() {
+    const char* why = nullptr;
+    return TextDC(&why);
+  }
   bool HasColorKey() const { return has_key_; }
   void KeyColor(float out[3]) const;
   Surface* ZBuffer() const { return zbuffer_; }
@@ -128,17 +133,6 @@ class Surface : public IDirectDrawSurface7 {
   // The texture to sample when drawing with this surface: its GPU copy,
   // or a replacement picture (see texreplace.h).
   const GpuTexture* SampleTex();
-  // A sharper copy at screen resolution, drawn by mcm2fix (hudtext.cpp):
-  // used for sampling while the surface has not changed since it was made.
-  GpuTexture* Hires() { return &hires_; }
-  GpuTexture* HiresScratch() { return &hires_tmp_; }
-  // The sharper copy (premultiplied alpha) if it is current, else null.
-  const GpuTexture* SharpTex();
-  unsigned ContentSerial() const { return content_serial_; }
-  void SetHiresSerial(unsigned s) { hires_serial_ = s; }
-  bool HiresCurrent() const { return hires_.Valid() && hires_serial_ == content_serial_; }
-  // A pixel of the CPU copy (reading back GPU changes first).
-  bool CpuPixelBGRA(UINT x, UINT y, uint8_t out[4]);
   // Direct3D 9 (no shaders): a copy whose texels equal to `key` (in this
   // surface's format) have alpha 0, for colour-keyed blits and draws.
   // Built from the CPU copy; null if it cannot be made.
@@ -194,10 +188,6 @@ class Surface : public IDirectDrawSurface7 {
   GpuTexture gpu_;
   GpuTexture replaced_;    // replacement picture, if one matches
   GpuTexture keyed_;       // D3D9 colour-keyed copy (KeyedTex)
-  GpuTexture hires_;       // sharper copy (Hires), premultiplied alpha
-  GpuTexture hires_tmp_;   // its premultiplied source at the surface's size
-  unsigned hires_serial_ = 0;
-  unsigned content_serial_ = 1;  // bumped by every upload and GPU write
   uint64_t keyed_stamp_ = 0;
   uint32_t cpu_version_ = 0;  // bumped whenever the CPU copy changes
   uint64_t tex_hash_ = 0;  // hash of the last uploaded top level
