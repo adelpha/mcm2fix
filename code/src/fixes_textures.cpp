@@ -23,9 +23,12 @@
 #include <cstring>
 #include <initializer_list>
 #include <map>
+#include <string>
+#include <unordered_map>
 #include <utility>
 
 #include "config.h"
+#include "dd/texreplace.h"
 #include "patch.h"
 
 namespace {
@@ -120,6 +123,163 @@ void Summary() {
 
 // stdcall: called from the thunk with eax (chosen format), ebp (the texture
 // object) and esp at the hook point. Returns the format to use.
+// ---- Texture names ----
+//
+// The game loads textures by name: TextureMap loader 0x50fd00(?, name, ...)
+// looks the name up in the .RES archives (the texture cache loader 0x4ca7d0
+// then reads the stored mip levels) and falls back to a TGA file; other
+// code loads TGA files directly with 0x517ca0(name, ...) or
+// 0x5173e0(name, ...), which return an image whose pixels (+14h) are later
+// handed to the texture creator 0x4cb110 as argument 1. We remember those
+// names and pass the one that belongs to each texture to the renderer, which
+// dumps and replaces textures by name (dd/texreplace.cpp).
+constexpr uintptr_t kLoadTexMap = 0x50FD00;
+const uint8_t kLoadTexMapEntry[] = {0x6A, 0xFF, 0x68, 0xBE, 0x3F, 0x55, 0x00};  // push -1; push 553FBEh
+constexpr uintptr_t kLoadTga = 0x517CA0;
+const uint8_t kLoadTgaEntry[] = {0x6A, 0xFF, 0x68, 0x27, 0x44, 0x55, 0x00};  // push -1; push 554427h
+constexpr uintptr_t kLoadTga2 = 0x5173E0;
+const uint8_t kLoadTga2Entry[] = {0x6A, 0xFF, 0x68, 0xF7, 0x43, 0x55, 0x00};  // push -1; push 5543F7h
+
+using LoadTexMapFn = uintptr_t(__cdecl*)(uintptr_t, const char*, uintptr_t, uintptr_t, uintptr_t,
+                                         uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t,
+                                         uintptr_t, uintptr_t);
+using LoadTgaFn = uintptr_t(__cdecl*)(const char*, uintptr_t, uintptr_t);
+LoadTexMapFn g_load_texmap = nullptr;
+LoadTgaFn g_load_tga = nullptr;
+LoadTgaFn g_load_tga2 = nullptr;
+
+std::string g_loading;  // name being loaded by 0x50fd00, empty outside it
+std::unordered_map<uintptr_t, std::string> g_data_names;  // image pixels -> file name
+std::unordered_map<uintptr_t, std::string> g_obj_names;   // texture object -> name
+std::string g_next_name;  // name for the surface 0x4cb030 is about to create
+unsigned g_named = 0, g_unnamed = 0, g_by_loader = 0, g_by_file = 0, g_by_object = 0;
+
+bool Readable(const void* p, size_t n) {
+  MEMORY_BASIC_INFORMATION mi{};
+  if (!p || !VirtualQuery(p, &mi, sizeof(mi)) || mi.State != MEM_COMMIT) return false;
+  if (mi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) return false;
+  const auto end = reinterpret_cast<uintptr_t>(mi.BaseAddress) + mi.RegionSize;
+  return reinterpret_cast<uintptr_t>(p) + n <= end;
+}
+
+// A printable name of at most 127 characters, or "".
+std::string SafeName(const char* p) {
+  if (!Readable(p, 1)) return "";
+  std::string s;
+  for (size_t i = 0; i < 128; ++i) {
+    if (!Readable(p + i, 1)) return "";
+    const char c = p[i];
+    if (!c) break;
+    if (static_cast<unsigned char>(c) < 0x20 || static_cast<unsigned char>(c) >= 0x7f) return "";
+    s += c;
+  }
+  return s.size() < 128 ? s : "";
+}
+
+uintptr_t __cdecl LoadTexMapHook(uintptr_t a1, const char* name, uintptr_t a3, uintptr_t a4,
+                                 uintptr_t a5, uintptr_t a6, uintptr_t a7, uintptr_t a8,
+                                 uintptr_t a9, uintptr_t a10, uintptr_t a11, uintptr_t a12) {
+  std::string saved;
+  saved.swap(g_loading);
+  g_loading = SafeName(name);
+  const uintptr_t r = g_load_texmap(a1, name, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12);
+  if (r && !g_loading.empty()) g_obj_names[r] = g_loading;
+  static unsigned logged = 0;
+  if (GetConfig().texture_log && ++logged <= 300)
+    patch::Log("texture map \"%s\" -> %08x", g_loading.c_str(), static_cast<unsigned>(r));
+  g_loading.swap(saved);
+  return r;
+}
+
+void RememberImage(const char* name, uintptr_t img, const char* which) {
+  if (!img || !Readable(reinterpret_cast<void*>(img + 0x14), 4)) return;
+  const uintptr_t px = *reinterpret_cast<const uintptr_t*>(img + 0x14);
+  std::string n = SafeName(name);
+  if (!px || n.empty()) return;
+  static unsigned logged = 0;
+  if (GetConfig().texture_log && ++logged <= 300)
+    patch::Log("texture file \"%s\" (%s) pixels %08x", n.c_str(), which, static_cast<unsigned>(px));
+  g_data_names[px] = std::move(n);
+}
+
+uintptr_t __cdecl LoadTgaHook(const char* name, uintptr_t a2, uintptr_t a3) {
+  const uintptr_t r = g_load_tga(name, a2, a3);
+  RememberImage(name, r, "517ca0");
+  return r;
+}
+
+uintptr_t __cdecl LoadTga2Hook(const char* name, uintptr_t a2, uintptr_t a3) {
+  const uintptr_t r = g_load_tga2(name, a2, a3);
+  RememberImage(name, r, "5173e0");
+  return r;
+}
+
+// TextureMap base constructor 0x50fc50 (thiscall): every texture object is
+// built through it, so a new object at a reused address loses the old name.
+constexpr uintptr_t kTexMapCtor = 0x50FC50;
+const uint8_t kTexMapCtorEntry[] = {0x6A, 0xFF, 0x68, 0x78, 0x3F, 0x55, 0x00};  // push -1; push 553F78h
+unsigned g_forgotten = 0;
+void __stdcall ForgetObject(uintptr_t obj) {
+  if (g_obj_names.erase(obj)) ++g_forgotten;
+}
+
+// Which name the texture being created (0x4cb110 on `tex`, pixels a1) has.
+const char* NameTexture(uintptr_t tex, uintptr_t pixels, std::string& out) {
+  out.clear();
+  if (pixels) {
+    auto it = g_data_names.find(pixels);
+    if (it != g_data_names.end()) {
+      out = it->second;
+      ++g_by_file;
+      g_obj_names[tex] = out;
+      return "file";
+    }
+  }
+  if (!g_loading.empty()) {
+    out = g_loading;
+    ++g_by_loader;
+    g_obj_names[tex] = out;
+    return "loader";
+  }
+  auto it = g_obj_names.find(tex);
+  if (it != g_obj_names.end()) {
+    if (pixels) {
+      // New pixels from somewhere we don't know: the object was reused.
+      g_obj_names.erase(it);
+      return "none";
+    }
+    out = it->second;
+    ++g_by_object;
+    return "object";
+  }
+  return "none";
+}
+
+void* MakeTrampoline(uintptr_t addr, const uint8_t* entry, size_t len) {
+  auto* t = static_cast<uint8_t*>(
+      VirtualAlloc(nullptr, 32, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+  if (!t) return nullptr;
+  std::memcpy(t, entry, len);
+  t[len] = 0xE9;
+  const int32_t rel = static_cast<int32_t>((addr + len) - (reinterpret_cast<uintptr_t>(t) + len + 5));
+  std::memcpy(t + len + 1, &rel, 4);
+  FlushInstructionCache(GetCurrentProcess(), t, len + 5);
+  return t;
+}
+
+bool HookEntry(const char* what, uintptr_t addr, const uint8_t* entry, size_t len, void* hook,
+               void** tramp) {
+  if (!patch::Matches(addr, entry, len)) {
+    patch::Log("textures: %s code differs, not hooked", what);
+    return false;
+  }
+  *tramp = MakeTrampoline(addr, entry, len);
+  if (!*tramp) return false;
+  patch::Jump(addr, reinterpret_cast<uintptr_t>(hook), len);
+  patch::Log("textures: %s hooked at %08x", what, static_cast<unsigned>(addr));
+  return true;
+}
+
 int g_pending = 0;  // format OnCreateFromList should try first, 0 = none
 int __stdcall OnFormatChosen(int id, uintptr_t tex, uintptr_t esp) {
   // 0x4cb110 has pushed 4 registers after "sub esp,0C4h": the return
@@ -148,15 +308,24 @@ int __stdcall OnFormatChosen(int id, uintptr_t tex, uintptr_t esp) {
   // The upgrade itself happens in OnCreateFromList (0x4cb030), which
   // 0x4cb110 calls next for this texture.
   g_pending = out != id ? out : 0;
+  std::string tex_name;
+  const char* name_src = NameTexture(tex, a[1], tex_name);
+  if (tex_name.empty()) ++g_unnamed;
+  else ++g_named;
+  // Display-format surfaces are not textures to the renderer; the name is
+  // only used for texture surfaces anyway.
+  g_next_name = dd::TextureKey(tex_name.c_str());
+  dd::SetPendingTextureName(nullptr);
   ++g_count;
   ++g_pairs[{id, out}];
   if (GetConfig().texture_log && g_count <= kDetailed) {
-    patch::Log("texture #%u: format %s(0x%x) -> %s%s caller=%08x tex=%08x args %x %x %x %x %x %x %x %x %x %x",
-               g_count, Name(id), id, Name(out), why, a[0], static_cast<unsigned>(tex), a[1], a[2], a[3], a[4],
+    patch::Log("texture #%u: \"%s\" (%s) format %s(0x%x) -> %s%s caller=%08x tex=%08x args %x %x %x %x %x %x %x %x %x %x",
+               g_count, tex_name.c_str(), name_src, Name(id), id, Name(out), why, a[0], static_cast<unsigned>(tex), a[1], a[2], a[3], a[4],
                a[5], a[6], a[7], a[8], a[9], a[10]);
   }
   if (GetConfig().texture_log && g_count % kSummaryEvery == 0) {
-    patch::Log("textures: %u created so far", g_count);
+    patch::Log("textures: %u created so far (named: %u by file, %u by loader, %u by object; %u unnamed)",
+               g_count, g_by_file, g_by_loader, g_by_object, g_unnamed);
     Summary();
   }
   return id;
@@ -174,7 +343,10 @@ uint32_t g_list[8];
 unsigned g_list_log = 0;
 const uint32_t* __stdcall OnCreateFromList(uintptr_t tex, const DDSURFACEDESC2* desc,
                                            const uint32_t* list) {
-  const int up = g_pending;
+  // The surface the game creates next belongs to this texture.
+  if (!g_next_name.empty()) dd::SetPendingTextureName(g_next_name.c_str());
+  g_next_name.clear();
+  const int up = GetConfig().true_color_textures ? g_pending : 0;
   g_pending = 0;
   if (!up || !desc || !list || !list[0]) return list;
   if (!(desc->dwFlags & DDSD_PIXELFORMAT)) {
@@ -211,7 +383,42 @@ void ApplyTextureFixes() {
     }
   }
 
-  if (!c.true_color_textures && !c.texture_log) return;
+  const bool names = c.texture_replace || c.texture_dump;
+  if (!c.true_color_textures && !c.texture_log && !names) return;
+  if (names) {
+    HookEntry("texture map loader", kLoadTexMap, kLoadTexMapEntry, sizeof(kLoadTexMapEntry),
+              reinterpret_cast<void*>(&LoadTexMapHook), reinterpret_cast<void**>(&g_load_texmap));
+    HookEntry("TGA loader", kLoadTga, kLoadTgaEntry, sizeof(kLoadTgaEntry),
+              reinterpret_cast<void*>(&LoadTgaHook), reinterpret_cast<void**>(&g_load_tga));
+    if (patch::Matches(kTexMapCtor, kTexMapCtorEntry, sizeof(kTexMapCtorEntry))) {
+      auto* k = static_cast<uint8_t*>(
+          VirtualAlloc(nullptr, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+      if (k) {
+        size_t m = 0;
+        auto emit = [&](std::initializer_list<uint8_t> b) {
+          for (uint8_t x : b) k[m++] = x;
+        };
+        auto emit32 = [&](uint32_t v) {
+          std::memcpy(k + m, &v, 4);
+          m += 4;
+        };
+        emit({0x60, 0x51, 0xB8});  // pushad; push ecx; mov eax, fn
+        emit32(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&ForgetObject)));
+        emit({0xFF, 0xD0, 0x61});  // call eax; popad
+        for (uint8_t b : kTexMapCtorEntry) emit({b});
+        emit({0x68});
+        emit32(static_cast<uint32_t>(kTexMapCtor + sizeof(kTexMapCtorEntry)));
+        emit({0xC3});
+        FlushInstructionCache(GetCurrentProcess(), k, m);
+        patch::Jump(kTexMapCtor, reinterpret_cast<uintptr_t>(k), sizeof(kTexMapCtorEntry));
+        patch::Log("textures: texture object constructor hooked at %08x", static_cast<unsigned>(kTexMapCtor));
+      }
+    } else {
+      patch::Log("textures: texture object constructor differs, not hooked");
+    }
+    HookEntry("TGA file loader", kLoadTga2, kLoadTga2Entry, sizeof(kLoadTga2Entry),
+              reinterpret_cast<void*>(&LoadTga2Hook), reinterpret_cast<void**>(&g_load_tga2));
+  }
   if (!patch::Matches(kChosen, kChosenCode, sizeof(kChosenCode))) {
     patch::Log("textures: texture loader code differs, format hook not applied");
     return;
@@ -244,7 +451,7 @@ void ApplyTextureFixes() {
   patch::Jump(kChosen, reinterpret_cast<uintptr_t>(t), 7);
   patch::Log("textures: format log hook applied at %08x", static_cast<unsigned>(kChosen));
 
-  if (!c.true_color_textures) return;
+  if (!c.true_color_textures && !names) return;
   if (!patch::Matches(kFromList, kFromListEntry, sizeof(kFromListEntry))) {
     patch::Log("textures: create-from-list code differs, true colour not applied");
     return;
@@ -269,11 +476,13 @@ void ApplyTextureFixes() {
   put({0xC3});                                                       // ret
   FlushInstructionCache(GetCurrentProcess(), t, n);
   patch::Jump(kFromList, reinterpret_cast<uintptr_t>(t), sizeof(kFromListEntry));
-  patch::Log("textures: true-colour list hook applied at %08x", static_cast<unsigned>(kFromList));
+  patch::Log("textures: create-from-list hook applied at %08x (true colour %s, names %s)",
+             static_cast<unsigned>(kFromList), c.true_color_textures ? "on" : "off", names ? "on" : "off");
 }
 
 void LogTextureSummary() {
   if (!g_count) return;
-  patch::Log("textures: %u created in total", g_count);
+  patch::Log("textures: %u created in total (named: %u by file, %u by loader, %u by object; %u unnamed; %u names dropped on reuse)",
+             g_count, g_by_file, g_by_loader, g_by_object, g_unnamed, g_forgotten);
   Summary();
 }

@@ -3,6 +3,7 @@
 #include <objbase.h>
 #include <wincodec.h>
 
+#include <cstdio>
 #include <cwchar>
 #include <map>
 #include <set>
@@ -69,7 +70,22 @@ bool ParseHash(const wchar_t* name, uint64_t* out) {
   return true;
 }
 
+std::map<std::string, std::wstring>& NameIndex() {
+  static std::map<std::string, std::wstring> index;
+  return index;
+}
+
+std::string Narrow(const std::wstring& w) {
+  std::string s;
+  for (wchar_t c : w) {
+    if (c >= L'A' && c <= L'Z') c = c - L'A' + L'a';
+    s += c < 128 ? static_cast<char>(c) : '?';
+  }
+  return s;
+}
+
 // hash -> picture file, from both replacement folders (the per-user one wins).
+// Pictures not named by a hash go into NameIndex() by file name.
 const std::map<uint64_t, std::wstring>& Index() {
   static std::map<uint64_t, std::wstring> index;
   static bool built = false;
@@ -87,11 +103,17 @@ const std::map<uint64_t, std::wstring>& Index() {
                    _wcsicmp(ext, L".bmp")))
         continue;
       uint64_t hash;
-      if (ParseHash(fd.cFileName, &hash)) index[hash] = dir + L"\\" + fd.cFileName;
+      if (ParseHash(fd.cFileName, &hash)) {
+        index[hash] = dir + L"\\" + fd.cFileName;
+      } else {
+        std::wstring stem(fd.cFileName, static_cast<size_t>(ext - fd.cFileName));
+        NameIndex()[Narrow(stem)] = dir + L"\\" + fd.cFileName;
+      }
     } while (FindNextFileW(h, &fd));
     FindClose(h);
   }
-  Log("texture replacement: %u pictures found", static_cast<unsigned>(index.size()));
+  Log("texture replacement: %u pictures named by hash, %u by texture name",
+      static_cast<unsigned>(index.size()), static_cast<unsigned>(NameIndex().size()));
   return index;
 }
 
@@ -133,16 +155,13 @@ uint64_t TextureHash(const uint8_t* bgra, UINT w, UINT h) {
   return x;
 }
 
-bool LoadReplacement(uint64_t hash, GpuTexture& out) {
-  if (!GetConfig().texture_replace) return false;
-  const auto& index = Index();
-  auto it = index.find(hash);
-  if (it == index.end()) return false;
+namespace {
+
+bool LoadPicture(const std::wstring& path, const char* label, GpuTexture& out) {
   std::vector<uint8_t> px;
   UINT w = 0, h = 0;
-  if (!Decode(it->second, px, w, h)) {
-    LogOnce("texture replacement %016llx: could not read the picture",
-            static_cast<unsigned long long>(hash));
+  if (!Decode(path, px, w, h)) {
+    LogOnce("texture replacement %s: could not read the picture", label);
     return false;
   }
   out.Reset();
@@ -169,28 +188,24 @@ bool LoadReplacement(uint64_t hash, GpuTexture& out) {
   out.width = w;
   out.height = h;
   out.levels = td.MipLevels;
-  LogOnce("texture replacement %016llx: %ux%u", static_cast<unsigned long long>(hash), w, h);
   return true;
 }
 
-void DumpTexture(uint64_t hash, const uint8_t* bgra, UINT w, UINT h) {
-  if (!GetConfig().texture_dump) return;
-  static std::set<uint64_t> done;
-  if (!done.insert(hash).second) return;
+std::wstring DumpDir() {
   static std::wstring dir;
   if (dir.empty()) {
     std::wstring user = UserDir();
-    if (user.empty()) return;
+    if (user.empty()) return L"";
     CreateDirectoryW(user.c_str(), nullptr);
     dir = user + L"\\textures_dump";
     CreateDirectoryW(dir.c_str(), nullptr);
   }
-  wchar_t name[32];
-  std::swprintf(name, 32, L"\\%016llx.png", static_cast<unsigned long long>(hash));
-  std::wstring path = dir + name;
-  if (GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES) return;
+  return dir;
+}
+
+bool WritePng(const std::wstring& path, const uint8_t* bgra, UINT w, UINT h) {
   IWICImagingFactory* f = Wic();
-  if (!f) return;
+  if (!f) return false;
   IWICStream* stream = nullptr;
   IWICBitmapEncoder* enc = nullptr;
   IWICBitmapFrameEncode* frame = nullptr;
@@ -210,10 +225,107 @@ void DumpTexture(uint64_t hash, const uint8_t* bgra, UINT w, UINT h) {
   if (frame) frame->Release();
   if (enc) enc->Release();
   if (stream) stream->Release();
-  if (!ok) {
-    DeleteFileW(path.c_str());
-    LogOnce("texture dump failed for %016llx", static_cast<unsigned long long>(hash));
+  if (!ok) DeleteFileW(path.c_str());
+  return ok;
+}
+
+std::string g_pending_name;
+
+}  // namespace
+
+void SetPendingTextureName(const char* name) { g_pending_name = name ? name : ""; }
+
+std::string TakePendingTextureName() {
+  std::string s;
+  s.swap(g_pending_name);
+  return s;
+}
+
+std::string TextureKey(const char* name) {
+  std::string s = name ? name : "";
+  const size_t dot = s.find_last_of('.');
+  const size_t sep = s.find_last_of("\\/");
+  if (dot != std::string::npos && (sep == std::string::npos || dot > sep)) s.resize(dot);
+  for (char& c : s) {
+    if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    else if (c == '\\' || c == '/' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' ||
+             c == '>' || c == '|' || c == ' ')
+      c = '_';
   }
+  while (!s.empty() && (s[0] == '_' || s[0] == '.')) s.erase(0, 1);
+  return s;
+}
+
+bool LoadReplacement(uint64_t hash, GpuTexture& out) {
+  if (!GetConfig().texture_replace) return false;
+  const auto& index = Index();
+  auto it = index.find(hash);
+  if (it == index.end()) return false;
+  char label[24];
+  std::snprintf(label, sizeof(label), "%016llx", static_cast<unsigned long long>(hash));
+  if (!LoadPicture(it->second, label, out)) return false;
+  LogOnce("texture replacement %s: %ux%u", label, out.width, out.height);
+  return true;
+}
+
+bool LoadReplacementByName(const std::string& key, GpuTexture& out) {
+  if (!GetConfig().texture_replace || key.empty()) return false;
+  Index();
+  auto it = NameIndex().find(key);
+  if (it == NameIndex().end()) return false;
+  // One GPU copy per name, shared by every size the game streams in.
+  static std::map<std::string, GpuTexture> cache;
+  auto c = cache.find(key);
+  if (c == cache.end()) {
+    GpuTexture t;
+    if (!LoadPicture(it->second, key.c_str(), t)) return false;
+    c = cache.emplace(key, t).first;
+    Log("texture replacement \"%s\": %ux%u", key.c_str(), t.width, t.height);
+  }
+  out.Reset();
+  out.tex = c->second.tex;
+  out.srv = c->second.srv;
+  out.tex->AddRef();
+  out.srv->AddRef();
+  out.width = c->second.width;
+  out.height = c->second.height;
+  out.levels = c->second.levels;
+  return true;
+}
+
+void DumpNamedTexture(const std::string& key, const uint8_t* bgra, UINT w, UINT h) {
+  if (!GetConfig().texture_dump || key.empty()) return;
+  // Keep the largest version the game streamed in.
+  static std::map<std::string, uint64_t> biggest;
+  const uint64_t area = static_cast<uint64_t>(w) * h;
+  uint64_t& best = biggest[key];
+  if (area <= best) return;
+  best = area;
+  const std::wstring dir = DumpDir();
+  if (dir.empty()) return;
+  std::wstring path = dir + L"\\";
+  for (char c : key) path += static_cast<wchar_t>(static_cast<unsigned char>(c));
+  path += L".png";
+  if (!WritePng(path, bgra, w, h)) {
+    LogOnce("texture dump failed for \"%s\"", key.c_str());
+    return;
+  }
+  static unsigned logged = 0;
+  if (++logged <= 300) Log("texture dump \"%s\" %ux%u", key.c_str(), w, h);
+}
+
+void DumpTexture(uint64_t hash, const uint8_t* bgra, UINT w, UINT h) {
+  if (!GetConfig().texture_dump) return;
+  static std::set<uint64_t> done;
+  if (!done.insert(hash).second) return;
+  const std::wstring dir = DumpDir();
+  if (dir.empty()) return;
+  wchar_t name[32];
+  std::swprintf(name, 32, L"\\%016llx.png", static_cast<unsigned long long>(hash));
+  std::wstring path = dir + name;
+  if (GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES) return;
+  if (!WritePng(path, bgra, w, h))
+    LogOnce("texture dump failed for %016llx", static_cast<unsigned long long>(hash));
 }
 
 }  // namespace dd

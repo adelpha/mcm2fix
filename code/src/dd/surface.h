@@ -10,6 +10,7 @@
 #include <ddraw.h>
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "backend.h"
@@ -167,6 +168,7 @@ class Surface : public IDirectDrawSurface7 {
   GpuTexture gpu_;
   GpuTexture replaced_;    // replacement picture, if one matches
   uint64_t tex_hash_ = 0;  // hash of the last uploaded top level
+  std::string tex_name_;   // the game's name for this texture (TextureKey), if known
   void MatchReplacement(const uint8_t* bgra, UINT w, UINT h);
   enum Sync { kInSync, kCpuNewer, kGpuNewer } sync_ = kCpuNewer;
 

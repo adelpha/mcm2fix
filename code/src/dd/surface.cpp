@@ -252,6 +252,15 @@ HRESULT Surface::Create(DirectDraw* dd, const DDSURFACEDESC2& in, Surface** out)
     desc.ddsCaps.dwCaps |= DDSCAPS_VIDEOMEMORY | DDSCAPS_LOCALVIDMEM;
   }
   Surface* root = new Surface(dd, desc, nullptr);
+  if (caps & DDSCAPS_TEXTURE) {
+    root->tex_name_ = TakePendingTextureName();
+    if (!root->tex_name_.empty() && GetConfig().texture_log) {
+      static unsigned named = 0;
+      if (++named <= 400)
+        Log("texture surface %lux%lu named \"%s\"", root->desc_.dwWidth, root->desc_.dwHeight,
+            root->tex_name_.c_str());
+    }
+  }
   if ((caps & DDSCAPS_TEXTURE) && GetConfig().texture_log) {
     // TextureLog: the first few texture surfaces of each depth.
     static unsigned per_bpp[5] = {};
@@ -511,10 +520,24 @@ void Surface::MatchReplacement(const uint8_t* bgra, UINT w, UINT h) {
     return;
   }
   const uint64_t hash = TextureHash(bgra, w, h);
-  if (hash == tex_hash_) return;
+  if (hash == tex_hash_) return;  // same picture as last time
+  const bool first = tex_hash_ == 0;
   tex_hash_ = hash;
   replaced_.Reset();
-  DumpTexture(hash, bgra, w, h);
+  if (!tex_name_.empty() && !first) {
+    // Same surface, different pixels: the game reused it for something
+    // else, so its name no longer applies.
+    Log("texture \"%s\" %ux%u: pixels changed on re-upload, name dropped", tex_name_.c_str(), w, h);
+    tex_name_.clear();
+  }
+  if (!tex_name_.empty()) {
+    // Known by name: dumped and replaced by name, at whatever size the game
+    // streamed it in. Falls back to the hash below.
+    DumpNamedTexture(tex_name_, bgra, w, h);
+    if (LoadReplacementByName(tex_name_, replaced_)) return;
+  } else {
+    DumpTexture(hash, bgra, w, h);
+  }
   LoadReplacement(hash, replaced_);
 }
 

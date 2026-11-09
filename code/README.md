@@ -128,11 +128,18 @@ dumping again.
 
 ## Texture replacements
 
-Set `TextureDump=1`, play, and every texture the game loads is saved once
-as `%LOCALAPPDATA%\Motocross Madness 2\textures_dump\<hash>.png` (the hash
-is 16 hex digits of the texture's size and pixels). Edit or upscale one,
-keep the file name (anything after the 16 digits and a `_` is ignored), and
-put it in `textures\` in the game folder or in
-`%LOCALAPPDATA%\Motocross Madness 2\textures\`. PNG, JPEG and BMP of any
-size work; mipmaps are generated on the GPU. Keep alpha where the original
-has it. Textures that change every frame (videos) are never replaced.
+Most textures have a name in the game's files (the .RES archives or TGA
+files). Set `TextureDump=1`, play, and every named texture is saved as
+`%LOCALAPPDATA%\Motocross Madness 2\textures_dump\<name>.png`, at the
+largest size the game loaded it (it streams smaller stored versions for
+distant objects). The name is lower case, without extension, with folder
+separators turned into `_`. Edit or upscale one, keep the file name, and put
+it in `textures\` in the game folder or in
+`%LOCALAPPDATA%\Motocross Madness 2\textures\`: it replaces that texture
+at every size. Textures without a name are dumped as `<hash>.png` instead
+(16 hex digits of the texture's size and pixels; anything after the 16
+digits and a `_` is ignored) and replaced only when the game loads exactly
+those pixels. PNG, JPEG and BMP of any size work, at full 32-bit colour;
+mipmaps are generated on the GPU. Keep alpha where the original has it.
+Textures that change every frame (videos) are never replaced, and menu
+screens, the cursor and fonts are not textures, so they can't be replaced.
