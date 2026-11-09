@@ -21,6 +21,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <iterator>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -251,11 +252,43 @@ int __fastcall PartLight(void* self, void*, const float* m, int n, int a, int b,
 using RebuildFn = void(__thiscall*)(void*, int);
 RebuildFn g_rebuild = nullptr;  // trampoline to the original
 
+// Objects the game itself rebuilds during simulation steps, i.e. the ones
+// that move (bikes, riders). Only these are rebuilt from blended parts at
+// draw time: rebuilding a still object there throws away what the game did
+// to it after its own rebuild (inactive gates lost their see-through look
+// once the race started). Keyed by address only, never dereferenced.
+struct SimRebuild {
+  unsigned tick = 0;  // last step it was rebuilt in
+  unsigned run = 0;   // consecutive steps
+};
+std::unordered_map<uintptr_t, SimRebuild> g_sim_rebuilt;
+constexpr unsigned kMovingRun = 3;  // rebuilt in this many steps in a row = moving
+unsigned g_still_skipped = 0, g_last_prune = 0;
+
 void __fastcall RebuildHook(void* self, void*, int level) {
   unsigned tick;
   float alpha;
-  if (SimDrawPoint(&tick, &alpha)) ++g_pw[g_drawing ? 10 : 9];
+  if (SimDrawPoint(&tick, &alpha)) {
+    ++g_pw[g_drawing ? 10 : 9];
+    if (!g_drawing) {
+      SimRebuild& r = g_sim_rebuilt[reinterpret_cast<uintptr_t>(self)];
+      if (r.tick != tick) {
+        r.run = (r.tick + 1 == tick) ? r.run + 1 : 1;
+        r.tick = tick;
+      }
+      if (tick - g_last_prune > 600) {
+        g_last_prune = tick;
+        for (auto it = g_sim_rebuilt.begin(); it != g_sim_rebuilt.end();)
+          it = (tick - it->second.tick > 300) ? g_sim_rebuilt.erase(it) : std::next(it);
+      }
+    }
+  }
   g_rebuild(self, level);
+}
+
+bool IsMoving(uintptr_t obj, unsigned tick) {
+  auto it = g_sim_rebuilt.find(obj);
+  return it != g_sim_rebuilt.end() && it->second.run >= kMovingRun && it->second.tick + 2 >= tick;
 }
 
 // 0x441ed0: draw one object (thiscall, called from 0x444fea). It rebuilds
@@ -265,7 +298,11 @@ void __fastcall RebuildHook(void* self, void*, int level) {
 using DrawObjFn = void(__thiscall*)(void*);
 const DrawObjFn kDrawObj = reinterpret_cast<DrawObjFn>(0x441ED0);
 void __fastcall PartDraw(void* self, void*) {
-  if (g_drawing) {
+  unsigned tick;
+  float alpha;
+  if (g_drawing && SimDrawPoint(&tick, &alpha) && !IsMoving(reinterpret_cast<uintptr_t>(self), tick)) {
+    ++g_still_skipped;
+  } else if (g_drawing) {
     ++g_pw[0];
     *reinterpret_cast<int*>(reinterpret_cast<uintptr_t>(self) + 0x18c) = 1;
     g_drawn.push_back(reinterpret_cast<uintptr_t>(self));
@@ -490,13 +527,13 @@ void PartsFrameEnd(bool log) {
   unsigned tick;
   float alpha;
   const bool on = SimDrawPoint(&tick, &alpha);
-  if (g_pw[0] || g_pw[7]) {
+  if (g_pw[0] || g_pw[7] || g_still_skipped) {
     patch::Log("smoothing: parts: %u object draws rebuilt, %u transforms + %u lightings; %u blended (most turn %.1f deg, %u "
                "the long way round); skipped: unchanged %u, no previous %u, jumped %u, bad matrix %u; %u tracked",
                g_pw[0], g_pw[7], g_pw[8], g_pw[1], g_max_turn * 180 / kPi, g_pw[6], g_pw[2], g_pw[3], g_pw[4],
                g_pw[5], static_cast<unsigned>(g_parts.size()));
-    patch::Log("smoothing: parts: game rebuilds %u during steps, %u while drawing; %u draws left unblended by the vertex smoother; %u matrices changed within a frame",
-               g_pw[9], g_pw[10], g_pw[12], g_changed);
+    patch::Log("smoothing: parts: game rebuilds %u during steps, %u while drawing; %u draws left unblended by the vertex smoother; %u matrices changed within a frame; %u still-object draws left alone (%u objects seen moving)",
+               g_pw[9], g_pw[10], g_pw[12], g_changed, g_still_skipped, static_cast<unsigned>(g_sim_rebuilt.size()));
   }
   g_changed = 0;
   if (g_nw[0]) {
