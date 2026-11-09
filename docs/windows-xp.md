@@ -28,25 +28,14 @@ it on every MinGW build.
 - **Per-user folder**: XP has no `%LOCALAPPDATA%`. Saves, logs and textures go
   to `SHGetFolderPath(CSIDL_LOCAL_APPDATA)`, i.e.
   `C:\Documents and Settings\<user>\Local Settings\Application Data\Motocross Madness 2`.
-- **Renderer**: Direct3D 11 does not exist on XP. The hook stays on when d3d9.dll exists (the D3D9 renderer, branch claude/project-thread-j58dm6, picks it in dd::InitDevice). Until that lands, or with no D3D9 at all, the Direct3D 9
-  renderer lands, mcm2fix leaves the game on Windows' own DirectDraw/Direct3D 7
-  when `d3d11.dll` is missing: original exclusive-fullscreen modes, no
-  widescreen, no MSAA/anisotropy, no texture replacement. Everything else
-  (videos, HKCU settings, per-user saves, frame pacing, arrow/restart fixes)
-  is renderer-independent.
+- **Renderer**: Direct3D 11 does not exist on XP, so the renderer falls back
+  to the fixed-function Direct3D 9 renderer (`dd/backend9.cpp`, d3d9.dll
+  loaded at run time; ini `Renderer=D3D9` forces it). Only with no Direct3D 9
+  at all does mcm2fix leave the game on Windows' own DirectDraw.
 - **Texture replacement/dump** use WIC, which XP SP3 has only with .NET 3.0+
   or the WIC redistributable; without it they log a failure and do nothing.
 - Registry: HKCU works the same. XP has no UAC virtualisation, so the HKLM
   import on first run finds only what an XP install wrote there.
-
-## For the Direct3D 9 renderer
-
-- XP has no `d3dcompiler_47.dll`: ship precompiled shader bytecode (or use
-  fixed function) instead of compiling HLSL at run time.
-- `Direct3DCreate9Ex` / D3D9Ex is Vista+; use plain `Direct3DCreate9` on XP
-  (look Ex up with `GetProcAddress`).
-- The renderer choice belongs in `ApplyD3D11Backend` (`dd/hook.cpp`), which
-  already detects a missing D3D11.
 
 ## The log
 

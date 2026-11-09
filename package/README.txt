@@ -29,9 +29,9 @@ Requirements
   The original CD Mcm2.exe uses SafeDisc copy protection, which Windows 10
   and 11 cannot run.
 - A graphics card with Direct3D 11.
-- Windows XP SP3 also works: there is no Direct3D 11 there, so the game
-  keeps its original DirectDraw renderer (exclusive fullscreen, 4:3) and
-  saves go to Local Settings\Application Data\Motocross Madness 2.
+- Windows XP SP3 also works: there is no Direct3D 11 there, so the
+  Direct3D 9 renderer is used, and saves go to
+  Local Settings\Application Data\Motocross Madness 2.
 
 Installing
 ----------
