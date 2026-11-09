@@ -139,7 +139,11 @@ void ScaleRect(uintptr_t inst, Panel& p) {
   int n[4];
   auto axis = [k](int a, int b, int size, int* na, int* nb) {
     const int len = static_cast<int>(std::lround((b - a) * k));
-    if (a + b <= size) {  // nearer the left / top edge
+    const int mid = (a + b) / 2;
+    if (std::abs(mid - size / 2) <= size / 6) {  // centred: stays centred
+      *na = static_cast<int>(std::lround(size / 2.0f - (size / 2.0f - a) * k));
+      *nb = *na + len;
+    } else if (mid < size / 2) {  // nearer the left / top edge
       *na = static_cast<int>(std::lround(a * k));
       *nb = *na + len;
     } else {
