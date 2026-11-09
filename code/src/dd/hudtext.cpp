@@ -67,9 +67,17 @@ std::map<uintptr_t, Panel> g_panels;
 std::map<const Surface*, std::vector<Item>> g_pending;  // captured, not yet converted
 std::map<HDC, Surface*> g_scratch_dc;
 std::set<const Surface*> g_scratch;
+std::map<const Surface*, uintptr_t> g_panel_tex;  // panel texture -> panel
+// A panel texture copied into another texture (the game draws the copy).
+struct Copy {
+  uintptr_t panel;
+  RECT sr, dr;
+};
+std::map<const Surface*, std::vector<Copy>> g_copies;
 
 struct Stats {
   unsigned captured = 0, converted = 0, moved = 0, wipes = 0, wiped = 0, draws = 0, drawn = 0, no_dc = 0;
+  unsigned labels = 0, label_skips = 0, copies = 0;
 } g_st;
 DWORD g_last_report = 0;
 
@@ -84,8 +92,10 @@ void Report() {
     size_t items = 0;
     for (auto& p : g_panels) items += p.second.items.size();
     Log("hud text 5s: %u text calls captured, %u conversions (%u texts to panels), %u wipes (%u texts removed), "
-        "%u panel draws (%u texts drawn), %u without a GPU text DC; %u panels hold %u texts",
-        g_st.captured, g_st.converted, g_st.moved, g_st.wipes, g_st.wiped, g_st.draws, g_st.drawn, g_st.no_dc,
+        "%u panel draws, %u label draws (%u without text there), %u texts drawn, %u without a GPU text DC, "
+        "%u panel copies; %u panels hold %u texts",
+        g_st.captured, g_st.converted, g_st.moved, g_st.wipes, g_st.wiped, g_st.draws, g_st.labels, g_st.label_skips,
+        g_st.drawn, g_st.no_dc, g_st.copies,
         static_cast<unsigned>(g_panels.size()), static_cast<unsigned>(items));
   }
   // A panel with text whose quad was never seen drawn: say where it is.
@@ -168,6 +178,7 @@ void ScaleRect(uintptr_t inst, Panel& p) {
 // First sight of a text panel: lay it out again, now scaled.
 Panel& Register(uintptr_t self) {
   Panel& p = g_panels[self];
+  if (Surface* pt = SurfaceAt(self, kPanelTexture)) g_panel_tex[pt] = self;
   if (!p.laid_out) {
     p.laid_out = true;
     Surface* t = SurfaceAt(self, kPanelTexture);
@@ -337,38 +348,30 @@ HFONT ScaledFont(const LOGFONTA& lf, float kx, float ky) {
   return f;
 }
 
-// Draw a panel's text over its quad (screen pixels of the render target).
-void DrawPanel(Surface* rt, uintptr_t self, Panel& p) {
-  const uintptr_t tw = Wrapper(self, kPanelTexture);
-  if (!tw) return;
-  const int texw = *reinterpret_cast<const int*>(tw + kWrapperW), texh = *reinterpret_cast<const int*>(tw + kWrapperH);
-  const float* v = reinterpret_cast<const float*>(self + kVerts);  // 8 floats per vertex
-  // Texel -> screen, from the two vertices furthest apart on each axis.
-  int ix0 = 0, ix1 = 0, iy0 = 0, iy1 = 0;
-  for (int i = 1; i < 4; ++i) {
-    if (v[i * 8] < v[ix0 * 8]) ix0 = i;
-    if (v[i * 8] > v[ix1 * 8]) ix1 = i;
-    if (v[i * 8 + 1] < v[iy0 * 8 + 1]) iy0 = i;
-    if (v[i * 8 + 1] > v[iy1 * 8 + 1]) iy1 = i;
+// Draw the texts of a panel that fall in `region` (panel pixels) at screen
+// X = ax + x * kx, Y = ay + y * ky, clipped to `clip` (render target pixels).
+void DrawItems(Surface* rt, uintptr_t self, const Panel& p, const RECT& region, float ax, float ay, float kx,
+               float ky, const RECT& clip_rect, const char* what) {
+  auto X = [&](LONG x) { return static_cast<LONG>(std::lround(ax + x * kx)); };
+  auto Y = [&](LONG y) { return static_cast<LONG>(std::lround(ay + y * ky)); };
+  bool any = false;
+  for (const Item& it : p.items) any = any || Intersects(it.box, region);
+  if (!any) {
+    ++g_st.label_skips;
+    return;
   }
-  const float du = (v[ix1 * 8 + 6] - v[ix0 * 8 + 6]) * texw, dv = (v[iy1 * 8 + 7] - v[iy0 * 8 + 7]) * texh;
-  if (texw <= 0 || texh <= 0 || std::fabs(du) < 1 || std::fabs(dv) < 1) return;
-  const float kx = (v[ix1 * 8] - v[ix0 * 8]) / du, ky = (v[iy1 * 8 + 1] - v[iy0 * 8 + 1]) / dv;
-  const float ox = v[ix0 * 8] - v[ix0 * 8 + 6] * texw * kx, oy = v[iy0 * 8 + 1] - v[iy0 * 8 + 7] * texh * ky;
-  auto X = [&](LONG x) { return static_cast<LONG>(std::lround(ox + x * kx)); };
-  auto Y = [&](LONG y) { return static_cast<LONG>(std::lround(oy + y * ky)); };
-
   HDC dc = rt->BeginGpuText();
   if (!dc) {
     ++g_st.no_dc;
     return;
   }
-  HRGN clip = CreateRectRgn(static_cast<int>(std::floor(v[ix0 * 8])), static_cast<int>(std::floor(v[iy0 * 8 + 1])),
-                            static_cast<int>(std::ceil(v[ix1 * 8])), static_cast<int>(std::ceil(v[iy1 * 8 + 1])));
+  HRGN clip = CreateRectRgn(clip_rect.left, clip_rect.top, clip_rect.right, clip_rect.bottom);
   SelectClipRgn(dc, clip);
   DeleteObject(clip);
   SetBkMode(dc, TRANSPARENT);
+  unsigned n = 0;
   for (const Item& it : p.items) {
+    if (!Intersects(it.box, region)) continue;
     SelectObject(dc, ScaledFont(it.font, kx, ky));
     SetTextColor(dc, it.colour);
     SetTextAlign(dc, it.align);
@@ -396,21 +399,76 @@ void DrawPanel(Surface* rt, uintptr_t self, Panel& p) {
       call.y = Y(it.y) + dy;
     }
     if (GpuTextRun(call)) ++g_st.drawn;
+    ++n;
   }
   SelectObject(dc, GetStockObject(SYSTEM_FONT));
+  SelectClipRgn(dc, nullptr);
   GpuTextEndDC(dc);
   static unsigned logged = 0;
-  if (++logged <= 5) {
-    for (const Item& it : p.items) {
-      SelectObject(dc, ScaledFont(it.font, kx, ky));
-      TEXTMETRICA tm{};
-      GetTextMetricsA(dc, &tm);
-      Log("hud text:   \"%s\" %s %ld: game ascent %d, scaled font height %ld ascent %ld", it.s.c_str(),
-          it.font.lfFaceName, it.font.lfHeight, it.ascent, tm.tmHeight, tm.tmAscent);
-    }
-    Log("hud text: panel %08x drawn at %.1f,%.1f, %.2f x %.2f screen pixels per texel, %u texts",
-        static_cast<unsigned>(self), ox, oy, kx, ky, static_cast<unsigned>(p.items.size()));
+  if (++logged <= 12)
+    Log("hud text: %s of panel %08x: panel pixels %ld,%ld-%ld,%ld at screen %ld,%ld-%ld,%ld, %.2f x %.2f per pixel, "
+        "%u texts",
+        what, static_cast<unsigned>(self), region.left, region.top, region.right, region.bottom, clip_rect.left,
+        clip_rect.top, clip_rect.right, clip_rect.bottom, kx, ky, n);
+}
+
+// The panel's own quad (its layout at +0x44).
+void DrawPanel(Surface* rt, uintptr_t self, Panel& p) {
+  const uintptr_t tw = Wrapper(self, kPanelTexture);
+  if (!tw) return;
+  const int texw = *reinterpret_cast<const int*>(tw + kWrapperW), texh = *reinterpret_cast<const int*>(tw + kWrapperH);
+  const float* v = reinterpret_cast<const float*>(self + kVerts);  // 8 floats per vertex
+  // Texel -> screen, from the two vertices furthest apart on each axis.
+  int ix0 = 0, ix1 = 0, iy0 = 0, iy1 = 0;
+  for (int i = 1; i < 4; ++i) {
+    if (v[i * 8] < v[ix0 * 8]) ix0 = i;
+    if (v[i * 8] > v[ix1 * 8]) ix1 = i;
+    if (v[i * 8 + 1] < v[iy0 * 8 + 1]) iy0 = i;
+    if (v[i * 8 + 1] > v[iy1 * 8 + 1]) iy1 = i;
   }
+  const float du = (v[ix1 * 8 + 6] - v[ix0 * 8 + 6]) * texw, dv = (v[iy1 * 8 + 7] - v[iy0 * 8 + 7]) * texh;
+  if (texw <= 0 || texh <= 0 || std::fabs(du) < 1 || std::fabs(dv) < 1) return;
+  const float kx = (v[ix1 * 8] - v[ix0 * 8]) / du, ky = (v[iy1 * 8 + 1] - v[iy0 * 8 + 1]) / dv;
+  const float ox = v[ix0 * 8] - v[ix0 * 8 + 6] * texw * kx, oy = v[iy0 * 8 + 1] - v[iy0 * 8 + 7] * texh * ky;
+  const RECT clip{static_cast<LONG>(std::floor(v[ix0 * 8])), static_cast<LONG>(std::floor(v[iy0 * 8 + 1])),
+                  static_cast<LONG>(std::ceil(v[ix1 * 8])), static_cast<LONG>(std::ceil(v[iy1 * 8 + 1]))};
+  DrawItems(rt, self, p, RECT{-100000, -100000, 100000, 100000}, ox, oy, kx, ky, clip, "quad");
+}
+
+// The text panel whose own quad covers exactly this screen rectangle.
+std::pair<const uintptr_t, Panel>* QuadOf(float x0, float y0, float x1, float y1) {
+  for (auto& e : g_panels) {
+    const float* v = reinterpret_cast<const float*>(e.first + kVerts);
+    float px0 = 1e9f, py0 = 1e9f, px1 = -1e9f, py1 = -1e9f;
+    for (int i = 0; i < 4; ++i) {
+      px0 = std::min(px0, v[i * 8]), px1 = std::max(px1, v[i * 8]);
+      py0 = std::min(py0, v[i * 8 + 1]), py1 = std::max(py1, v[i * 8 + 1]);
+    }
+    if (std::fabs(px0 - x0) <= 0.5f && std::fabs(px1 - x1) <= 0.5f && std::fabs(py0 - y0) <= 0.5f &&
+        std::fabs(py1 - y1) <= 0.5f)
+      return &e;
+  }
+  return nullptr;
+}
+
+// Which panel (and part of it) a texture shows: the panel texture itself or
+// a copy of it.
+bool FindSource(Surface* tex, const RECT& texels, uintptr_t* panel, const Copy** copy) {
+  auto pt = g_panel_tex.find(tex);
+  if (pt != g_panel_tex.end()) {
+    *panel = pt->second;
+    *copy = nullptr;
+    return true;
+  }
+  auto it = g_copies.find(tex);
+  if (it == g_copies.end()) return false;
+  for (const Copy& c : it->second)
+    if (Intersects(c.dr, texels)) {
+      *panel = c.panel;
+      *copy = &c;
+      return true;
+    }
+  return false;
 }
 
 }  // namespace
@@ -428,30 +486,99 @@ bool HudTextScratchDC(HDC dc, Surface* s, void* caller) {
   return true;
 }
 
-void HudTextAfterDraw(Surface* rt, const uint8_t* verts, DWORD first, DWORD count, UINT stride) {
+void HudTextAfterDraw(Surface* rt, Surface* tex, const uint8_t* verts, DWORD first, DWORD count, UINT stride,
+                      int uv_off) {
   if (g_panels.empty() || !rt || !verts || count < 3 || !Active()) return;
+  const float* fv = reinterpret_cast<const float*>(verts + static_cast<size_t>(first) * stride);
+  auto V = [&](DWORD i) { return reinterpret_cast<const float*>(verts + static_cast<size_t>(first + i) * stride); };
+  DWORD ix0 = 0, ix1 = 0, iy0 = 0, iy1 = 0;
+  for (DWORD i = 1; i < count; ++i) {
+    if (V(i)[0] < V(ix0)[0]) ix0 = i;
+    if (V(i)[0] > V(ix1)[0]) ix1 = i;
+    if (V(i)[1] < V(iy0)[1]) iy0 = i;
+    if (V(i)[1] > V(iy1)[1]) iy1 = i;
+  }
+  (void)fv;
+  const float x0 = V(ix0)[0], x1 = V(ix1)[0], y0 = V(iy0)[1], y1 = V(iy1)[1];
+  // The panel's own quad.
+  if (auto* e = QuadOf(x0, y0, x1, y1)) {
+    ++g_st.draws;
+    ++e->second.draws;
+    if (!e->second.items.empty()) DrawPanel(rt, e->first, e->second);
+    return;
+  }
+  // A piece of a panel (or of a copy of one) drawn somewhere else: the name
+  // labels over the riders.
+  if (!tex || uv_off <= 0) return;
+  const float tw = static_cast<float>(tex->Width()), th = static_cast<float>(tex->Height());
+  auto UV = [&](DWORD i) { return reinterpret_cast<const float*>(reinterpret_cast<const uint8_t*>(V(i)) + uv_off); };
+  const float u0 = UV(ix0)[0] * tw, u1 = UV(ix1)[0] * tw, v0 = UV(iy0)[1] * th, v1 = UV(iy1)[1] * th;
+  if (std::fabs(u1 - u0) < 1 || std::fabs(v1 - v0) < 1) return;
+  const RECT texels{static_cast<LONG>(std::floor(std::min(u0, u1))), static_cast<LONG>(std::floor(std::min(v0, v1))),
+                    static_cast<LONG>(std::ceil(std::max(u0, u1))), static_cast<LONG>(std::ceil(std::max(v0, v1)))};
+  uintptr_t self = 0;
+  const Copy* c = nullptr;
+  if (!FindSource(tex, texels, &self, &c)) return;
+  auto pit = g_panels.find(self);
+  if (pit == g_panels.end()) return;
+  ++g_st.labels;
+  // Screen = sx0 + (texel - u0) * kx; texel = dr.left + (panel - sr.left) * cs.
+  const float kx = (x1 - x0) / (u1 - u0), ky = (y1 - y0) / (v1 - v0);
+  float csx = 1, csy = 1, tx = 0, ty = 0;  // texel = tx + panel * cs
+  if (c) {
+    csx = static_cast<float>(c->dr.right - c->dr.left) / std::max<LONG>(1, c->sr.right - c->sr.left);
+    csy = static_cast<float>(c->dr.bottom - c->dr.top) / std::max<LONG>(1, c->sr.bottom - c->sr.top);
+    tx = c->dr.left - c->sr.left * csx;
+    ty = c->dr.top - c->sr.top * csy;
+  }
+  const float ax = x0 + (tx - u0) * kx, ay = y0 + (ty - v0) * ky;
+  const RECT region{static_cast<LONG>(std::floor((texels.left - tx) / csx)),
+                    static_cast<LONG>(std::floor((texels.top - ty) / csy)),
+                    static_cast<LONG>(std::ceil((texels.right - tx) / csx)),
+                    static_cast<LONG>(std::ceil((texels.bottom - ty) / csy))};
+  const RECT clip{static_cast<LONG>(std::floor(x0)), static_cast<LONG>(std::floor(y0)),
+                  static_cast<LONG>(std::ceil(x1)), static_cast<LONG>(std::ceil(y1))};
+  static unsigned logged = 0;
+  if (++logged <= 12)
+    Log("hud text: label draw, %lu vertices, texture %ux%u texels %ld,%ld-%ld,%ld, screen %.1f,%.1f-%.1f,%.1f",
+        static_cast<unsigned long>(count), tex->Width(), tex->Height(), texels.left, texels.top, texels.right,
+        texels.bottom, x0, y0, x1, y1);
+  DrawItems(rt, self, pit->second, region, ax, ay, kx * csx, ky * csy, clip, "label");
+}
+
+float HudTextLabelScale(Surface* tex, const uint8_t* verts, DWORD first, DWORD count, UINT stride) {
+  if (!tex || !verts || count < 3 || g_copies.empty() || !Active() || !g_copies.count(tex)) return 1.0f;
   float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
   for (DWORD i = 0; i < count; ++i) {
     const float* p = reinterpret_cast<const float*>(verts + static_cast<size_t>(first + i) * stride);
     x0 = std::min(x0, p[0]), x1 = std::max(x1, p[0]);
     y0 = std::min(y0, p[1]), y1 = std::max(y1, p[1]);
   }
-  for (auto& e : g_panels) {
-    if (e.second.items.empty()) continue;
-    const float* v = reinterpret_cast<const float*>(e.first + kVerts);
-    float px0 = 1e9f, py0 = 1e9f, px1 = -1e9f, py1 = -1e9f;
-    for (int i = 0; i < 4; ++i) {
-      px0 = std::min(px0, v[i * 8]), px1 = std::max(px1, v[i * 8]);
-      py0 = std::min(py0, v[i * 8 + 1]), py1 = std::max(py1, v[i * 8 + 1]);
-    }
-    if (std::fabs(px0 - x0) > 0.5f || std::fabs(px1 - x1) > 0.5f || std::fabs(py0 - y0) > 0.5f ||
-        std::fabs(py1 - y1) > 0.5f)
-      continue;
-    ++g_st.draws;
-    ++e.second.draws;
-    DrawPanel(rt, e.first, e.second);
-    break;
-  }
+  // A panel's own quad is laid out larger already.
+  if (QuadOf(x0, y0, x1, y1)) return 1.0f;
+  return Scale();
+}
+
+void HudTextBlt(Surface* src, const RECT& sr, Surface* dst, const RECT& dr) {
+  if (!src || !dst || src == dst || g_panel_tex.empty()) return;
+  auto pt = g_panel_tex.find(src);
+  if (pt == g_panel_tex.end()) return;
+  ++g_st.copies;
+  auto& v = g_copies[dst];
+  v.erase(std::remove_if(v.begin(), v.end(), [&](const Copy& c) { return Intersects(c.dr, dr); }), v.end());
+  v.push_back(Copy{pt->second, sr, dr});
+  static unsigned logged = 0;
+  if (++logged <= 10)
+    Log("hud text: panel %08x pixels %ld,%ld-%ld,%ld copied to a %ux%u texture at %ld,%ld-%ld,%ld",
+        static_cast<unsigned>(pt->second), sr.left, sr.top, sr.right, sr.bottom, dst->Width(), dst->Height(), dr.left,
+        dr.top, dr.right, dr.bottom);
+}
+
+void HudTextForget(Surface* s) {
+  g_copies.erase(s);
+  g_panel_tex.erase(s);
+  g_scratch.erase(s);
+  g_pending.erase(s);
 }
 
 void HudPanelLayout(uintptr_t inst) {

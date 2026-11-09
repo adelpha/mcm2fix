@@ -1420,9 +1420,34 @@ void Device::OccludeText(const Draw& d) {
 }
 
 void Device::Submit(const Draw& d) {
+  if (!d.layout.tl) return SubmitDraw(d);
+  // Race HUD text (hudtext.cpp): the name labels over the riders are drawn
+  // larger, about the middle of their bottom edge (which sits over the head).
+  const int uv = d.layout.ntex > 0 ? d.layout.tex[0] : -1;
+  const float k = HudTextLabelScale(tex_[0], d.verts, d.first, d.count, d.layout.stride);
+  if (k != 1.0f && d.verts && d.count && !d.vb) {
+    const size_t stride = d.layout.stride;
+    label_verts_.assign(d.verts, d.verts + (static_cast<size_t>(d.first) + d.count) * stride);
+    float x0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
+    for (DWORD i = d.first; i < d.first + d.count; ++i) {
+      const float* p = reinterpret_cast<const float*>(label_verts_.data() + i * stride);
+      x0 = std::min(x0, p[0]), x1 = std::max(x1, p[0]), y1 = std::max(y1, p[1]);
+    }
+    const float cx = (x0 + x1) * 0.5f;
+    for (DWORD i = d.first; i < d.first + d.count; ++i) {
+      float* p = reinterpret_cast<float*>(label_verts_.data() + i * stride);
+      p[0] = cx + (p[0] - cx) * k;
+      p[1] = y1 + (p[1] - y1) * k;
+    }
+    Draw scaled = d;
+    scaled.verts = label_verts_.data();
+    SubmitDraw(scaled);
+    HudTextAfterDraw(rt_, tex_[0], scaled.verts, d.first, d.count, d.layout.stride, uv);
+    return;
+  }
   SubmitDraw(d);
-  // A race HUD text panel: its text goes over it (hudtext.cpp).
-  if (d.layout.tl) HudTextAfterDraw(rt_, d.verts, d.first, d.count, d.layout.stride);
+  // A race HUD text panel: its text goes over it.
+  HudTextAfterDraw(rt_, tex_[0], d.verts, d.first, d.count, d.layout.stride, uv);
 }
 
 void Device::SubmitDraw(const Draw& d) {

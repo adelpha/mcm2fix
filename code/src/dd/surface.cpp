@@ -229,6 +229,7 @@ Surface::Surface(DirectDraw* dd, const DDSURFACEDESC2& desc, Surface* root)
 
 Surface::~Surface() {
   AllSurfaces().erase(this);
+  HudTextForget(this);
   if (gpu_dc_) {
     ReleaseGpuDC();
   } else if (dc_) {
@@ -773,6 +774,7 @@ bool Surface::UseGpuFor(Surface* src) {
 }
 
 void Surface::BltGpu(const RECT& dr, Surface* src, const RECT& sr, bool key, DWORD key_value) {
+  HudTextBlt(src, sr, this, dr);
   GpuTexture* d = Gpu();
   const GpuTexture* s = nullptr;
   if (key && IsD3D9()) {
@@ -828,6 +830,7 @@ void Surface::BltGpu(const RECT& dr, Surface* src, const RECT& sr, bool key, DWO
 }
 
 void Surface::BltCpu(const RECT& dr, Surface* src, const RECT& sr, bool key, DWORD key_value) {
+  HudTextBlt(src, sr, this, dr);
   src->SyncToCpu("blt-src");
   SyncToCpu("blt-dst");
   std::vector<uint8_t> copy;

@@ -29,7 +29,15 @@ void InstallHudTextHooks();
 bool HudTextScratchDC(HDC dc, Surface* s, void* caller);
 // A screen-space (pre-transformed) draw went to `rt`: if it was a text
 // panel's quad, draw the panel's text over it.
-void HudTextAfterDraw(Surface* rt, const uint8_t* verts, DWORD first, DWORD count, UINT stride);
+// `tex`: the texture of stage 0, uv_off: offset of its texture coordinates.
+void HudTextAfterDraw(Surface* rt, Surface* tex, const uint8_t* verts, DWORD first, DWORD count, UINT stride,
+                      int uv_off);
+// A screen-space draw of a texture copied from a text panel (the name
+// labels over the riders): how much larger to draw it (1 = as it is).
+float HudTextLabelScale(Surface* tex, const uint8_t* verts, DWORD first, DWORD count, UINT stride);
+// The game copied sr of src to dr of dst (Blt): a panel's text goes along.
+void HudTextBlt(Surface* src, const RECT& sr, Surface* dst, const RECT& dr);
+void HudTextForget(Surface* s);
 // Start of every overlay layout (0x4baad0, hooked in fixes_widescreen.cpp):
 // text panels get their rectangle scaled.
 void HudPanelLayout(uintptr_t inst);

@@ -199,6 +199,7 @@ class Device : public d3d7::IDirect3DDevice7 {
   DWORD rs_[256] = {};
   DWORD tss_[8][32] = {};
   Surface* tex_[8] = {};
+  std::vector<uint8_t> label_verts_;  // HUD name labels drawn larger (hudtext.cpp)
   d3d7::D3DMATRIX world_{}, view_{}, proj_{};
   d3d7::D3DMATRIX world_set_{}, view_set_{}, proj_set_{};  // as the game set them (world_/view_ may be smoothed)
   float wvp_[16] = {};
