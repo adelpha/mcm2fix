@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstring>
 #include <map>
+#include <set>
 
 #include "../config.h"
 #include "../framerate.h"
@@ -16,6 +17,11 @@ namespace dd {
 namespace {
 
 void* g_surface_vtable = nullptr;
+// Every live surface (for a Direct3D 9 device reset).
+std::set<Surface*>& AllSurfaces() {
+  static std::set<Surface*> s;
+  return s;
+}
 
 int LowBit(DWORD m) {
   if (!m) return 0;
@@ -208,10 +214,12 @@ Surface::Surface(DirectDraw* dd, const DDSURFACEDESC2& desc, Surface* root)
     key_ = desc_.ddckCKSrcBlt;
   }
   AllocateMemory();
+  AllSurfaces().insert(this);
 }
 
 Surface::~Surface() {
-  if (gdi_surface_) {
+  AllSurfaces().erase(this);
+  if (gpu_dc_) {
     ReleaseGpuDC();
   } else if (dc_) {
     SelectObject(dc_, old_bitmap_);
@@ -234,6 +242,7 @@ Surface::~Surface() {
   SafeRelease(clipper_);
   gpu_.Reset();
   replaced_.Reset();
+  keyed_.Reset();
   if (!root_ && dd_ && DirectDraw::Current() == dd_) dd_->ForgetSurface(this);
 }
 
@@ -387,17 +396,34 @@ void Surface::PaletteBGRA(uint8_t out[256][4]) const {
 GpuTexture* Surface::Gpu() {
   // Whoever asks is about to read or write the texture outside 3D drawing:
   // bring in what was drawn into its multisampled copy.
-  MsaaRelease(SyncOwner()->gpu_.tex);
+  MsaaRelease(SyncOwner()->gpu_.Native());
   return GpuForDraw();
+}
+
+bool Surface::WantRenderTarget() const {
+  if (layout_.depth) return false;
+  if (!IsD3D9()) return true;  // D3D11: every colour texture can be drawn into
+  // D3D9: render targets live in video memory only (lost on a device reset,
+  // uploaded through a staging copy), so plain textures stay managed.
+  if (!mips_.empty() || level_ > 0) return false;
+  return IsRenderTargetKind() || !(desc_.ddsCaps.dwCaps & DDSCAPS_TEXTURE);
 }
 
 GpuTexture* Surface::GpuForDraw() {
   Surface* o = SyncOwner();
-  if (!o->gpu_.tex) {
+  if (o->gpu_.Valid() && IsD3D9() && !o->gpu_.rt && o->WantRenderTarget()) {
+    // A texture that has become a render target: remake it as one. A managed
+    // texture is never newer than the CPU copy, so nothing is lost.
+    Log("surface %ux%u caps %08lx became a render target; recreating its texture", o->Width(),
+        o->Height(), o->Caps());
+    o->gpu_.Reset();
+    if (o->sync_ == kInSync) o->sync_ = kCpuNewer;
+  }
+  if (!o->gpu_.Valid()) {
     if (!Ready()) return &o->gpu_;
     UINT levels = static_cast<UINT>(o->mips_.size()) + 1;
-    if (!CreateGpuTexture(o->gpu_, o->Width(), o->Height(), levels, !o->layout_.depth,
-                          o->layout_.depth))
+    if (!CreateGpuTexture(o->gpu_, o->Width(), o->Height(), levels, o->WantRenderTarget(),
+                          o->layout_.depth, o->layout_.mask[3] != 0))
       return &o->gpu_;
     if (o->layout_.depth) {
       o->sync_ = kInSync;
@@ -406,7 +432,7 @@ GpuTexture* Surface::GpuForDraw() {
     }
   }
   if (o->sync_ == kCpuNewer) {
-    MsaaRelease(o->gpu_.tex);
+    MsaaRelease(o->gpu_.Native());
     o->Upload();
     o->sync_ = kInSync;
   }
@@ -431,6 +457,7 @@ void Surface::SyncToCpu(const char* why) {
 void Surface::MarkCpuWritten() {
   Surface* o = SyncOwner();
   if (!o->layout_.depth) o->sync_ = kCpuNewer;
+  ++o->cpu_version_;
   ++uniqueness_;
 }
 
@@ -478,35 +505,102 @@ void BleedIntoTransparent(uint8_t* px, UINT w, UINT h) {
 }
 }  // namespace
 
-void Surface::Upload() {
-  if (!gpu_.tex || layout_.depth) return;
-  ++uploads_;
+bool Surface::LevelBGRA(UINT level, std::vector<uint8_t>& bgra, UINT& w, UINT& h) {
+  Surface* s = level == 0 ? this : (level - 1 < mips_.size() ? mips_[level - 1] : nullptr);
+  if (!s) return false;
   uint8_t pal[256][4];
   if (layout_.palette) PaletteBGRA(pal);
+  w = s->Width();
+  h = s->Height();
+  const UINT bytes = layout_.bpp / 8;
+  bgra.resize(static_cast<size_t>(w) * h * 4);
+  for (UINT y = 0; y < h; ++y) {
+    const uint8_t* src = s->mem_.data() + static_cast<size_t>(y) * s->Pitch();
+    uint8_t* dst = bgra.data() + static_cast<size_t>(y) * w * 4;
+    if (layout_.palette) {
+      for (UINT x = 0; x < w; ++x) std::memcpy(dst + x * 4, pal[src[x]], 4);
+    } else if (layout_.bpp == 32 && layout_.mask[0] == 0xff0000 && layout_.mask[2] == 0xff) {
+      for (UINT x = 0; x < w; ++x) {
+        std::memcpy(dst + x * 4, src + x * 4, 4);
+        if (!layout_.mask[3]) dst[x * 4 + 3] = 255;
+      }
+    } else {
+      for (UINT x = 0; x < w; ++x) layout_.ToBGRA(ReadPx(src + x * bytes, layout_.bpp), dst + x * 4);
+    }
+  }
+  return true;
+}
+
+void Surface::Upload() {
+  if (!gpu_.Valid() || layout_.depth) return;
+  ++uploads_;
   std::vector<uint8_t> bgra;
   for (UINT level = 0; level < gpu_.levels; ++level) {
-    Surface* s = level == 0 ? this : (level - 1 < mips_.size() ? mips_[level - 1] : nullptr);
-    if (!s) break;
-    UINT w = s->Width(), h = s->Height(), bytes = layout_.bpp / 8;
-    bgra.resize(static_cast<size_t>(w) * h * 4);
-    for (UINT y = 0; y < h; ++y) {
-      const uint8_t* src = s->mem_.data() + static_cast<size_t>(y) * s->Pitch();
-      uint8_t* dst = bgra.data() + static_cast<size_t>(y) * w * 4;
-      if (layout_.palette) {
-        for (UINT x = 0; x < w; ++x) std::memcpy(dst + x * 4, pal[src[x]], 4);
-      } else if (layout_.bpp == 32 && layout_.mask[0] == 0xff0000 && layout_.mask[2] == 0xff) {
-        for (UINT x = 0; x < w; ++x) {
-          std::memcpy(dst + x * 4, src + x * 4, 4);
-          if (!layout_.mask[3]) dst[x * 4 + 3] = 255;
-        }
-      } else {
-        for (UINT x = 0; x < w; ++x) layout_.ToBGRA(ReadPx(src + x * bytes, layout_.bpp), dst + x * 4);
-      }
-    }
+    UINT w = 0, h = 0;
+    if (!LevelBGRA(level, bgra, w, h)) break;
     if (level == 0) MatchReplacement(bgra.data(), w, h);
     if (layout_.mask[3] && uploads_ < 4) BleedIntoTransparent(bgra.data(), w, h);
-    B().ctx->UpdateSubresource(gpu_.tex, level, nullptr, bgra.data(), w * 4, 0);
+    UploadLevel(gpu_, level, bgra.data(), w, h);
   }
+}
+
+const GpuTexture* Surface::KeyedTex(DWORD key) {
+  Surface* o = SyncOwner();
+  if (o != this || layout_.depth) return nullptr;
+  if (sync_ == kGpuNewer) {
+    // Only the GPU copy is current: bring it back first (rare).
+    LogOnce("colour key on a surface drawn by the GPU (%ux%u caps %08lx): reading it back",
+            Width(), Height(), Caps());
+    SyncToCpu("colour key");
+  }
+  const uint64_t stamp = (static_cast<uint64_t>(cpu_version_) << 32) ^ key ^ 0x8000000000000000ull;
+  if (keyed_.Valid() && keyed_stamp_ == stamp) return &keyed_;
+  keyed_.Reset();
+  const UINT levels = static_cast<UINT>(mips_.size()) + 1;
+  if (!CreateGpuTexture(keyed_, Width(), Height(), levels, false, false)) return nullptr;
+  uint8_t key_bgra[4];
+  uint8_t pal[256][4];
+  if (layout_.palette) {
+    PaletteBGRA(pal);
+    std::memcpy(key_bgra, pal[key & 0xff], 4);
+  } else {
+    layout_.ToBGRA(key, key_bgra);
+  }
+  std::vector<uint8_t> bgra;
+  unsigned keyed = 0;
+  for (UINT level = 0; level < levels; ++level) {
+    UINT w = 0, h = 0;
+    if (!LevelBGRA(level, bgra, w, h)) break;
+    for (size_t i = 0; i < bgra.size(); i += 4) {
+      if (bgra[i] == key_bgra[0] && bgra[i + 1] == key_bgra[1] && bgra[i + 2] == key_bgra[2]) {
+        bgra[i + 3] = 0;
+        ++keyed;
+      }
+    }
+    UploadLevel(keyed_, level, bgra.data(), w, h);
+  }
+  keyed_stamp_ = stamp;
+  if (GetConfig().d3d9_log) {
+    static unsigned n = 0;
+    if (++n <= 40)
+      Log("colour-keyed copy %ux%u caps %08lx key %08lx: %u key texels", Width(), Height(), Caps(),
+          key, keyed);
+  }
+  return &keyed_;
+}
+
+void Surface::DeviceLost9() {
+  unsigned dropped = 0, lost = 0;
+  for (Surface* s : AllSurfaces()) {
+    s->keyed_.Reset();
+    if (s->gpu_.pool_default) {
+      if (s->sync_ == kGpuNewer) ++lost;
+      s->gpu_.Reset();
+      if (!s->layout_.depth) s->sync_ = kCpuNewer;
+      ++dropped;
+    }
+  }
+  Log("device reset: dropped %u video-memory surfaces (%u had GPU-only contents)", dropped, lost);
 }
 
 void Surface::MatchReplacement(const uint8_t* bgra, UINT w, UINT h) {
@@ -541,47 +635,33 @@ void Surface::MatchReplacement(const uint8_t* bgra, UINT w, UINT h) {
   LoadReplacement(hash, replaced_);
 }
 
-ID3D11ShaderResourceView* Surface::SampleSrv() {
+const GpuTexture* Surface::SampleTex() {
   GpuTexture* g = Gpu();
   Surface* o = SyncOwner();
-  return o->replaced_.srv ? o->replaced_.srv : g->srv;
+  return o->replaced_.Valid() ? &o->replaced_ : g;
 }
 
 void Surface::Download() {
-  if (!gpu_.tex || layout_.depth) return;
-  MsaaRelease(gpu_.tex);
+  if (!gpu_.Valid() || layout_.depth) return;
+  MsaaRelease(gpu_.Native());
   ++Counters().downloads;
   if (!mips_.empty()) LogOnce("reading back a mipmapped surface (top level only)");
-  Backend& b = B();
-  D3D11_TEXTURE2D_DESC td{};
-  td.Width = gpu_.width;
-  td.Height = gpu_.height;
-  td.MipLevels = 1;
-  td.ArraySize = 1;
-  td.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-  td.SampleDesc.Count = 1;
-  td.Usage = D3D11_USAGE_STAGING;
-  td.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-  // One reusable readback texture per size.
-  static std::map<uint64_t, ID3D11Texture2D*> cache;
-  ID3D11Texture2D*& staging = cache[(static_cast<uint64_t>(td.Width) << 32) | td.Height];
-  if (!staging && FAILED(b.device->CreateTexture2D(&td, nullptr, &staging))) {
-    staging = nullptr;
-    Log("readback texture %ux%u failed", gpu_.width, gpu_.height);
-    return;
-  }
-  b.ctx->CopySubresourceRegion(staging, 0, 0, 0, 0, gpu_.tex, 0, nullptr);
-  D3D11_MAPPED_SUBRESOURCE m{};
-  if (SUCCEEDED(b.ctx->Map(staging, 0, D3D11_MAP_READ, 0, &m))) {
-    UINT w = Width(), h = Height(), bytes = layout_.bpp / 8;
-    for (UINT y = 0; y < h; ++y) {
-      const uint8_t* src = static_cast<const uint8_t*>(m.pData) + static_cast<size_t>(y) * m.RowPitch;
-      uint8_t* dst = mem_.data() + static_cast<size_t>(y) * Pitch();
-      if (layout_.palette) continue;  // cannot map colours back to indices
-      for (UINT x = 0; x < w; ++x) WritePx(dst + x * bytes, layout_.bpp, layout_.FromBGRA(src + x * 4));
-    }
-    b.ctx->Unmap(staging, 0);
-  }
+  if (layout_.palette) return;  // cannot map colours back to indices
+  struct Ctx {
+    Surface* s;
+  } ctx{this};
+  const bool ok = DownloadTop(
+      gpu_,
+      [](void* c, UINT y, const uint8_t* src) {
+        Surface* s = static_cast<Ctx*>(c)->s;
+        if (y >= s->Height()) return;
+        const UINT bytes = s->layout_.bpp / 8;
+        uint8_t* dst = s->mem_.data() + static_cast<size_t>(y) * s->Pitch();
+        for (UINT x = 0; x < s->Width(); ++x)
+          WritePx(dst + x * bytes, s->layout_.bpp, s->layout_.FromBGRA(src + x * 4));
+      },
+      &ctx);
+  if (!ok) LogOnce("reading back a %ux%u surface failed", Width(), Height());
 }
 
 void Surface::InheritName(Surface* src) {
@@ -668,6 +748,8 @@ void Surface::CopyFrom(Surface* src, const POINT* dst_pt, const RECT* src_rect) 
 bool Surface::UseGpuFor(Surface* src) {
   if (InMipChain() || layout_.depth || !Ready()) return false;
   if (src && (src->layout_.depth || src->layout_.palette)) return false;
+  // D3D9: only render targets can be drawn into on the GPU.
+  if (IsD3D9() && !WantRenderTarget()) return false;
   // Work where the destination's newest copy is, so CPU drawing (GDI text,
   // software blits) and GPU drawing don't copy the whole surface back and
   // forth for every call.
@@ -681,26 +763,38 @@ bool Surface::UseGpuFor(Surface* src) {
 
 void Surface::BltGpu(const RECT& dr, Surface* src, const RECT& sr, bool key, DWORD key_value) {
   GpuTexture* d = Gpu();
-  GpuTexture* s = src->Gpu();
-  if (!d->rtv || !s->srv) return;
+  const GpuTexture* s = nullptr;
+  if (key && IsD3D9()) {
+    // No shaders: the colour key becomes alpha in a keyed copy of the source.
+    s = src->KeyedTex(key_value);
+    d = Gpu();  // KeyedTex may have read the source back
+    if (!s) {
+      LogOnce("colour-keyed GPU blit without a keyed copy; using the CPU");
+      BltCpu(dr, src, sr, key, key_value);
+      return;
+    }
+  } else {
+    s = src->Gpu();
+  }
+  if (!d->CanRender() || !s->CanSample()) {
+    LogOnce("GPU blit %ux%u -> %ux%u skipped: destination %s, source %s", s->width, s->height,
+            d->width, d->height, d->CanRender() ? "ok" : "not a render target",
+            s->CanSample() ? "ok" : "no texture");
+    return;
+  }
   GpuTexture temp;
-  ID3D11ShaderResourceView* srv = s->srv;
-  if (s == d) {
+  if (s->Native() == d->Native()) {
     // Same texture on both sides: blit from a copy.
-    if (!CreateGpuTexture(temp, s->width, s->height, 1, false, false)) return;
-    B().ctx->CopySubresourceRegion(temp.tex, 0, 0, 0, 0, s->tex, 0, nullptr);
-    srv = temp.srv;
+    if (!CopyTexture(temp, *s)) return;
+    s = &temp;
   }
   BlitParams p;
-  p.dst = d->rtv;
-  p.dst_w = d->width;
-  p.dst_h = d->height;
+  p.SetDst(*d);
   p.dst_rect = dr;
-  p.src = srv;
-  p.src_w = s->width;
-  p.src_h = s->height;
+  p.SetSrc(*s);
   p.src_rect = sr;
   p.color_key = key;
+  p.alpha_key = key && IsD3D9();
   if (key) {
     uint8_t c[4];
     src->layout_.ToBGRA(key_value, c);
@@ -760,13 +854,11 @@ void Surface::BltCpu(const RECT& dr, Surface* src, const RECT& sr, bool key, DWO
 
 void Surface::FillGpu(const RECT& dr, DWORD color) {
   GpuTexture* d = Gpu();
-  if (!d->rtv) return;
+  if (!d->CanRender()) return;
   uint8_t c[4];
   layout_.ToBGRA(color, c);
   BlitParams p;
-  p.dst = d->rtv;
-  p.dst_w = d->width;
-  p.dst_h = d->height;
+  p.SetDst(*d);
   p.dst_rect = dr;
   p.fill[0] = c[2] / 255.0f;
   p.fill[1] = c[1] / 255.0f;
@@ -786,13 +878,15 @@ void Surface::FillCpu(const RECT& dr, DWORD color) {
 void Surface::PresentFront(UINT interval) {
   if (interval == 0) ++Counters().front_writes;
   GpuTexture* t = Gpu();
-  if (t->srv) dd::Present(t->srv, Width(), Height(), interval);
+  if (t->CanSample()) dd::Present(*t, Width(), Height(), interval);
 }
 
 void Surface::SwapContents(Surface* other) {
   std::swap(gpu_, other->gpu_);
   std::swap(mem_, other->mem_);
   std::swap(sync_, other->sync_);
+  ++cpu_version_;
+  ++other->cpu_version_;
   ++uniqueness_;
   ++other->uniqueness_;
 }
@@ -871,9 +965,7 @@ HRESULT Surface::Blt(LPRECT dr_in, LPDIRECTDRAWSURFACE7 src_in, LPRECT sr_in, DW
     if (!fx) return DDERR_INVALIDPARAMS;
     GpuTexture* g = Gpu();
     DWORD max = layout_.bpp >= 32 ? 0xffffffffu : ((1u << layout_.bpp) - 1);
-    if (g->dsv)
-      B().ctx->ClearDepthStencilView(g->dsv, D3D11_CLEAR_DEPTH,
-                                     static_cast<float>(static_cast<double>(fx->dwFillDepth) / max), 0);
+    ClearDepth(*g, static_cast<float>(static_cast<double>(fx->dwFillDepth) / max));
     return DD_OK;
   }
   Surface* src = From(src_in);
@@ -1081,7 +1173,7 @@ HRESULT Surface::GetDC(HDC* out) {
 HRESULT Surface::ReleaseDC(HDC dc) {
   DD_LOCK;
   if (!dc_ || dc != dc_) return DDERR_INVALIDPARAMS;
-  if (gdi_surface_) {
+  if (gpu_dc_) {
     ReleaseGpuDC();
     MarkGpuWritten();
     if (IsVisible()) PresentFront(0);
@@ -1109,38 +1201,32 @@ bool Surface::GetGpuDC(HDC* out) {
   if (!(o->sync_ == kGpuNewer || (o->sync_ == kInSync && IsRenderTargetKind()))) return false;
   if (!Ready()) return false;
   GpuTexture* g = Gpu();
-  if (!g->tex || !g->gdi) return false;
-  IDXGISurface1* s = nullptr;
-  if (FAILED(g->tex->QueryInterface(__uuidof(IDXGISurface1), reinterpret_cast<void**>(&s))))
-    return false;
-  // The texture must not be bound while GDI owns it; the device and the
-  // blitter bind their targets again before every draw.
-  ID3D11ShaderResourceView* null_srv[8] = {};
-  B().ctx->PSSetShaderResources(0, 8, null_srv);
-  B().ctx->OMSetRenderTargets(0, nullptr, nullptr);
-  HDC dc = nullptr;
-  if (FAILED(s->GetDC(FALSE, &dc)) || !dc) {
-    LogOnce("IDXGISurface1::GetDC failed; using CPU copies for GDI");
-    s->Release();
+  if (!g->Valid() || !g->gdi) {
+    if (IsD3D9() && IsRenderTargetKind())
+      LogOnce("GetDC on %ux%u render target: no GDI on the GPU copy (format %u); using the CPU copy",
+              Width(), Height(), static_cast<unsigned>(g->fmt9));
     return false;
   }
-  gdi_surface_ = s;
+  HDC dc = nullptr;
+  void* handle = nullptr;
+  if (!GpuGetDC(*g, &dc, &handle) || !dc) return false;
+  gpu_dc_ = true;
+  gpu_dc_handle_ = handle;
   dc_ = dc;
   *out = dc;
   return true;
 }
 
 void Surface::ReleaseGpuDC() {
-  gdi_surface_->ReleaseDC(nullptr);
-  gdi_surface_->Release();
-  gdi_surface_ = nullptr;
+  GpuReleaseDC(gpu_, dc_, gpu_dc_handle_);
+  gpu_dc_ = false;
+  gpu_dc_handle_ = nullptr;
   dc_ = nullptr;
   // GDI leaves alpha undefined; formats without alpha must read as opaque.
+  // (D3D9 gives those surfaces a format without alpha.)
   if (!layout_.mask[3] && gpu_.rtv) {
     BlitParams p;
-    p.dst = gpu_.rtv;
-    p.dst_w = gpu_.width;
-    p.dst_h = gpu_.height;
+    p.SetDst(gpu_);
     p.dst_rect = {0, 0, static_cast<LONG>(gpu_.width), static_cast<LONG>(gpu_.height)};
     p.alpha_only = true;
     Blit(p);
@@ -1240,6 +1326,7 @@ HRESULT Surface::SetPalette(LPDIRECTDRAWPALETTE p) {
   SafeRelease(palette_);
   palette_ = p;
   if (layout_.palette) MarkCpuWritten();
+  ++cpu_version_;
   return DD_OK;
 }
 

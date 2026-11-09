@@ -28,6 +28,8 @@ add_library(mcm2fix SHARED
   src/smooth.cpp
   src/smooth_parts.cpp
   src/dd/backend.cpp
+  src/dd/backend9.cpp
+  src/dd/device9.cpp
   src/dd/surface.cpp
   src/dd/directdraw.cpp
   src/dd/device.cpp
@@ -53,7 +55,9 @@ endif()
 
 set_target_properties(mcm2fix PROPERTIES PREFIX "" OUTPUT_NAME "mcm2fix")
 
-target_link_libraries(mcm2fix PRIVATE d3d11 dxgi dxguid gdi32 user32 ole32 windowscodecs winmm)
+# d3d11.dll, dxgi.dll and d3d9.dll are loaded at run time (dd/backend*.cpp),
+# so the DLL loads where they are missing and the renderer can fall back.
+target_link_libraries(mcm2fix PRIVATE dxguid gdi32 user32 ole32 windowscodecs winmm)
 target_compile_definitions(mcm2fix PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 
 if(MSVC)
@@ -63,4 +67,24 @@ if(MSVC)
 else()
   target_compile_options(mcm2fix PRIVATE -Wall -Wextra -O2)
   target_link_options(mcm2fix PRIVATE -static -static-libgcc -static-libstdc++ -Wl,--enable-stdcall-fixup)
+endif()
+
+# Renderer smoke test (no game needed; runs on Windows or under Wine):
+#   cmake -DMCM2FIX_TESTS=ON ...; dd_smoke.exe d3d9|d3d11
+option(MCM2FIX_TESTS "Build tests/dd_smoke.exe" OFF)
+if(MCM2FIX_TESTS)
+  get_target_property(MCM2FIX_SOURCES mcm2fix SOURCES)
+  list(FILTER MCM2FIX_SOURCES EXCLUDE REGEX "dllmain\\.cpp|\\.def$")
+  add_executable(dd_smoke tests/dd_smoke.cpp ${MCM2FIX_SOURCES})
+  target_include_directories(dd_smoke PRIVATE src)
+  if(MCM2FIX_FFMPEG)
+    target_include_directories(dd_smoke PRIVATE "${MCM2FIX_FFMPEG}/include")
+    target_link_libraries(dd_smoke PRIVATE "${MCM2FIX_FFMPEG}/lib/libavcodec.a"
+                                           "${MCM2FIX_FFMPEG}/lib/libavutil.a" bcrypt)
+  endif()
+  target_link_libraries(dd_smoke PRIVATE dxguid gdi32 user32 ole32 windowscodecs winmm)
+  target_compile_definitions(dd_smoke PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+  if(NOT MSVC)
+    target_link_options(dd_smoke PRIVATE -static -static-libgcc -static-libstdc++ -Wl,--enable-stdcall-fixup)
+  endif()
 endif()

@@ -10,6 +10,8 @@ struct Config {
   bool activate_log = false;  // ActivateLog: log window activation
   bool reg_log = false;       // RegLog: log every registry call
   bool dd_stats = false;      // DDStats: log renderer activity every 2 seconds
+  int renderer = 11;          // Renderer: 11 = Direct3D 11, 9 = Direct3D 9 (also used when D3D11 is missing)
+  bool d3d9_log = true;       // D3D9Log: extra logging from the Direct3D 9 renderer (first frames, fallbacks)
   bool wide_fov = true;       // WideFov: wide modes show more to the sides instead of cropping
   bool vsync = true;          // VSync: wait for the monitor's refresh when showing a frame
   int frame_cap = 0;          // FrameCap: most frames per second (0 = no cap beyond VSync)

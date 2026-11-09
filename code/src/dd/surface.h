@@ -124,7 +124,13 @@ class Surface : public IDirectDrawSurface7 {
 
   // The texture to sample when drawing with this surface: its GPU copy,
   // or a replacement picture (see texreplace.h).
-  ID3D11ShaderResourceView* SampleSrv();
+  const GpuTexture* SampleTex();
+  // Direct3D 9 (no shaders): a copy whose texels equal to `key` (in this
+  // surface's format) have alpha 0, for colour-keyed blits and draws.
+  // Built from the CPU copy; null if it cannot be made.
+  const GpuTexture* KeyedTex(DWORD key);
+  // Direct3D 9 device reset: drop GPU copies that live in video memory.
+  static void DeviceLost9();
 
   // Copy pixel data (all mip levels when both have them) for Device::Load.
   void CopyFrom(Surface* src, const POINT* dst_pt, const RECT* src_rect);
@@ -142,6 +148,10 @@ class Surface : public IDirectDrawSurface7 {
   void AllocateMemory();
   void Upload();
   void Download();
+  // Level `level` (0 = this surface) of the CPU copy as B8G8R8A8.
+  bool LevelBGRA(UINT level, std::vector<uint8_t>& out, UINT& w, UINT& h);
+  // D3D9 keeps plain textures out of video-memory render targets.
+  bool WantRenderTarget() const;
   bool UseGpuFor(Surface* src);
   void BltGpu(const RECT& dr, Surface* src, const RECT& sr, bool key, DWORD key_value);
   void BltCpu(const RECT& dr, Surface* src, const RECT& sr, bool key, DWORD key_value);
@@ -169,6 +179,9 @@ class Surface : public IDirectDrawSurface7 {
 
   GpuTexture gpu_;
   GpuTexture replaced_;    // replacement picture, if one matches
+  GpuTexture keyed_;       // D3D9 colour-keyed copy (KeyedTex)
+  uint64_t keyed_stamp_ = 0;
+  uint32_t cpu_version_ = 0;  // bumped whenever the CPU copy changes
   uint64_t tex_hash_ = 0;  // hash of the last uploaded top level
   uint64_t name_src_hash_ = 0;  // RawHash at this staging surface's first named copy
   std::string tex_name_;   // the game's name for this texture (TextureKey), if known
@@ -181,7 +194,8 @@ class Surface : public IDirectDrawSurface7 {
   HGDIOBJ old_bitmap_ = nullptr;
   void* dib_bits_ = nullptr;
   unsigned uploads_ = 0;  // texture uploads so far (edge fix-up is skipped for streaming textures)
-  IDXGISurface1* gdi_surface_ = nullptr;  // set while GDI draws on the GPU copy
+  bool gpu_dc_ = false;            // set while GDI draws on the GPU copy
+  void* gpu_dc_handle_ = nullptr;
   bool GetGpuDC(HDC* out);
   void ReleaseGpuDC();
   bool locked_ = false;

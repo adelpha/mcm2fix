@@ -92,6 +92,7 @@ SimSmooth=1    ; draw the camera, bikes, riders, shadows and names blended betwe
                ; (smooth motion at any frame rate, one step of delay); 0 = show each step as it is
 Fov=0          ; field of view in degrees as a 4:3 screen shows it (0 = game default, 77);
                ; the zoom keys still step from it, widescreen adds to the sides
+Renderer=D3D11 ; D3D11 (default) or D3D9; D3D9 is also used by itself when Direct3D 11 is missing
 Anisotropy=16  ; anisotropic texture filtering, 0/1 = off, 2-16
 Antialiasing=4 ; multisample antialiasing of the 3D scene: 0/1 = off, 2, 4 or 8
 MipBias=0      ; texture sharpness at a distance: negative = sharper (e.g. -0.5), positive = softer
@@ -111,6 +112,7 @@ OneCore=0      ; 1 = pin the game to one CPU core (old stopgap)
 ActivateLog=0  ; debugging: log window activation
 RegLog=0       ; debugging: log every registry call
 DDStats=0      ; debugging: log renderer activity every 2 seconds
+D3D9Log=1      ; debugging: extra Direct3D 9 renderer logging (device caps, first frames, fallbacks)
 RestartLog=0   ; debugging: log the start grid at race load and on Restart Race
 TextureLog=0   ; debugging: log the format of each texture the game creates
 ```

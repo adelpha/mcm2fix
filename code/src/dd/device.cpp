@@ -444,6 +444,18 @@ HRESULT VertexBuffer::ProcessVertices(DWORD op, DWORD dst_index, DWORD count,
   }
   if (op & D3DVOP_LIGHT) LogOnce("ProcessVertices: lighting requested, not emulated");
   const float* m = dev->Wvp();
+  // Remember the matrix (the D3D9 renderer redraws these vertices from their
+  // object-space positions so the GPU can clip them).
+  if (mats_.empty() || std::memcmp(mats_.back().m, m, sizeof(Mat)) != 0) {
+    if (mats_.size() >= 4096) {  // start over; older ids become stale (see Matrix)
+      mats_.clear();
+      ++mat_epoch_;
+    }
+    Mat mm;
+    std::memcpy(mm.m, m, sizeof(mm.m));
+    mats_.push_back(mm);
+  }
+  const uint32_t mat_id = static_cast<uint32_t>(mats_.size() - 1) | (mat_epoch_ << 12);
   SmoothNoteDraw("process", sl.tl, count);
   const D3DVIEWPORT7& vp = dev->Viewport();
   processed_vp_ = vp;
@@ -474,6 +486,8 @@ HRESULT VertexBuffer::ProcessVertices(DWORD op, DWORD dst_index, DWORD count,
       screen[3] = rhw;
       std::memcpy(out.clip, c, 16);
       std::memcpy(out.screen, screen, 16);
+      std::memcpy(out.obj, p, 12);
+      out.mat = mat_id;
       processed_valid_[dst_index + i] = 1;
     }
     std::memcpy(d, screen, 16);
@@ -566,6 +580,7 @@ Device::~Device() {
 }
 
 bool Device::Init() {
+  if (IsD3D9()) return Init9();
   if (!InitPipeline()) return false;
   Backend& b = B();
   D3D11_BUFFER_DESC bd{};
@@ -707,6 +722,7 @@ HRESULT Device::GetRenderTarget(IDirectDrawSurface7** s) {
 
 HRESULT Device::Clear(DWORD count, D3DRECT* rects, DWORD flags, D3DCOLOR color, float z, DWORD) {
   DD_LOCK;
+  if (IsD3D9()) return Clear9(count, rects, flags, color, z);
   if (!rt_ || !Ready() || !g_pipe.ready) return D3D_OK;
   RECT vp{static_cast<LONG>(viewport_.dwX), static_cast<LONG>(viewport_.dwY),
           static_cast<LONG>(viewport_.dwX + viewport_.dwWidth),
@@ -1166,7 +1182,7 @@ bool Device::BindTarget(bool& has_depth, bool full_clear) {
     cur_rtv_ = mv.rtv;
     cur_dsv_ = mv.dsv;
   } else {
-    MsaaRelease(rt->tex);
+    MsaaRelease(rt->Native());
     cur_rtv_ = rt->rtv;
     cur_dsv_ = dsv;
   }
@@ -1306,7 +1322,7 @@ void Device::ApplyState(bool tl, bool depth_clip, bool has_depth) {
       if (tex_[s] == rt_) {
         LogOnce("texture is the current render target; ignored");
       } else {
-        srv[s] = tex_[s]->SampleSrv();
+        srv[s] = tex_[s]->SampleTex()->srv;
         pc.scol[s][3] = srv[s] ? 1 : 0;
       }
     }
@@ -1361,6 +1377,7 @@ void Device::ApplyState(bool tl, bool depth_clip, bool has_depth) {
 }
 
 void Device::Submit(const Draw& d) {
+  if (IsD3D9()) return Submit9(d);
   bool has_depth = false;
   if (!BindTarget(has_depth)) return;
   Backend& b = B();

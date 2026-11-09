@@ -65,6 +65,13 @@ void LoadConfig() {
   g_config.restart_fix = GetPrivateProfileIntA("mcm2fix", "RestartFix", 1, ini) != 0;
   g_config.restart_log = GetPrivateProfileIntA("mcm2fix", "RestartLog", 0, ini) != 0;
   g_config.dd_stats = GetPrivateProfileIntA("mcm2fix", "DDStats", 0, ini) != 0;
+  {
+    char r[32] = {};
+    GetPrivateProfileStringA("mcm2fix", "Renderer", "D3D11", r, sizeof(r), ini);
+    // Accepts D3D9 / DX9 / 9 and D3D11 / DX11 / 11.
+    g_config.renderer = (std::strstr(r, "9") && !std::strstr(r, "11")) ? 9 : 11;
+  }
+  g_config.d3d9_log = GetPrivateProfileIntA("mcm2fix", "D3D9Log", 1, ini) != 0;
   g_config.activate_log = GetPrivateProfileIntA("mcm2fix", "ActivateLog", 0, ini) != 0;
 
   float fov = ReadFloat("Fov", 0.0f, ini);
