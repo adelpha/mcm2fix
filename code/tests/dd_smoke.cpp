@@ -17,6 +17,7 @@
 #include "../src/config.h"
 #include "../src/dd/d3d7.h"
 #include "../src/dd/directdraw.h"
+#include "../src/dd/gdihook.h"
 
 using namespace d3d7;
 
@@ -90,9 +91,10 @@ int main(int argc, char** argv) {
   GetModuleFileNameA(nullptr, ini, MAX_PATH);
   std::strcpy(std::strrchr(ini, '\\') + 1, "mcm2fix.ini");
   FILE* f = std::fopen(ini, "w");
-  std::fprintf(f, "[mcm2fix]\nRenderer=%s\nAntialiasing=4\nVSync=0\nD3D9Log=1\nDDStats=1\nTextureReplace=0\n", api);
+  std::fprintf(f, "[mcm2fix]\nRenderer=%s\nAntialiasing=4\nVSync=0\nD3D9Log=1\nDDStats=1\nGdiLog=1\nTextureReplace=0\n", api);
   std::fclose(f);
   LoadConfig();
+  dd::InstallGdiHooks();
 
   WNDCLASSA wc{};
   wc.lpfnWndProc = WndProc;
@@ -279,6 +281,10 @@ int main(int argc, char** argv) {
       SetBkMode(dc, TRANSPARENT);
       SetTextColor(dc, RGB(255, 255, 255));
       TextOutA(dc, 10, 450, "dd_smoke", 8);
+      HBRUSH red = CreateSolidBrush(RGB(255, 0, 0));
+      RECT fr{560, 400, 600, 430};
+      FillRect(dc, &fr, red);
+      DeleteObject(red);
       back->ReleaseDC(dc);
     }
 
@@ -320,6 +326,11 @@ int main(int argc, char** argv) {
   Check(Near(c, 32, 32, 32), "keyed sprite, key colour skipped");
   ReadRGB(back, 600, 450, c);
   Check(Near(c, 32, 32, 32), "background (clear colour)");
+  ReadRGB(back, 580, 415, c);
+  std::printf("     GDI fill %d %d %d\n", c[0], c[1], c[2]);
+  Check(Near(c, 255, 0, 0), "GDI FillRect (red)");
+  ReadRGB(back, 556, 415, c);
+  Check(Near(c, 32, 32, 32), "GDI leaves pixels beside the fill alone");
 
   primary->Flip(nullptr, DDFLIP_WAIT);
   if (argc > 2 && std::strcmp(argv[2], "hold") == 0) {

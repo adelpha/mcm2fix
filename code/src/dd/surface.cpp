@@ -1,5 +1,6 @@
 #include "../smooth.h"
 #include "surface.h"
+#include "gdihook.h"
 
 #include <algorithm>
 #include <cstring>
@@ -1129,7 +1130,10 @@ HRESULT Surface::GetDC(HDC* out) {
   if (!out) return DDERR_INVALIDPARAMS;
   if (dc_) return DDERR_DCALREADYCREATED;
   if (layout_.depth) return DDERR_CANTCREATEDC;
-  if (GetGpuDC(out)) return DD_OK;
+  if (GetGpuDC(out)) {
+    GdiTrack(*out, nullptr, Width(), Height(), IsD3D9() ? "gpu" : "gpu (dxgi)");
+    return DD_OK;
+  }
   SyncToCpu("GetDC");
   struct {
     BITMAPINFOHEADER h;
@@ -1167,12 +1171,14 @@ HRESULT Surface::GetDC(HDC* out) {
   std::memcpy(dib_bits_, mem_.data(), mem_.size());
   old_bitmap_ = SelectObject(dc_, dib_);
   *out = dc_;
+  GdiTrack(dc_, nullptr, Width(), Height(), "cpu copy");
   return DD_OK;
 }
 
 HRESULT Surface::ReleaseDC(HDC dc) {
   DD_LOCK;
   if (!dc_ || dc != dc_) return DDERR_INVALIDPARAMS;
+  GdiUntrack(dc);
   if (gpu_dc_) {
     ReleaseGpuDC();
     MarkGpuWritten();

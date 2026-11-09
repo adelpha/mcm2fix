@@ -5,6 +5,7 @@
 #include "../patch.h"
 #include "backend.h"
 #include "directdraw.h"
+#include "gdihook.h"
 
 namespace {
 
@@ -15,4 +16,5 @@ constexpr uintptr_t kIatDirectDrawCreateEx = 0x5553EC;
 void ApplyD3D11Backend() {
   patch::HookIat(kIatDirectDrawCreateEx, reinterpret_cast<void*>(&dd::CreateDirectDraw));
   patch::Log("d3d11 backend: on");
+  dd::InstallGdiHooks();
 }

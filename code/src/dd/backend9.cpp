@@ -12,6 +12,7 @@
 // uploaded again on next use.
 #include "backend9.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -19,6 +20,7 @@
 
 #include "../config.h"
 #include "../patch.h"
+#include "gdihook.h"
 #include "msaa.h"
 #include "surface.h"
 
@@ -36,6 +38,7 @@ D3DPRESENT_PARAMETERS g_pp{};
 DWORD g_behavior = 0;
 bool g_lost = false;
 bool g_in_scene = false;
+void ReleaseGdi9();
 unsigned g_resets = 0;
 
 // Two swap chains on the game window: Present waits for the refresh on one
@@ -170,6 +173,7 @@ bool TryRecover() {
   Log("device lost; resetting (reset #%u)", g_resets + 1);
   ReleaseChains();
   MsaaDeviceLost();
+  ReleaseGdi9();
   for (auto& kv : g_depth_clear_rt) SafeRelease(kv.second);
   g_depth_clear_rt.clear();
   Surface::DeviceLost9();
@@ -594,37 +598,242 @@ void ClearDepth9(GpuTexture& t, float z) {
   b.dev9->Clear(0, nullptr, kClear9ZBuffer | (t.fmt9 == D3DFMT_D24S8 ? kClear9Stencil : 0), 0, z, 0);
 }
 
-bool GpuGetDC9(GpuTexture& t, HDC* dc) {
-  if (!t.surf9 || !t.gdi || g_lost) return false;
-  // Not while it is the render target: bind the device's own (1x1) back
-  // buffer instead; every draw binds its target again.
-  IDirect3DSurface9* cur = nullptr;
-  if (SUCCEEDED(B().dev9->GetRenderTarget(0, &cur)) && cur) {
-    if (cur == t.surf9) {
-      IDirect3DSurface9* bb = nullptr;
-      if (SUCCEEDED(B().dev9->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &bb)) && bb) {
-        B().dev9->SetRenderTarget(0, bb);
-        bb->Release();
+// GDI on render targets. IDirect3DSurface9::GetDC does not work on
+// render-target textures (drivers return D3DERR_INVALIDCALL), and reading
+// the whole frame back for the game's few words of text halves the frame
+// rate. Instead the game gets a DC on a DIB of the surface's size whose
+// pixels are fetched from the GPU lazily: the GDI hooks (gdihook.cpp) say
+// which rectangle each call can touch, only those 32x32 tiles are read back
+// (through a small render target), and on ReleaseDC only the touched
+// rectangles are copied back with UpdateSurface.
+namespace {
+constexpr UINT kGdiTile = 32;
+
+struct GdiStats9 {
+  unsigned sessions = 0, fetches = 0, uploads = 0;
+  uint64_t fetch_px = 0, upload_px = 0;
+} g_gdi;
+
+IDirect3DSurface9* g_gdi_rt = nullptr;
+UINT g_gdi_rt_w = 0, g_gdi_rt_h = 0;
+
+struct LazyDC : GdiTarget {
+  IDirect3DSurface9* surf = nullptr;  // not owned
+  UINT w = 0, h = 0, tw = 0, th = 0;
+  HDC dc = nullptr;
+  HBITMAP dib = nullptr;
+  HGDIOBJ old = nullptr;
+  uint8_t* bits = nullptr;
+  std::vector<uint8_t> loaded;
+  std::vector<RECT> dirty;
+
+  ~LazyDC() override {
+    if (dc) {
+      if (old) SelectObject(dc, old);
+      DeleteDC(dc);
+    }
+    if (dib) DeleteObject(dib);
+  }
+
+  bool Create(UINT width, UINT height) {
+    w = width;
+    h = height;
+    tw = (w + kGdiTile - 1) / kGdiTile;
+    th = (h + kGdiTile - 1) / kGdiTile;
+    BITMAPINFO bi{};
+    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bi.bmiHeader.biWidth = static_cast<LONG>(w);
+    bi.bmiHeader.biHeight = -static_cast<LONG>(h);
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32;
+    bi.bmiHeader.biCompression = BI_RGB;
+    HDC screen = ::GetDC(nullptr);
+    void* p = nullptr;
+    dib = CreateDIBSection(screen, &bi, DIB_RGB_COLORS, &p, nullptr, 0);
+    dc = CreateCompatibleDC(screen);
+    ::ReleaseDC(nullptr, screen);
+    if (!dib || !dc || !p) return false;
+    bits = static_cast<uint8_t*>(p);
+    old = SelectObject(dc, dib);
+    loaded.assign(static_cast<size_t>(tw) * th, 0);
+    return true;
+  }
+
+  void Begin() {
+    std::fill(loaded.begin(), loaded.end(), 0);
+    dirty.clear();
+    // A fresh DC state for every session, as IDirect3DSurface9::GetDC gives.
+    SelectClipRgn(dc, nullptr);
+    SetTextColor(dc, RGB(0, 0, 0));
+    SetBkColor(dc, RGB(255, 255, 255));
+    SetBkMode(dc, OPAQUE);
+    SetTextAlign(dc, TA_LEFT | TA_TOP | TA_NOUPDATECP);
+    SetTextCharacterExtra(dc, 0);
+    SelectObject(dc, GetStockObject(SYSTEM_FONT));
+    SelectObject(dc, GetStockObject(BLACK_PEN));
+    SelectObject(dc, GetStockObject(WHITE_BRUSH));
+    MoveToEx(dc, 0, 0, nullptr);
+  }
+
+  bool Fetch(const RECT& r) {
+    const UINT rw = static_cast<UINT>(r.right - r.left), rh = static_cast<UINT>(r.bottom - r.top);
+    if (!g_gdi_rt || g_gdi_rt_w < rw || g_gdi_rt_h < rh) {
+      SafeRelease(g_gdi_rt);
+      const UINT nw = std::max(g_gdi_rt_w, (rw + 127) & ~127u), nh = std::max(g_gdi_rt_h, (rh + 127) & ~127u);
+      HRESULT hr = B().dev9->CreateRenderTarget(nw, nh, D3DFMT_X8R8G8B8, D3DMULTISAMPLE_NONE, 0, FALSE, &g_gdi_rt,
+                                                nullptr);
+      if (FAILED(hr)) {
+        g_gdi_rt = nullptr;
+        g_gdi_rt_w = g_gdi_rt_h = 0;
+        LogOnce("GDI fetch target %ux%u failed %08lx", nw, nh, hr);
+        return false;
+      }
+      g_gdi_rt_w = nw;
+      g_gdi_rt_h = nh;
+      if (GetConfig().d3d9_log) Log("GDI fetch target now %ux%u", nw, nh);
+    }
+    IDirect3DSurface9* stage = Staging(g_gdi_rt_w, g_gdi_rt_h, D3DFMT_X8R8G8B8);
+    if (!stage) return false;
+    EndScene9();
+    RECT to{0, 0, static_cast<LONG>(rw), static_cast<LONG>(rh)};
+    HRESULT hr = B().dev9->StretchRect(surf, &r, g_gdi_rt, &to, D3DTEXF_NONE);
+    if (FAILED(hr)) {
+      LogOnce("GDI fetch StretchRect failed %08lx", hr);
+      return false;
+    }
+    hr = B().dev9->GetRenderTargetData(g_gdi_rt, stage);
+    if (FAILED(hr)) {
+      LogOnce("GDI fetch GetRenderTargetData failed %08lx", hr);
+      return false;
+    }
+    D3DLOCKED_RECT lr{};
+    if (FAILED(stage->LockRect(&lr, nullptr, D3DLOCK_READONLY))) return false;
+    // Copy only tiles not loaded yet: loaded ones may already hold GDI output.
+    for (UINT ty = static_cast<UINT>(r.top) / kGdiTile; ty * kGdiTile < static_cast<UINT>(r.bottom); ++ty) {
+      for (UINT tx = static_cast<UINT>(r.left) / kGdiTile; tx * kGdiTile < static_cast<UINT>(r.right); ++tx) {
+        uint8_t& done = loaded[static_cast<size_t>(ty) * tw + tx];
+        if (done) continue;
+        done = 1;
+        const UINT x0 = tx * kGdiTile, y0 = ty * kGdiTile;
+        const UINT x1 = std::min(x0 + kGdiTile, w), y1 = std::min(y0 + kGdiTile, h);
+        for (UINT y = y0; y < y1; ++y)
+          std::memcpy(bits + (static_cast<size_t>(y) * w + x0) * 4,
+                      static_cast<const uint8_t*>(lr.pBits) + static_cast<size_t>(y - r.top) * lr.Pitch +
+                          static_cast<size_t>(x0 - r.left) * 4,
+                      (x1 - x0) * 4);
       }
     }
-    cur->Release();
+    stage->UnlockRect();
+    ++g_gdi.fetches;
+    g_gdi.fetch_px += static_cast<uint64_t>(rw) * rh;
+    return true;
   }
-  EndScene9();
-  HRESULT hr = t.surf9->GetDC(dc);
-  if (FAILED(hr) || !*dc) {
-    ++g_stats.gdi_fail;
-    Log("IDirect3DSurface9::GetDC on %ux%u %s failed %08lx; GDI uses the CPU copy for this surface",
-        t.width, t.height, FormatName(static_cast<D3DFORMAT>(t.fmt9)), hr);
-    t.gdi = false;
-    return false;
+
+  void Touch(const RECT& r) override {
+    // Bounding box of the tiles r covers that are not loaded yet.
+    UINT bx0 = tw, by0 = th, bx1 = 0, by1 = 0;
+    for (UINT ty = static_cast<UINT>(r.top) / kGdiTile; ty * kGdiTile < static_cast<UINT>(r.bottom); ++ty)
+      for (UINT tx = static_cast<UINT>(r.left) / kGdiTile; tx * kGdiTile < static_cast<UINT>(r.right); ++tx)
+        if (!loaded[static_cast<size_t>(ty) * tw + tx]) {
+          bx0 = std::min(bx0, tx);
+          by0 = std::min(by0, ty);
+          bx1 = std::max(bx1, tx + 1);
+          by1 = std::max(by1, ty + 1);
+        }
+    if (bx0 < bx1) {
+      RECT f{static_cast<LONG>(bx0 * kGdiTile), static_cast<LONG>(by0 * kGdiTile),
+             static_cast<LONG>(std::min(bx1 * kGdiTile, w)), static_cast<LONG>(std::min(by1 * kGdiTile, h))};
+      if (!Fetch(f)) LogOnce("GDI fetch of %ld,%ld-%ld,%ld failed", f.left, f.top, f.right, f.bottom);
+    }
+    dirty.push_back(r);
   }
+
+  void End() {
+    GdiFlush();
+    if (dirty.empty()) return;
+    // Merge overlapping rectangles.
+    for (bool merged = true; merged;) {
+      merged = false;
+      for (size_t i = 0; i < dirty.size() && !merged; ++i)
+        for (size_t j = i + 1; j < dirty.size(); ++j) {
+          RECT u;
+          if (dirty[i].left <= dirty[j].right && dirty[j].left <= dirty[i].right && dirty[i].top <= dirty[j].bottom &&
+              dirty[j].top <= dirty[i].bottom) {
+            UnionRect(&u, &dirty[i], &dirty[j]);
+            dirty[i] = u;
+            dirty.erase(dirty.begin() + static_cast<std::ptrdiff_t>(j));
+            merged = true;
+            break;
+          }
+        }
+    }
+    IDirect3DSurface9* stage = Staging(w, h, D3DFMT_X8R8G8B8);
+    if (!stage) return;
+    EndScene9();
+    for (const RECT& r : dirty) {
+      D3DLOCKED_RECT lr{};
+      if (FAILED(stage->LockRect(&lr, &r, 0))) continue;
+      const UINT rw = static_cast<UINT>(r.right - r.left);
+      for (LONG y = r.top; y < r.bottom; ++y)
+        std::memcpy(static_cast<uint8_t*>(lr.pBits) + static_cast<size_t>(y - r.top) * lr.Pitch,
+                    bits + (static_cast<size_t>(y) * w + static_cast<size_t>(r.left)) * 4, rw * 4);
+      stage->UnlockRect();
+      POINT pt{r.left, r.top};
+      HRESULT hr = B().dev9->UpdateSurface(stage, &r, surf, &pt);
+      if (FAILED(hr)) {
+        LogOnce("GDI UpdateSurface failed %08lx", hr);
+        continue;
+      }
+      ++g_gdi.uploads;
+      g_gdi.upload_px += static_cast<uint64_t>(rw) * static_cast<UINT>(r.bottom - r.top);
+    }
+  }
+};
+
+std::map<IDirect3DSurface9*, LazyDC*> g_lazy;
+
+void ReleaseGdi9() {
+  for (auto& kv : g_lazy) delete kv.second;
+  g_lazy.clear();
+  SafeRelease(g_gdi_rt);
+  g_gdi_rt_w = g_gdi_rt_h = 0;
+}
+}  // namespace
+
+bool GpuGetDC9(GpuTexture& t, HDC* dc) {
+  if (!t.surf9 || !t.gdi || g_lost) return false;
+  MsaaRelease(t.Native());
+  LazyDC*& l = g_lazy[t.surf9];
+  if (l && (l->w != t.width || l->h != t.height)) {
+    delete l;
+    l = nullptr;
+  }
+  if (!l) {
+    l = new LazyDC();
+    l->surf = t.surf9;
+    if (!l->Create(t.width, t.height)) {
+      Log("GDI surface %ux%u could not be made; GDI uses the CPU copy for this surface", t.width, t.height);
+      delete l;
+      l = nullptr;
+      t.gdi = false;
+      ++g_stats.gdi_fail;
+      return false;
+    }
+  }
+  l->Begin();
+  GdiTrack(l->dc, l, t.width, t.height, "d3d9 render target");
+  *dc = l->dc;
   ++g_stats.gdi_gpu;
-  LogOnce("GDI draws straight onto the GPU copy (IDirect3DSurface9::GetDC on %s)", FormatName(static_cast<D3DFORMAT>(t.fmt9)));
+  ++g_gdi.sessions;
+  LogOnce("GDI on render targets: fetched from the GPU only where the game draws");
   return true;
 }
 
 void GpuReleaseDC9(GpuTexture& t, HDC dc) {
-  if (t.surf9 && dc) t.surf9->ReleaseDC(dc);
+  auto it = g_lazy.find(t.surf9);
+  if (it == g_lazy.end() || !it->second || it->second->dc != dc) return;
+  GdiUntrack(dc);
+  it->second->End();
 }
 
 // ---------------------------------------------------------------------- scene
@@ -790,6 +999,15 @@ void Present9(const GpuTexture& src, UINT src_w, UINT src_h, UINT interval) {
           g_stats.create_failed);
       g_stats.presents = g_stats.blits = g_stats.uploads = g_stats.upload_bytes = g_stats.readbacks = 0;
       g_stats.gdi_gpu = g_stats.gdi_fail = 0;
+    }
+    static DWORD gdi_last = now;
+    if (now - gdi_last >= 5000) {
+      gdi_last = now;
+      if (g_gdi.sessions)
+        Log("GDI 5s: %u DCs, %u fetches (%llu px), %u uploads (%llu px)", g_gdi.sessions, g_gdi.fetches,
+            static_cast<unsigned long long>(g_gdi.fetch_px), g_gdi.uploads,
+            static_cast<unsigned long long>(g_gdi.upload_px));
+      g_gdi = GdiStats9{};
     }
   }
 }
