@@ -83,5 +83,5 @@ void LoadConfig() {
   g_config.texture_replace = GetPrivateProfileIntA("mcm2fix", "TextureReplace", 1, ini) != 0;
   g_config.texture_dump = GetPrivateProfileIntA("mcm2fix", "TextureDump", 0, ini) != 0;
   g_config.true_color_textures = GetPrivateProfileIntA("mcm2fix", "TrueColorTextures", 1, ini) != 0;
-  g_config.texture_log = GetPrivateProfileIntA("mcm2fix", "TextureLog", 1, ini) != 0;
+  g_config.texture_log = GetPrivateProfileIntA("mcm2fix", "TextureLog", 0, ini) != 0;
 }

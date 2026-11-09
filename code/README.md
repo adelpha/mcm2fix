@@ -112,7 +112,7 @@ ActivateLog=0  ; debugging: log window activation
 RegLog=0       ; debugging: log every registry call
 DDStats=0      ; debugging: log renderer activity every 2 seconds
 RestartLog=0   ; debugging: log the start grid at race load and on Restart Race
-TextureLog=1   ; debugging: log the format of each texture the game creates
+TextureLog=0   ; debugging: log the format of each texture the game creates
 ```
 
 ## True-colour textures

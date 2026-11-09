@@ -40,7 +40,7 @@ struct Config {
   bool texture_replace = true;  // TextureReplace: load replacement textures from textures\ folder
   bool texture_dump = false;    // TextureDump: save every texture the game uploads as PNG
   bool true_color_textures = true;  // TrueColorTextures: load textures as 24/32-bit instead of 16-bit
-  bool texture_log = true;          // TextureLog: log the format of each texture the game creates
+  bool texture_log = false;         // TextureLog: log the format of each texture the game creates
 };
 
 const Config& GetConfig();
