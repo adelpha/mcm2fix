@@ -68,7 +68,9 @@ void LoadConfig() {
   {
     char r[32] = {};
     GetPrivateProfileStringA("mcm2fix", "Renderer", "D3D11", r, sizeof(r), ini);
-    // Accepts D3D9 / DX9 / 9 and D3D11 / DX11 / 11.
+    // Windows keeps an inline "; comment" in the value, so only the first
+    // word counts. Accepts D3D9 / DX9 / 9 and D3D11 / DX11 / 11.
+    r[std::strcspn(r, " \t;")] = 0;
     g_config.renderer = (std::strstr(r, "9") && !std::strstr(r, "11")) ? 9 : 11;
   }
   g_config.renderer_label = GetPrivateProfileIntA("mcm2fix", "RendererLabel", 1, ini) != 0;

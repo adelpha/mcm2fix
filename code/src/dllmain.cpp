@@ -50,9 +50,10 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
                  c.alpha_cut, c.wide_fov, c.arrow_heading, static_cast<double>(c.arrow_scale),
                  c.restart_fix, c.restart_log);
       patch::Log("graphics: Fov=%.1f Anisotropy=%d Antialiasing=%d MipBias=%.2f FogDistance=%.2f "
-                 "ViewDistance=%.2f ModelLod=%.2f TreeDetailDistance=%d TextureReplace=%d TextureDump=%d",
+                 "ViewDistance=%.2f ModelLod=%.2f TreeDetailDistance=%d TextureReplace=%d TextureDump=%d "
+                 "Renderer=D3D%d RendererLabel=%d D3D9Log=%d",
                  c.fov, c.anisotropy, c.msaa, c.mip_bias, c.fog_scale, c.view_distance, c.model_lod, c.tree_always_near ? 0 : 1,
-                 c.texture_replace, c.texture_dump);
+                 c.texture_replace, c.texture_dump, c.renderer, c.renderer_label, c.d3d9_log);
       if (c.startup) ApplyStartupFixes();
       if (c.registry) ApplyRegistryFixes();
       if (c.files) ApplyFileFixes();
