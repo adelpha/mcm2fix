@@ -55,34 +55,85 @@ Surface* SurfaceAt(uintptr_t self, uintptr_t field) {
   return dds ? Surface::From(dds) : nullptr;
 }
 
-// Make the sharper copy afresh from the panel as it is now.
-bool Rebuild(Surface* t) {
+// Bring r (null: all) of the sharper copy up to date with the panel: the
+// panel premultiplied by its alpha (colour-keyed texels transparent) at its
+// own size, then scaled up.
+bool Refresh(Surface* t, const RECT* r) {
   GpuTexture* g = t->Gpu();
   if (!g->Valid() || !g->CanSample()) return false;
   const float s = GpuTextTextureScale();
-  const UINT w = std::max<UINT>(1, static_cast<UINT>(std::lround(t->Width() * s)));
-  const UINT h = std::max<UINT>(1, static_cast<UINT>(std::lround(t->Height() * s)));
+  const UINT tw = t->Width(), th = t->Height();
+  const UINT w = std::max<UINT>(1, static_cast<UINT>(std::lround(tw * s)));
+  const UINT h = std::max<UINT>(1, static_cast<UINT>(std::lround(th * s)));
   GpuTexture* hi = t->Hires();
+  GpuTexture* tmp = t->HiresScratch();
   if (!hi->Valid() || hi->width != w || hi->height != h) {
+    if (r) return false;  // only a whole refresh makes a new copy
     hi->Reset();
     if (!CreateGpuTexture(*hi, w, h, 1, true, false, true)) {
       LogOnce("hud text: a %ux%u copy could not be made", w, h);
       return false;
     }
-    Log("hud text: %ux%u panel texture gets a %ux%u sharp copy (x%.2f)", t->Width(), t->Height(), w, h, s);
+    Log("hud text: %ux%u panel texture gets a %ux%u sharp copy (x%.2f)", tw, th, w, h, s);
+  }
+  if (!tmp->Valid() || tmp->width != tw || tmp->height != th) {
+    tmp->Reset();
+    if (!CreateGpuTexture(*tmp, tw, th, 1, true, false, true)) return false;
+  }
+  DDCOLORKEY k{};
+  const bool keyed = SUCCEEDED(t->GetColorKey(DDCKEY_SRCBLT, &k));
+  const GpuTexture* src = g;
+  bool shader_key = false;
+  if (keyed) {
+    if (IsD3D9()) {
+      src = t->KeyedTex(k.dwColorSpaceLowValue);  // key texels have alpha 0
+      if (!src) return false;
+    } else {
+      shader_key = true;
+    }
+  }
+  RECT rr{0, 0, static_cast<LONG>(tw), static_cast<LONG>(th)};
+  if (r && !IntersectRect(&rr, &rr, r)) return true;
+  if (shader_key) {
+    BlitParams c;
+    c.SetDst(*tmp);
+    c.dst_rect = rr;
+    c.fill[0] = c.fill[1] = c.fill[2] = c.fill[3] = 0;
+    c.opaque = false;
+    Blit(c);
   }
   BlitParams p;
-  p.SetDst(*hi);
-  p.dst_rect = {0, 0, static_cast<LONG>(w), static_cast<LONG>(h)};
-  p.SetSrc(*g);
-  p.src_rect = {0, 0, static_cast<LONG>(t->Width()), static_cast<LONG>(t->Height())};
-  p.linear = true;
+  p.SetDst(*tmp);
+  p.dst_rect = rr;
+  p.SetSrc(*src);
+  p.src_rect = rr;
+  p.premultiply = true;
   p.opaque = false;
+  if (shader_key) {
+    p.color_key = true;
+    t->KeyColor(p.key);
+  }
   Blit(p);
+  const float kx = static_cast<float>(w) / tw, ky = static_cast<float>(h) / th;
+  BlitParams q;
+  q.SetDst(*hi);
+  q.dst_rect = {static_cast<LONG>(std::lround(rr.left * kx)), static_cast<LONG>(std::lround(rr.top * ky)),
+                static_cast<LONG>(std::lround(rr.right * kx)), static_cast<LONG>(std::lround(rr.bottom * ky))};
+  q.SetSrc(*tmp);
+  q.src_rect = rr;
+  q.linear = true;
+  q.opaque = false;
+  if (q.dst_rect.left < q.dst_rect.right && q.dst_rect.top < q.dst_rect.bottom) Blit(q);
+  if (!r) {
+    ++g_st.rebuilds;
+    static unsigned logged = 0;
+    if (++logged <= 10) Log("hud text: %ux%u panel copied%s", tw, th, keyed ? " (colour-keyed)" : "");
+  }
   t->SetHiresSerial(t->ContentSerial());
-  ++g_st.rebuilds;
   return true;
 }
+
+bool Rebuild(Surface* t) { return Refresh(t, nullptr); }
 
 bool Active() { return GpuTextActive() && GetConfig().hud_text; }
 
@@ -154,21 +205,10 @@ void __fastcall RestoreHook(uintptr_t self, void* edx, const RECT* rect) {
   t->Gpu();
   const bool was_current = t->HiresCurrent();
   g_restore(self, edx, rect);
-  GpuTexture* g = t->Gpu();
-  if (!was_current || !g->CanSample()) return;
+  t->Gpu();
+  if (!was_current) return;
   // The panel's background came back in rect: copy it over, scaled up.
-  GpuTexture* hi = t->Hires();
-  const float kx = static_cast<float>(hi->width) / t->Width(), ky = static_cast<float>(hi->height) / t->Height();
-  BlitParams p;
-  p.SetDst(*hi);
-  p.dst_rect = {static_cast<LONG>(std::lround(rect->left * kx)), static_cast<LONG>(std::lround(rect->top * ky)),
-                static_cast<LONG>(std::lround(rect->right * kx)), static_cast<LONG>(std::lround(rect->bottom * ky))};
-  p.SetSrc(*g);
-  p.src_rect = *rect;
-  p.linear = true;
-  p.opaque = false;
-  if (p.dst_rect.left < p.dst_rect.right && p.dst_rect.top < p.dst_rect.bottom) Blit(p);
-  t->SetHiresSerial(t->ContentSerial());
+  Refresh(t, rect);
 }
 
 bool PatchCall(uintptr_t site, uintptr_t original, const void* hook) {

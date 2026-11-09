@@ -47,7 +47,8 @@ float4 ps_main(VSOut i) : SV_Target {
   if (flags.x == 0) return fill;
   float4 c = tex.Sample(smp, i.uv);
   if (flags.y != 0 && all(abs(c.rgb - key.rgb) < 0.002)) discard;
-  if (flags.w != 0) return c * fill;
+  if (flags.w == 1) return c * fill;
+  if (flags.w == 2) return float4(c.rgb * c.a, c.a);
   return flags.z != 0 ? float4(c.rgb, 1) : c;
 }
 )";
@@ -522,7 +523,7 @@ void Blit(const BlitParams& p) {
   cb.flags[0] = p.src ? 1.0f : 0.0f;
   cb.flags[1] = p.color_key ? 1.0f : 0.0f;
   cb.flags[2] = p.opaque ? 1.0f : 0.0f;
-  cb.flags[3] = p.tint ? 1.0f : 0.0f;
+  cb.flags[3] = p.tint ? 1.0f : p.premultiply ? 2.0f : 0.0f;
   for (int i = 0; i < 3; ++i) cb.key[i] = p.key[i];
   b.ctx->UpdateSubresource(b.blit_cb, 0, nullptr, &cb, 0, 0);
 

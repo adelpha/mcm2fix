@@ -131,6 +131,9 @@ class Surface : public IDirectDrawSurface7 {
   // A sharper copy at screen resolution, drawn by mcm2fix (hudtext.cpp):
   // used for sampling while the surface has not changed since it was made.
   GpuTexture* Hires() { return &hires_; }
+  GpuTexture* HiresScratch() { return &hires_tmp_; }
+  // The sharper copy (premultiplied alpha) if it is current, else null.
+  const GpuTexture* SharpTex();
   unsigned ContentSerial() const { return content_serial_; }
   void SetHiresSerial(unsigned s) { hires_serial_ = s; }
   bool HiresCurrent() const { return hires_.Valid() && hires_serial_ == content_serial_; }
@@ -191,7 +194,8 @@ class Surface : public IDirectDrawSurface7 {
   GpuTexture gpu_;
   GpuTexture replaced_;    // replacement picture, if one matches
   GpuTexture keyed_;       // D3D9 colour-keyed copy (KeyedTex)
-  GpuTexture hires_;       // sharper copy (Hires)
+  GpuTexture hires_;       // sharper copy (Hires), premultiplied alpha
+  GpuTexture hires_tmp_;   // its premultiplied source at the surface's size
   unsigned hires_serial_ = 0;
   unsigned content_serial_ = 1;  // bumped by every upload and GPU write
   uint64_t keyed_stamp_ = 0;

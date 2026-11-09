@@ -254,6 +254,7 @@ Surface::~Surface() {
   replaced_.Reset();
   keyed_.Reset();
   hires_.Reset();
+  hires_tmp_.Reset();
   GpuTextForget(this);  // text recorded on the CPU copy (hudtext.cpp)
   if (!root_ && dd_ && DirectDraw::Current() == dd_) dd_->ForgetSurface(this);
 }
@@ -616,6 +617,7 @@ void Surface::DeviceLost9() {
   for (Surface* s : AllSurfaces()) {
     s->keyed_.Reset();
     s->hires_.Reset();
+    s->hires_tmp_.Reset();
     if (s->gpu_.pool_default) {
       if (s->sync_ == kGpuNewer) ++lost;
       s->gpu_.Reset();
@@ -658,13 +660,17 @@ void Surface::MatchReplacement(const uint8_t* bgra, UINT w, UINT h) {
   LoadReplacement(hash, replaced_);
 }
 
+const GpuTexture* Surface::SharpTex() {
+  Gpu();
+  Surface* o = SyncOwner();
+  if (!o->HiresCurrent()) return nullptr;
+  NoteHiresSample();
+  return &o->hires_;
+}
+
 const GpuTexture* Surface::SampleTex() {
   GpuTexture* g = Gpu();
   Surface* o = SyncOwner();
-  if (o->HiresCurrent()) {
-    NoteHiresSample();
-    return &o->hires_;
-  }
   return o->replaced_.Valid() ? &o->replaced_ : g;
 }
 
@@ -746,8 +752,19 @@ uint64_t Surface::RawHash() const {
   return h | 1;
 }
 
+// A surface with a sharper copy (hudtext.cpp) copied somewhere: the copy
+// does not go along (yet). Logged to find where the game shows it.
+static void NoteHiresCopy(Surface* src, Surface* dst, const char* how) {
+  if (!src || !src->HiresCurrent()) return;
+  static unsigned n = 0;
+  if (++n <= 10)
+    Log("hud text: panel %ux%u copied by %s to a %ux%u surface (caps %08lx); the sharp copy is not used there",
+        src->Width(), src->Height(), how, dst->Width(), dst->Height(), dst->Caps());
+}
+
 void Surface::CopyFrom(Surface* src, const POINT* dst_pt, const RECT* src_rect) {
   // Device::Load: copy every level both chains have.
+  NoteHiresCopy(src, this, "Device::Load");
   Surface* s = src;
   Surface* d = this;
   RECT sr = src_rect ? *src_rect : RECT{0, 0, static_cast<LONG>(src->Width()), static_cast<LONG>(src->Height())};
@@ -789,6 +806,7 @@ bool Surface::UseGpuFor(Surface* src) {
 }
 
 void Surface::BltGpu(const RECT& dr, Surface* src, const RECT& sr, bool key, DWORD key_value) {
+  NoteHiresCopy(src, this, "a GPU blit");
   GpuTexture* d = Gpu();
   const GpuTexture* s = nullptr;
   if (key && IsD3D9()) {
@@ -844,6 +862,7 @@ void Surface::BltGpu(const RECT& dr, Surface* src, const RECT& sr, bool key, DWO
 }
 
 void Surface::BltCpu(const RECT& dr, Surface* src, const RECT& sr, bool key, DWORD key_value) {
+  if (src != this) NoteHiresCopy(src, this, "a CPU blit");
   src->SyncToCpu("blt-src");
   SyncToCpu("blt-dst");
   std::vector<uint8_t> copy;
