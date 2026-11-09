@@ -128,6 +128,7 @@ class Surface : public IDirectDrawSurface7 {
 
   // Copy pixel data (all mip levels when both have them) for Device::Load.
   void CopyFrom(Surface* src, const POINT* dst_pt, const RECT* src_rect);
+  void InheritName(Surface* src);
 
  private:
   friend class DirectDraw;

@@ -584,12 +584,33 @@ void Surface::Download() {
   }
 }
 
+void Surface::InheritName(Surface* src) {
+  // The game loads textures into system-memory surfaces (which get the name)
+  // and copies them into the video-memory surface it draws with, so the name
+  // follows a whole-picture copy. A surface that now holds another picture
+  // starts afresh: new name (or none), and the next upload counts as the first.
+  if (!(desc_.ddsCaps.dwCaps & DDSCAPS_TEXTURE) || src == this) return;
+  if (src->tex_name_ == tex_name_ && (tex_name_.empty() || tex_hash_ != 0)) return;
+  if (GetConfig().texture_log && !src->tex_name_.empty()) {
+    static unsigned n = 0;
+    if (++n <= 400)
+      Log("texture \"%s\" %lux%lu copied to drawn surface %p%s", src->tex_name_.c_str(), desc_.dwWidth,
+          desc_.dwHeight, static_cast<void*>(this), tex_name_.empty() ? "" : " (renamed)");
+  }
+  tex_name_ = src->tex_name_;
+  tex_hash_ = 0;
+  if (!tex_name_.empty()) uploads_ = 0;
+}
+
 void Surface::CopyFrom(Surface* src, const POINT* dst_pt, const RECT* src_rect) {
   // Device::Load: copy every level both chains have.
   Surface* s = src;
   Surface* d = this;
   RECT sr = src_rect ? *src_rect : RECT{0, 0, static_cast<LONG>(src->Width()), static_cast<LONG>(src->Height())};
   POINT dp = dst_pt ? *dst_pt : POINT{sr.left, sr.top};
+  if (dp.x == 0 && dp.y == 0 && sr.left == 0 && sr.top == 0 && sr.right == static_cast<LONG>(Width()) &&
+      sr.bottom == static_cast<LONG>(Height()) && src->Width() == Width() && src->Height() == Height())
+    InheritName(src);
   for (size_t level = 0; s && d; ++level) {
     RECT dr{dp.x, dp.y, dp.x + (sr.right - sr.left), dp.y + (sr.bottom - sr.top)};
     RECT r = sr;
@@ -848,6 +869,9 @@ HRESULT Surface::Blt(LPRECT dr_in, LPDIRECTDRAWSURFACE7 src_in, LPRECT sr_in, DW
     key = true;
     key_value = src->key_.dwColorSpaceLowValue;
   }
+  if (dr.left == 0 && dr.top == 0 && dr.right == full.right && dr.bottom == full.bottom && sr.left == 0 &&
+      sr.top == 0 && sr.right == static_cast<LONG>(src->Width()) && sr.bottom == static_cast<LONG>(src->Height()))
+    InheritName(src);
   if (UseGpuFor(src)) {
     BltGpu(dr, src, sr, key, key_value);
   } else {
