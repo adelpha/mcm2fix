@@ -39,6 +39,8 @@ jobs:
         run: cmake -S code -B build -DCMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/code/toolchain-mingw32.cmake -DCMAKE_BUILD_TYPE=Release -DMCM2FIX_FFMPEG=$GITHUB_WORKSPACE/ffmpeg-work/install
       - name: Build
         run: cmake --build build
+      - name: Check Windows XP imports
+        run: python3 tools/check-xp-imports.py build/mcm2fix.dll
       - name: Package
         run: tools/package.sh build/mcm2fix.dll mcm2fix.zip
       - uses: actions/upload-artifact@v4

@@ -7,6 +7,7 @@
 #include "patch.h"
 #include "prof.h"
 #include "video/player.h"
+#include "xp_compat.h"
 
 void ApplyStep1Fixes();
 void ApplyStartupFixes();
@@ -45,6 +46,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
     LoadConfig();
     if (IsSupportedGame()) {
       patch::Log("mcm2fix loaded");
+      xp::LogSystemInfo();
       ApplyStep1Fixes();
       const Config& c = GetConfig();
       patch::Log("config: OneCore=%d Startup=%d Registry=%d Files=%d ActivateLog=%d RegLog=%d DDStats=%d "

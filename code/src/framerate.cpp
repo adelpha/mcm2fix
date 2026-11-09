@@ -22,6 +22,7 @@
 
 #include "config.h"
 #include "patch.h"
+#include "xp_compat.h"
 
 namespace {
 
@@ -581,9 +582,7 @@ void ApplyFramePacing() {
   QueryPerformanceFrequency(&g_freq);
   const Config& c = GetConfig();
   if (c.frame_cap > 0) {
-    // CREATE_WAITABLE_TIMER_HIGH_RESOLUTION (Windows 10 1803+), else a normal one.
-    g_timer = CreateWaitableTimerExW(nullptr, nullptr, 0x00000002, TIMER_ALL_ACCESS);
-    if (!g_timer) g_timer = CreateWaitableTimerExW(nullptr, nullptr, 0, TIMER_ALL_ACCESS);
+    g_timer = xp::CreateFrameTimer();
   }
   g_fix_frames = c.frame_fix;
   g_ref_rate = static_cast<float>(c.ref_rate);
