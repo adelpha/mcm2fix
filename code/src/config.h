@@ -3,7 +3,7 @@
 
 struct Config {
   bool one_core = false;      // OneCore: pin the game to one CPU core (old stopgap)
-  bool log = true;            // Log: write mcm2fix.log
+  bool log = true;            // Log: write logs\mcm2fix-<date>-<time>.log
   bool startup = true;        // Startup: auto-pick the video card, skip the hardware-change box
   bool registry = true;       // Registry: keep settings in HKCU instead of HKLM
   bool files = true;          // Files: send file writes to the per-user folder
