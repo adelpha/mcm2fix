@@ -20,6 +20,7 @@ add_library(mcm2fix SHARED
   src/fixes_detail.cpp
   src/fixes_arrow.cpp
   src/fixes_restart.cpp
+  src/fixes_help.cpp
   src/fixes_textures.cpp
   src/diagnostics.cpp
   src/regtrace.cpp

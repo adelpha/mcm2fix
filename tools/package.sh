@@ -2,10 +2,15 @@
 # Makes the release zip: d3drm.dll (mcm2fix, drop-in next to Mcm2.exe),
 # mcm2fix.ini with every setting at its default, README.txt and licences.
 #
-#   tools/package.sh <mcm2fix.dll> <output zip>
+#   tools/package.sh <mcm2fix.dll> <output zip> [MCM2HELP.HLP]
+#
+# The zip includes package/MCM2HELP.html (the game's help file converted by
+# tools/hlp2html.py), which the in-game Help buttons open. Pass the game's
+# MCM2HELP.HLP to convert it afresh instead.
 set -eu
 DLL=$1
 OUT=$2
+HLP=${3:-}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
@@ -22,7 +27,14 @@ sed 's/$/\r/' "$ROOT/package/README.txt" > "$STAGE/README.txt"
 mkdir "$STAGE/licenses"
 sed 's/$/\r/' "$ROOT/package/licenses/FFmpeg-LGPL-2.1.txt" > "$STAGE/licenses/FFmpeg-LGPL-2.1.txt"
 
+if [ -n "$HLP" ]; then
+  python3 "$ROOT/tools/hlp2html.py" "$HLP" "$STAGE/MCM2HELP.html"
+else
+  cp "$ROOT/package/MCM2HELP.html" "$STAGE/MCM2HELP.html"
+fi
+FILES="d3drm.dll mcm2fix.ini README.txt licenses MCM2HELP.html"
+
 rm -f "$OUT"
 OUT_ABS=$(cd "$(dirname "$OUT")" && pwd)/$(basename "$OUT")
-(cd "$STAGE" && zip -q -r "$OUT_ABS" d3drm.dll mcm2fix.ini README.txt licenses)
+(cd "$STAGE" && zip -q -r "$OUT_ABS" $FILES)
 echo "wrote $OUT"
