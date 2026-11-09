@@ -337,6 +337,40 @@ int main(int argc, char** argv) {
         off->Blt(&all, back, &from, DDBLT_WAIT, nullptr);
         back->Blt(&to, off, &all, DDBLT_WAIT, nullptr);
       }
+      // A tooltip like the game's: text drawn on a system-memory surface,
+      // then blitted to the screen.
+      static IDirectDrawSurface7* tip = nullptr;
+      if (!tip) {
+        DDSURFACEDESC2 td{};
+        td.dwSize = sizeof(td);
+        td.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT;
+        td.dwWidth = 134;
+        td.dwHeight = 14;
+        td.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN | DDSCAPS_SYSTEMMEMORY;
+        dd->CreateSurface(&td, &tip, nullptr);
+      }
+      if (tip) {
+        DDBLTFX fx{};
+        fx.dwSize = sizeof(fx);
+        fx.dwFillColor = 0x4208;  // dark grey in 565
+        tip->Blt(nullptr, nullptr, nullptr, DDBLT_COLORFILL | DDBLT_WAIT, &fx);
+        HDC tdc = nullptr;
+        if (SUCCEEDED(tip->GetDC(&tdc))) {
+          HFONT tf = CreateFontA(12, 0, 0, 0, FW_NORMAL, 0, 0, 0, ANSI_CHARSET, 0, 0, PROOF_QUALITY, 0, "Arial");
+          HGDIOBJ of = SelectObject(tdc, tf);
+          SetBkMode(tdc, OPAQUE);
+          SetBkColor(tdc, RGB(64, 64, 64));
+          SetTextColor(tdc, RGB(204, 204, 204));
+          RECT tr{0, 0, 134, 14};
+          DrawTextA(tdc, "Start a single player race event", -1, &tr,
+                    DT_END_ELLIPSIS | DT_SINGLELINE | DT_VCENTER | DT_CENTER);
+          SelectObject(tdc, of);
+          DeleteObject(tf);
+          tip->ReleaseDC(tdc);
+        }
+        RECT all{0, 0, 134, 14}, to{10, 50, 144, 64};
+        back->Blt(&to, tip, &all, DDBLT_WAIT, nullptr);
+      }
     }
 
     if (frames == 29) break;  // check the last frame before flipping

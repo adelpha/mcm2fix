@@ -1225,10 +1225,15 @@ HRESULT Surface::ReleaseDC(HDC dc) {
 
 // GDI drawing by mcm2fix on the GPU (gputext.cpp), for render targets.
 HDC Surface::TextDC() {
-  if (!GpuTextActive() || layout_.depth || layout_.palette || has_key_ || !mips_.empty()) return nullptr;
-  if (SyncOwner() != this || !IsRenderTargetKind() || !Ready()) return nullptr;
+  // Not for textures: the 3D pipeline samples the texture itself, without
+  // the overlay. Other surfaces (also system-memory ones, like the tooltip
+  // the game draws and then blits to the screen) get GPU text, which goes
+  // with them when they are blitted.
+  if (!GpuTextActive() || layout_.depth || layout_.palette || !mips_.empty()) return nullptr;
+  if (desc_.ddsCaps.dwCaps & DDSCAPS_TEXTURE) return nullptr;
+  if (SyncOwner() != this || !Ready()) return nullptr;
   GpuTexture* g = Gpu();  // uploads a newer CPU copy first
-  if (!g->CanRender() || !g->CanSample()) return nullptr;
+  if (!g->Valid() || !g->CanSample()) return nullptr;
   return GpuTextBeginDC(*g, Width(), Height());
 }
 

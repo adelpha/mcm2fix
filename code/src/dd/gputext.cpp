@@ -95,8 +95,10 @@ void ClearOverlay(Overlay& o, const RECT* r) {
   BlitParams p;
   p.SetDst(o.tex);
   if (r) {
-    p.dst_rect = {static_cast<LONG>(std::floor(r->left * o.sx)), static_cast<LONG>(std::floor(r->top * o.sy)),
-                  static_cast<LONG>(std::ceil(r->right * o.sx)), static_cast<LONG>(std::ceil(r->bottom * o.sy))};
+    // Rounded the same way as copies (ScaleRect), so an erase followed by a
+    // copy of the same rectangle leaves no seams.
+    p.dst_rect = {static_cast<LONG>(std::lround(r->left * o.sx)), static_cast<LONG>(std::lround(r->top * o.sy)),
+                  static_cast<LONG>(std::lround(r->right * o.sx)), static_cast<LONG>(std::lround(r->bottom * o.sy))};
     p.dst_rect.left = std::max<LONG>(p.dst_rect.left, 0);
     p.dst_rect.top = std::max<LONG>(p.dst_rect.top, 0);
     p.dst_rect.right = std::min<LONG>(p.dst_rect.right, static_cast<LONG>(o.tex.width));
@@ -718,9 +720,27 @@ void GpuTextCopy(const void* src, const RECT& sr, const void* dst, UINT dst_w, U
   p.SetDst(d->tex);
   p.dst_rect = ScaleRect(*d, dr);
   p.SetSrc(s.tex);
-  p.src_rect = ScaleRect(s, sr);
-  p.linear = (p.dst_rect.right - p.dst_rect.left) != (p.src_rect.right - p.src_rect.left) ||
-             (p.dst_rect.bottom - p.dst_rect.top) != (p.src_rect.bottom - p.src_rect.top);
+  const bool same_size = (dr.right - dr.left) == (sr.right - sr.left) && (dr.bottom - dr.top) == (sr.bottom - sr.top);
+  if (same_size && std::fabs(d->sx - s.sx) < 1e-4f && std::fabs(d->sy - s.sy) < 1e-4f) {
+    // A plain copy: move by a whole number of overlay pixels, the same
+    // distance both ways (copying away and back lands exactly), no filtering.
+    const LONG ox = std::lround(sr.left * s.sx) - std::lround(dr.left * d->sx);
+    const LONG oy = std::lround(sr.top * s.sy) - std::lround(dr.top * d->sy);
+    p.src_rect = {p.dst_rect.left + ox, p.dst_rect.top + oy, p.dst_rect.right + ox, p.dst_rect.bottom + oy};
+    // Keep inside the source overlay.
+    const LONG cl = std::max<LONG>(0, -p.src_rect.left), ct = std::max<LONG>(0, -p.src_rect.top);
+    const LONG cr = std::max<LONG>(0, p.src_rect.right - static_cast<LONG>(s.tex.width));
+    const LONG cb = std::max<LONG>(0, p.src_rect.bottom - static_cast<LONG>(s.tex.height));
+    p.src_rect.left += cl, p.dst_rect.left += cl;
+    p.src_rect.top += ct, p.dst_rect.top += ct;
+    p.src_rect.right -= cr, p.dst_rect.right -= cr;
+    p.src_rect.bottom -= cb, p.dst_rect.bottom -= cb;
+    if (p.dst_rect.left >= p.dst_rect.right || p.dst_rect.top >= p.dst_rect.bottom) return;
+    p.linear = false;
+  } else {
+    p.src_rect = ScaleRect(s, sr);
+    p.linear = true;
+  }
   p.premul = over;
   p.opaque = false;
   Blit(p);
