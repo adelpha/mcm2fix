@@ -3,7 +3,7 @@
 
 struct Config {
   bool one_core = false;      // OneCore: pin the game to one CPU core (old stopgap)
-  bool log = true;            // Log: write mcm2fix.log
+  bool log = true;            // Log: write logs\mcm2fix-<date>-<time>.log
   bool startup = true;        // Startup: auto-pick the video card, skip the hardware-change box
   bool registry = true;       // Registry: keep settings in HKCU instead of HKLM
   bool files = true;          // Files: send file writes to the per-user folder
@@ -39,6 +39,8 @@ struct Config {
   float model_lod = 1.0f;     // ModelLod: detailed models are kept this many times further away
   bool texture_replace = true;  // TextureReplace: load replacement textures from textures\ folder
   bool texture_dump = false;    // TextureDump: save every texture the game uploads as PNG
+  bool true_color_textures = true;  // TrueColorTextures: load textures as 24/32-bit instead of 16-bit
+  bool texture_log = true;          // TextureLog: log the format of each texture the game creates
 };
 
 const Config& GetConfig();

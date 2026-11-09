@@ -252,6 +252,25 @@ HRESULT Surface::Create(DirectDraw* dd, const DDSURFACEDESC2& in, Surface** out)
     desc.ddsCaps.dwCaps |= DDSCAPS_VIDEOMEMORY | DDSCAPS_LOCALVIDMEM;
   }
   Surface* root = new Surface(dd, desc, nullptr);
+  if (caps & DDSCAPS_TEXTURE) {
+    root->tex_name_ = TakePendingTextureName();
+    if (!root->tex_name_.empty() && GetConfig().texture_log) {
+      static unsigned named = 0;
+      if (++named <= 400)
+        Log("texture surface %lux%lu named \"%s\"", root->desc_.dwWidth, root->desc_.dwHeight,
+            root->tex_name_.c_str());
+    }
+  }
+  if ((caps & DDSCAPS_TEXTURE) && GetConfig().texture_log) {
+    // TextureLog: the first few texture surfaces of each depth.
+    static unsigned per_bpp[5] = {};
+    const UINT bpp = root->layout_.bpp;
+    const UINT slot = bpp == 8 ? 0 : bpp == 16 ? 1 : bpp == 24 ? 2 : bpp == 32 ? 3 : 4;
+    if (++per_bpp[slot] <= 5)
+      Log("texture surface %lux%lu %u bpp masks %08lx/%08lx/%08lx/%08lx caps %08lx (#%u at this depth)",
+          root->desc_.dwWidth, root->desc_.dwHeight, bpp, root->layout_.mask[0], root->layout_.mask[1],
+          root->layout_.mask[2], root->layout_.mask[3], caps, per_bpp[slot]);
+  }
 
   if ((caps & DDSCAPS_FLIP) && (desc.dwFlags & DDSD_BACKBUFFERCOUNT) && desc.dwBackBufferCount) {
     DDSURFACEDESC2 bd = root->desc_;
@@ -501,10 +520,24 @@ void Surface::MatchReplacement(const uint8_t* bgra, UINT w, UINT h) {
     return;
   }
   const uint64_t hash = TextureHash(bgra, w, h);
-  if (hash == tex_hash_) return;
+  if (hash == tex_hash_) return;  // same picture as last time
+  const bool first = tex_hash_ == 0;
   tex_hash_ = hash;
   replaced_.Reset();
-  DumpTexture(hash, bgra, w, h);
+  if (!tex_name_.empty() && !first) {
+    // Same surface, different pixels: the game reused it for something
+    // else, so its name no longer applies.
+    Log("texture \"%s\" %ux%u: pixels changed on re-upload, name dropped", tex_name_.c_str(), w, h);
+    tex_name_.clear();
+  }
+  if (!tex_name_.empty()) {
+    // Known by name: dumped and replaced by name, at whatever size the game
+    // streamed it in. Falls back to the hash below.
+    DumpNamedTexture(tex_name_, bgra, w, h);
+    if (LoadReplacementByName(tex_name_, replaced_)) return;
+  } else {
+    DumpTexture(hash, bgra, w, h);
+  }
   LoadReplacement(hash, replaced_);
 }
 
@@ -551,12 +584,70 @@ void Surface::Download() {
   }
 }
 
+void Surface::InheritName(Surface* src) {
+  // The game loads textures into system-memory surfaces and copies them
+  // (Device::Load or a whole-surface Blt) into the video-memory surface it
+  // draws with, so the name has to follow the copy. Two cases:
+  //  - Terrain and other cached textures reuse one staging surface and a pool
+  //    of drawn surfaces, so no surface is created for them: the name of the
+  //    texture just created waits for its copy (TakeCopyTextureName).
+  //  - Otherwise the staging surface's own name is used, but only while it
+  //    still holds the picture it had at its first copy.
+  // A named copy starts the drawn surface afresh (the next upload is new).
+  // Unnamed copies (shadows, every frame) leave the upload count alone so
+  // streaming textures stay out of dumping and replacement.
+  if (!(desc_.ddsCaps.dwCaps & DDSCAPS_TEXTURE) || src == this) return;
+  std::string name = TakeCopyTextureName();
+  const char* how = "created";
+  if (name.empty() && !src->tex_name_.empty()) {
+    const uint64_t h = src->RawHash();
+    if (!src->name_src_hash_) src->name_src_hash_ = h;
+    if (h == src->name_src_hash_) {
+      name = src->tex_name_;
+      how = "source";
+    } else {
+      if (GetConfig().texture_log) {
+        static unsigned n = 0;
+        if (++n <= 100)
+          Log("texture \"%s\": staging surface %p holds another picture now, its name no longer applies",
+              src->tex_name_.c_str(), static_cast<void*>(src));
+      }
+      src->tex_name_.clear();
+    }
+  }
+  if (name.empty() && tex_name_.empty()) return;  // unnamed before and after: nothing changes
+  if (GetConfig().texture_log) {
+    static unsigned n = 0;
+    if (++n <= 600)
+      Log("texture copy %lux%lu %p -> %p: name \"%s\" (%s), was \"%s\"", desc_.dwWidth, desc_.dwHeight,
+          static_cast<void*>(src), static_cast<void*>(this), name.c_str(), name.empty() ? "none" : how,
+          tex_name_.c_str());
+  }
+  tex_name_ = name;
+  tex_hash_ = 0;
+  if (!name.empty()) uploads_ = 0;
+}
+
+uint64_t Surface::RawHash() const {
+  uint64_t h = 1469598103934665603ull;
+  const UINT row = Width() * (layout_.bpp ? layout_.bpp / 8 : 1);
+  for (UINT y = 0; y < Height(); ++y) {
+    const uint8_t* p = mem_.data() + static_cast<size_t>(y) * Pitch();
+    if (static_cast<size_t>(y) * Pitch() + row > mem_.size()) break;
+    for (UINT x = 0; x < row; ++x) h = (h ^ p[x]) * 1099511628211ull;
+  }
+  return h | 1;
+}
+
 void Surface::CopyFrom(Surface* src, const POINT* dst_pt, const RECT* src_rect) {
   // Device::Load: copy every level both chains have.
   Surface* s = src;
   Surface* d = this;
   RECT sr = src_rect ? *src_rect : RECT{0, 0, static_cast<LONG>(src->Width()), static_cast<LONG>(src->Height())};
   POINT dp = dst_pt ? *dst_pt : POINT{sr.left, sr.top};
+  if (dp.x == 0 && dp.y == 0 && sr.left == 0 && sr.top == 0 && sr.right == static_cast<LONG>(Width()) &&
+      sr.bottom == static_cast<LONG>(Height()) && src->Width() == Width() && src->Height() == Height())
+    InheritName(src);
   for (size_t level = 0; s && d; ++level) {
     RECT dr{dp.x, dp.y, dp.x + (sr.right - sr.left), dp.y + (sr.bottom - sr.top)};
     RECT r = sr;
@@ -815,6 +906,9 @@ HRESULT Surface::Blt(LPRECT dr_in, LPDIRECTDRAWSURFACE7 src_in, LPRECT sr_in, DW
     key = true;
     key_value = src->key_.dwColorSpaceLowValue;
   }
+  if (dr.left == 0 && dr.top == 0 && dr.right == full.right && dr.bottom == full.bottom && sr.left == 0 &&
+      sr.top == 0 && sr.right == static_cast<LONG>(src->Width()) && sr.bottom == static_cast<LONG>(src->Height()))
+    InheritName(src);
   if (UseGpuFor(src)) {
     BltGpu(dr, src, sr, key, key_value);
   } else {
