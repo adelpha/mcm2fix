@@ -322,6 +322,15 @@ int main(int argc, char** argv) {
   Check(Near(c, 32, 32, 32), "background (clear colour)");
 
   primary->Flip(nullptr, DDFLIP_WAIT);
+  if (argc > 2 && std::strcmp(argv[2], "hold") == 0) {
+    // No 3D draws for a while: the renderer label should appear. Keep the
+    // window up so it can be looked at.
+    Sleep(700);
+    for (int i = 0; i < 40; i++) {
+      primary->Flip(nullptr, DDFLIP_WAIT);
+      Sleep(100);
+    }
+  }
   dev->Release();
   d3d->Release();
   std::printf("%s: %d check(s) failed\n", api, g_fail);

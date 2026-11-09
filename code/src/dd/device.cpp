@@ -1482,6 +1482,7 @@ void Device::Submit(const Draw& d) {
     b.ctx->Draw(d.count, 0);
   }
   if (cur_msaa_) MsaaMarkDrawn();
+  if (has_depth) Note3DDraw();
   rt_->MarkGpuWritten();
   ++Counters().draws;
 }

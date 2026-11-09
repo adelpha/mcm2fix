@@ -633,7 +633,11 @@ void Blit9(const BlitParams& p) {
   d->SetViewport(&vp);
   RS9(D3DRS_ZENABLE, FALSE);
   RS9(D3DRS_ZWRITEENABLE, FALSE);
-  RS9(D3DRS_ALPHABLENDENABLE, FALSE);
+  RS9(D3DRS_ALPHABLENDENABLE, p.blend ? TRUE : FALSE);
+  if (p.blend) {
+    RS9(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+    RS9(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+  }
   RS9(D3DRS_ALPHATESTENABLE, p.alpha_key ? TRUE : FALSE);
   RS9(D3DRS_ALPHAFUNC, D3DCMP_GREATER);
   RS9(D3DRS_ALPHAREF, 0);
@@ -736,6 +740,7 @@ void Present9(const GpuTexture& src, UINT src_w, UINT src_h, UINT interval) {
     p.linear = true;
     Blit9(p);
   }
+  DrawRendererLabel(nullptr, back, g_sc.w, g_sc.h);
   back->Release();
   HRESULT hr = sc->Present(nullptr, nullptr, nullptr, nullptr, 0);
   if (hr == D3DERR_DEVICELOST) {

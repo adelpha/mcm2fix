@@ -4,6 +4,7 @@
 #include <d3dcompiler.h>
 #include <dxgi1_6.h>
 
+#include <algorithm>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -220,6 +221,15 @@ bool CreatePipeline() {
   b.device->CreateBlendState(&bd, &b.no_blend);
   bd.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALPHA;
   b.device->CreateBlendState(&bd, &b.alpha_only);
+  bd.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+  bd.RenderTarget[0].BlendEnable = TRUE;
+  bd.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+  bd.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+  bd.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+  bd.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ZERO;
+  bd.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ONE;
+  bd.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+  b.device->CreateBlendState(&bd, &b.alpha_blend);
   return b.blit_vs && b.blit_ps && b.blit_cb;
 }
 
@@ -510,7 +520,8 @@ void Blit(const BlitParams& p) {
   b.ctx->RSSetViewports(1, &vp);
   b.ctx->RSSetState(b.blit_raster);
   b.ctx->OMSetDepthStencilState(b.no_depth, 0);
-  b.ctx->OMSetBlendState(p.alpha_only && b.alpha_only ? b.alpha_only : b.no_blend, nullptr,
+  b.ctx->OMSetBlendState(p.blend && b.alpha_blend ? b.alpha_blend
+                         : p.alpha_only && b.alpha_only ? b.alpha_only : b.no_blend, nullptr,
                          0xffffffff);
   b.ctx->IASetInputLayout(nullptr);
   b.ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
@@ -600,6 +611,7 @@ void Present(const GpuTexture& src_tex, UINT src_w, UINT src_h, UINT interval) {
     p.linear = true;
     Blit(p);
   }
+  DrawRendererLabel(b.swap_rtv, nullptr, b.swap_w, b.swap_h);
   HRESULT hr = b.swapchain->Present(interval, interval == 0 && g_tearing ? DXGI_PRESENT_ALLOW_TEARING : 0);
   if (FAILED(hr)) LogOnce("Present failed %08lx", hr);
 }
@@ -617,6 +629,97 @@ void WaitVBlank() {
   } else {
     Sleep(1);
   }
+}
+
+// ------------------------------------------------------------- renderer label
+
+namespace {
+DWORD g_last_3d = 0;
+bool g_any_3d = false;
+}  // namespace
+
+void Note3DDraw() {
+  g_last_3d = GetTickCount();
+  g_any_3d = true;
+}
+
+void DrawRendererLabel(ID3D11RenderTargetView* dst, IDirect3DSurface9* dst9, UINT w, UINT h) {
+  if (!GetConfig().renderer_label || (!dst && !dst9) || w < 64 || h < 64) return;
+  // Menus: no 3D scene drawn for half a second.
+  if (g_any_3d && GetTickCount() - g_last_3d < 500) return;
+  static GpuTexture label;
+  static UINT label_h = 0;
+  static Api label_api = Api::kD3D11;
+  static bool failed = false;
+  const UINT font_h = h / 54 < 12 ? 12 : h / 54;
+  if (!label.Valid() || label_h != font_h || label_api != ActiveApi()) {
+    if (failed) return;
+    label.Reset();
+    label_h = font_h;
+    label_api = ActiveApi();
+    const char* text = IsD3D9() ? "Direct3D 9" : "Direct3D 11";
+    // Draw the text with GDI (white on black), then turn brightness into
+    // a white label on a translucent dark box.
+    HDC dc = CreateCompatibleDC(nullptr);
+    HFONT font = CreateFontA(-static_cast<int>(font_h), 0, 0, 0, FW_SEMIBOLD, 0, 0, 0, DEFAULT_CHARSET,
+                             OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
+                             DEFAULT_PITCH | FF_SWISS, "Tahoma");
+    HGDIOBJ old_font = SelectObject(dc, font);
+    SIZE sz{};
+    GetTextExtentPoint32A(dc, text, static_cast<int>(std::strlen(text)), &sz);
+    const int pad = static_cast<int>(font_h) / 3 + 2;
+    const int tw = sz.cx + pad * 2, th = sz.cy + pad;
+    BITMAPINFO bi{};
+    bi.bmiHeader.biSize = sizeof(bi.bmiHeader);
+    bi.bmiHeader.biWidth = tw;
+    bi.bmiHeader.biHeight = -th;
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32;
+    void* bits = nullptr;
+    HBITMAP bmp = CreateDIBSection(dc, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
+    if (bmp && bits) {
+      HGDIOBJ old_bmp = SelectObject(dc, bmp);
+      std::memset(bits, 0, static_cast<size_t>(tw) * th * 4);
+      SetBkMode(dc, TRANSPARENT);
+      SetTextColor(dc, RGB(255, 255, 255));
+      TextOutA(dc, pad, pad / 2, text, static_cast<int>(std::strlen(text)));
+      GdiFlush();
+      auto* px = static_cast<uint8_t*>(bits);
+      for (int i = 0; i < tw * th; ++i) {
+        const uint8_t v = std::max(px[i * 4], std::max(px[i * 4 + 1], px[i * 4 + 2]));
+        px[i * 4 + 0] = px[i * 4 + 1] = px[i * 4 + 2] = v;
+        px[i * 4 + 3] = static_cast<uint8_t>(110 + v * (255 - 110) / 255);
+      }
+      if (!CreateTextureFromBGRA(label, px, static_cast<UINT>(tw), static_cast<UINT>(th))) failed = true;
+      SelectObject(dc, old_bmp);
+    } else {
+      failed = true;
+    }
+    if (bmp) DeleteObject(bmp);
+    SelectObject(dc, old_font);
+    DeleteObject(font);
+    DeleteDC(dc);
+    if (failed) {
+      Log("renderer label could not be made");
+      return;
+    }
+    LogOnce("renderer label \"%s\" %ux%u", text, label.width, label.height);
+  }
+  const LONG margin = static_cast<LONG>(font_h) / 2 + 4;
+  BlitParams p;
+  p.dst = dst;
+  p.dst9 = dst9;
+  p.dst_w = w;
+  p.dst_h = h;
+  p.dst_rect = {static_cast<LONG>(w) - margin - static_cast<LONG>(label.width),
+                static_cast<LONG>(h) - margin - static_cast<LONG>(label.height), 0, 0};
+  p.dst_rect.right = p.dst_rect.left + static_cast<LONG>(label.width);
+  p.dst_rect.bottom = p.dst_rect.top + static_cast<LONG>(label.height);
+  p.SetSrc(label);
+  p.src_rect = {0, 0, static_cast<LONG>(label.width), static_cast<LONG>(label.height)};
+  p.opaque = false;
+  p.blend = true;
+  Blit(p);
 }
 
 // ---------------------------------------------------------------- texture I/O

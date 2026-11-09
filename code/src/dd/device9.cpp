@@ -476,6 +476,7 @@ void Device::Submit9(const Draw& d) {
   }
   ++draws9_;
   if (cur_msaa_) MsaaMarkDrawn();
+  if (has_depth) Note3DDraw();
   rt_->MarkGpuWritten();
   ++Counters().draws;
 }

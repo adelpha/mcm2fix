@@ -93,6 +93,7 @@ struct Backend {
   ID3D11DepthStencilState* no_depth = nullptr;
   ID3D11BlendState* no_blend = nullptr;
   ID3D11BlendState* alpha_only = nullptr;
+  ID3D11BlendState* alpha_blend = nullptr;
 
   // Direct3D 9
   IDirect3D9* d3d9 = nullptr;
@@ -152,6 +153,7 @@ struct BlitParams {
   float fill[4] = {0, 0, 0, 1};
   bool opaque = true;  // write alpha 1 (destination format has no alpha)
   bool alpha_only = false;  // write only the alpha channel
+  bool blend = false;       // blend over the destination with the source's alpha
   // D3D9 colour key: src9 is a keyed copy whose key texels have alpha 0.
   bool alpha_key = false;
   bool HasSrc() const { return src || src9; }
@@ -170,6 +172,12 @@ void Blit9(const BlitParams& p);
 // and present.
 void Present(const GpuTexture& src, UINT src_w, UINT src_h, UINT interval);
 void Present9(const GpuTexture& src, UINT src_w, UINT src_h, UINT interval);
+// The device drew a 3D scene (with a depth buffer) this frame. While none
+// has been drawn for a moment (menus), Present shows which renderer is
+// active in the bottom right corner (ini RendererLabel).
+void Note3DDraw();
+// Draws that label into a window-sized target, if it is due.
+void DrawRendererLabel(ID3D11RenderTargetView* dst, IDirect3DSurface9* dst9, UINT w, UINT h);
 // Per-second activity counters, written to the log (helps debugging).
 struct Stats {
   unsigned flips, presents, draws, blts, foreign, front_writes, locks, downloads;

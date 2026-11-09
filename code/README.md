@@ -93,6 +93,7 @@ SimSmooth=1    ; draw the camera, bikes, riders, shadows and names blended betwe
 Fov=0          ; field of view in degrees as a 4:3 screen shows it (0 = game default, 77);
                ; the zoom keys still step from it, widescreen adds to the sides
 Renderer=D3D11 ; D3D11 (default) or D3D9; D3D9 is also used by itself when Direct3D 11 is missing
+RendererLabel=1 ; show the active renderer (Direct3D 9 / 11) in the bottom right corner of the menus
 Anisotropy=16  ; anisotropic texture filtering, 0/1 = off, 2-16
 Antialiasing=4 ; multisample antialiasing of the 3D scene: 0/1 = off, 2, 4 or 8
 MipBias=0      ; texture sharpness at a distance: negative = sharper (e.g. -0.5), positive = softer
