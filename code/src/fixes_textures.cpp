@@ -232,8 +232,102 @@ void __stdcall ForgetObject(uintptr_t obj) {
   if (g_obj_names.erase(obj)) ++g_forgotten;
 }
 
+// ---- Textures read straight from a file stream ----
+// The terrain tiles (0x43e400) and the texture cache (around 0x50b7c9) hand
+// the texture reader 0x4ca7d0 an open stream (argument 1) positioned at the
+// texture, without a name. Streams are opened by name with 0x461ec0
+// (thiscall, argument 1 = name), so we remember that name per stream and
+// call such a texture "<file>_<offset>", which stays the same from run to
+// run.
+constexpr uintptr_t kStreamOpen = 0x461EC0;
+const uint8_t kStreamOpenEntry[] = {0x81, 0xEC, 0x90, 0x03, 0x00, 0x00};  // sub esp,390h
+constexpr uintptr_t kTexRead = 0x4CA7D0;
+const uint8_t kTexReadEntry[] = {0x81, 0xEC, 0xDC, 0x00, 0x00, 0x00};  // sub esp,0DCh
+constexpr uintptr_t kTexReadCall = 0x4CA99C;  // its call to 0x4cb110 returns here
+using TellFn = int(__thiscall*)(uintptr_t);
+const TellFn kStreamTell = reinterpret_cast<TellFn>(0x462570);
+
+std::unordered_map<uintptr_t, std::string> g_stream_names;
+std::string g_stream_tex;  // name for the texture 0x4ca7d0 is reading, until it creates it
+unsigned g_by_stream = 0;
+
+void __stdcall OnStreamOpen(uintptr_t stream, const char* name) {
+  std::string n = SafeName(name);
+  if (n.empty()) return;
+  static unsigned logged = 0;
+  if (GetConfig().texture_log && ++logged <= 100)
+    patch::Log("stream %08x opened \"%s\"", static_cast<unsigned>(stream), n.c_str());
+  g_stream_names[stream] = std::move(n);
+}
+
+void __stdcall OnTexRead(uintptr_t self, uintptr_t stream) {
+  (void)self;
+  g_stream_tex.clear();
+  if (!stream) return;
+  // A sub-stream points to its parent at +1Ch; use the first named one.
+  const std::string* file = nullptr;
+  for (uintptr_t s = stream; s && !file; ) {
+    auto it = g_stream_names.find(s);
+    if (it != g_stream_names.end()) file = &it->second;
+    if (!Readable(reinterpret_cast<void*>(s + 0x1c), 4)) break;
+    const uintptr_t parent = *reinterpret_cast<const uintptr_t*>(s + 0x1c);
+    if (parent == s) break;
+    s = parent;
+  }
+  if (!file) return;
+  // 0x462570 reads the position of the root stream's FILE (+14h): only
+  // call it when that is open.
+  uintptr_t root = stream;
+  for (int i = 0; i < 16; ++i) {
+    if (!Readable(reinterpret_cast<void*>(root + 0x1c), 4)) return;
+    const uintptr_t up = *reinterpret_cast<const uintptr_t*>(root + 0x1c);
+    if (!up) break;
+    root = up;
+  }
+  if (!Readable(reinterpret_cast<void*>(root + 0x14), 4) || !*reinterpret_cast<const uintptr_t*>(root + 0x14)) return;
+  const int pos = kStreamTell(stream);
+  if (pos < 0) return;
+  std::string base = *file;
+  const size_t dot = base.find_last_of('.');
+  const size_t sep = base.find_last_of("\\/");
+  if (dot != std::string::npos && (sep == std::string::npos || dot > sep)) base.resize(dot);
+  char suffix[16];
+  std::snprintf(suffix, sizeof(suffix), "_%x", static_cast<unsigned>(pos));
+  g_stream_tex = base + suffix;
+}
+
+// pushad; push [esp+24h] (argument 1); push ecx; call fn (stdcall, 2 args);
+// popad; the moved entry bytes; jump back.
+bool HookThiscallArg1(const char* what, uintptr_t addr, const uint8_t* entry, size_t len, void* fn) {
+  if (!patch::Matches(addr, entry, len)) {
+    patch::Log("textures: %s code differs, not hooked", what);
+    return false;
+  }
+  auto* k = static_cast<uint8_t*>(VirtualAlloc(nullptr, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+  if (!k) return false;
+  size_t m = 0;
+  auto emit = [&](std::initializer_list<uint8_t> b) {
+    for (uint8_t x : b) k[m++] = x;
+  };
+  auto emit32 = [&](uint32_t v) {
+    std::memcpy(k + m, &v, 4);
+    m += 4;
+  };
+  emit({0x60, 0xFF, 0x74, 0x24, 0x24, 0x51, 0xB8});  // pushad; push [esp+24h]; push ecx; mov eax, fn
+  emit32(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(fn)));
+  emit({0xFF, 0xD0, 0x61});  // call eax; popad
+  for (size_t i = 0; i < len; ++i) emit({entry[i]});
+  emit({0x68});
+  emit32(static_cast<uint32_t>(addr + len));
+  emit({0xC3});
+  FlushInstructionCache(GetCurrentProcess(), k, m);
+  patch::Jump(addr, reinterpret_cast<uintptr_t>(k), len);
+  patch::Log("textures: %s hooked at %08x", what, static_cast<unsigned>(addr));
+  return true;
+}
+
 // Which name the texture being created (0x4cb110 on `tex`, pixels a1) has.
-const char* NameTexture(uintptr_t tex, uintptr_t pixels, std::string& out) {
+const char* NameTexture(uintptr_t tex, uintptr_t pixels, uintptr_t caller, std::string& out) {
   out.clear();
   if (pixels) {
     auto it = g_data_names.find(pixels);
@@ -249,6 +343,13 @@ const char* NameTexture(uintptr_t tex, uintptr_t pixels, std::string& out) {
     ++g_by_loader;
     g_obj_names[tex] = out;
     return "loader";
+  }
+  if (!pixels && caller == kTexReadCall && !g_stream_tex.empty()) {
+    out.swap(g_stream_tex);
+    g_stream_tex.clear();
+    ++g_by_stream;
+    g_obj_names[tex] = out;
+    return "stream";
   }
   auto it = g_obj_names.find(tex);
   if (it != g_obj_names.end()) {
@@ -318,7 +419,7 @@ int __stdcall OnFormatChosen(int id, uintptr_t tex, uintptr_t esp) {
   // 0x4cb110 calls next for this texture.
   g_pending = out != id ? out : 0;
   std::string tex_name;
-  const char* name_src = NameTexture(tex, a[1], tex_name);
+  const char* name_src = NameTexture(tex, a[1], a[0], tex_name);
   if (tex_name.empty()) ++g_unnamed;
   else ++g_named;
   if (tex_name.empty() && !display_format && GetConfig().texture_log) {
@@ -357,8 +458,8 @@ int __stdcall OnFormatChosen(int id, uintptr_t tex, uintptr_t esp) {
                a[5], a[6], a[7], a[8], a[9], a[10]);
   }
   if (GetConfig().texture_log && g_count % kSummaryEvery == 0) {
-    patch::Log("textures: %u created so far (named: %u by file, %u by loader, %u by object; %u unnamed)",
-               g_count, g_by_file, g_by_loader, g_by_object, g_unnamed);
+    patch::Log("textures: %u created so far (named: %u by file, %u by loader, %u by stream, %u by object; %u unnamed)",
+               g_count, g_by_file, g_by_loader, g_by_stream, g_by_object, g_unnamed);
     Summary();
   }
   return id;
@@ -449,6 +550,10 @@ void ApplyTextureFixes() {
     } else {
       patch::Log("textures: texture object constructor differs, not hooked");
     }
+    HookThiscallArg1("stream open", kStreamOpen, kStreamOpenEntry, sizeof(kStreamOpenEntry),
+                     reinterpret_cast<void*>(&OnStreamOpen));
+    HookThiscallArg1("texture reader", kTexRead, kTexReadEntry, sizeof(kTexReadEntry),
+                     reinterpret_cast<void*>(&OnTexRead));
     HookEntry("TGA file loader", kLoadTga2, kLoadTga2Entry, sizeof(kLoadTga2Entry),
               reinterpret_cast<void*>(&LoadTga2Hook), reinterpret_cast<void**>(&g_load_tga2));
   }
@@ -515,7 +620,7 @@ void ApplyTextureFixes() {
 
 void LogTextureSummary() {
   if (!g_count) return;
-  patch::Log("textures: %u created in total (named: %u by file, %u by loader, %u by object; %u unnamed; %u names dropped on reuse)",
-             g_count, g_by_file, g_by_loader, g_by_object, g_unnamed, g_forgotten);
+  patch::Log("textures: %u created in total (named: %u by file, %u by loader, %u by stream, %u by object; %u unnamed; %u names dropped on reuse)",
+             g_count, g_by_file, g_by_loader, g_by_stream, g_by_object, g_unnamed, g_forgotten);
   Summary();
 }
