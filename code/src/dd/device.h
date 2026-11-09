@@ -169,6 +169,7 @@ class Device : public d3d7::IDirect3DDevice7 {
     const VertexBuffer* vb = nullptr;  // for ProcessVertices clip data
   };
   void Submit(const Draw& d);
+  void OccludeText(const Draw& d);
   // Direct3D 9 (device9.cpp): the fixed-function pipeline does the work.
   bool Init9();
   HRESULT Clear9(DWORD count, d3d7::D3DRECT* rects, DWORD flags, d3d7::D3DCOLOR color, float z);

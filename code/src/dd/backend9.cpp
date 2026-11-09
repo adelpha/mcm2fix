@@ -21,6 +21,7 @@
 #include "../config.h"
 #include "../patch.h"
 #include "gdihook.h"
+#include "gputext.h"
 #include "msaa.h"
 #include "surface.h"
 
@@ -174,6 +175,7 @@ bool TryRecover() {
   ReleaseChains();
   MsaaDeviceLost();
   ReleaseGdi9();
+  GpuTextDeviceLost();
   for (auto& kv : g_depth_clear_rt) SafeRelease(kv.second);
   g_depth_clear_rt.clear();
   Surface::DeviceLost9();
@@ -873,11 +875,19 @@ void Blit9(const BlitParams& p) {
   d->SetViewport(&vp);
   RS9(D3DRS_ZENABLE, FALSE);
   RS9(D3DRS_ZWRITEENABLE, FALSE);
-  RS9(D3DRS_ALPHABLENDENABLE, p.blend ? TRUE : FALSE);
-  if (p.blend) {
+  RS9(D3DRS_ALPHABLENDENABLE, p.blend || p.premul || p.erase ? TRUE : FALSE);
+  if (p.erase) {
+    RS9(D3DRS_SRCBLEND, D3DBLEND_ZERO);
+    RS9(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+  } else if (p.premul) {
+    RS9(D3DRS_SRCBLEND, D3DBLEND_ONE);
+    RS9(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+  } else if (p.blend) {
     RS9(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
     RS9(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
   }
+  RS9(D3DRS_SEPARATEALPHABLENDENABLE, FALSE);
+  RS9(D3DRS_BLENDOP, D3DBLENDOP_ADD);
   RS9(D3DRS_ALPHATESTENABLE, p.alpha_key ? TRUE : FALSE);
   RS9(D3DRS_ALPHAFUNC, D3DCMP_GREATER);
   RS9(D3DRS_ALPHAREF, 0);
@@ -896,10 +906,13 @@ void Blit9(const BlitParams& p) {
   RS9(D3DRS_SLOPESCALEDEPTHBIAS, 0);
   if (p.src9) {
     Tex9(0, p.src9);
-    TSS9(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
+    const DWORD op = p.tint ? D3DTOP_MODULATE : D3DTOP_SELECTARG1;
+    TSS9(0, D3DTSS_COLOROP, op);
     TSS9(0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
-    TSS9(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
+    TSS9(0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+    TSS9(0, D3DTSS_ALPHAOP, op);
     TSS9(0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
+    TSS9(0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
     const DWORD f = p.linear ? D3DTEXF_LINEAR : D3DTEXF_POINT;
     SS9(0, D3DSAMP_MAGFILTER, f);
     SS9(0, D3DSAMP_MINFILTER, f);
@@ -924,7 +937,7 @@ void Blit9(const BlitParams& p) {
   auto to8 = [](float v) {
     return static_cast<DWORD>(v <= 0 ? 0 : v >= 1 ? 255 : v * 255.0f + 0.5f);
   };
-  const DWORD color = p.src9 ? 0xffffffff
+  const DWORD color = p.src9 && !p.tint ? 0xffffffff
                              : (to8(p.fill[3]) << 24) | (to8(p.fill[0]) << 16) | (to8(p.fill[1]) << 8) | to8(p.fill[2]);
   struct V {
     float x, y, z, rhw;
@@ -981,6 +994,7 @@ void Present9(const GpuTexture& src, UINT src_w, UINT src_h, UINT interval) {
     p.src_rect = {0, 0, static_cast<LONG>(src_w), static_cast<LONG>(src_h)};
     p.linear = true;
     Blit9(p);
+    GpuTextComposite(src, nullptr, back, g_sc.w, g_sc.h, p.dst_rect);
   }
   DrawRendererLabel(nullptr, back, g_sc.w, g_sc.h);
   back->Release();

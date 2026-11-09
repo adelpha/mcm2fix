@@ -195,8 +195,10 @@ class Surface : public IDirectDrawSurface7 {
   void* dib_bits_ = nullptr;
   unsigned uploads_ = 0;  // texture uploads so far (edge fix-up is skipped for streaming textures)
   bool gpu_dc_ = false;            // set while GDI draws on the GPU copy
+  bool text_dc_ = false;           // set while the game's GDI calls are drawn as GPU text
   void* gpu_dc_handle_ = nullptr;
   bool GetGpuDC(HDC* out);
+  HDC TextDC();
   void ReleaseGpuDC();
   bool locked_ = false;
   bool lock_readonly_ = false;

@@ -1,6 +1,7 @@
 #include "../smooth.h"
 #include "surface.h"
 #include "gdihook.h"
+#include "gputext.h"
 
 #include <algorithm>
 #include <cstring>
@@ -535,6 +536,7 @@ bool Surface::LevelBGRA(UINT level, std::vector<uint8_t>& bgra, UINT& w, UINT& h
 void Surface::Upload() {
   if (!gpu_.Valid() || layout_.depth) return;
   ++uploads_;
+  GpuTextOcclude(gpu_.Native(), nullptr, "cpu write");
   std::vector<uint8_t> bgra;
   for (UINT level = 0; level < gpu_.levels; ++level) {
     UINT w = 0, h = 0;
@@ -805,6 +807,12 @@ void Surface::BltGpu(const RECT& dr, Surface* src, const RECT& sr, bool key, DWO
   }
   p.opaque = layout_.mask[3] == 0;
   Blit(p);
+  if (key)
+    GpuTextOccludeSprite(d->Native(), p);
+  else
+    GpuTextOcclude(d->Native(), &dr, "blt");
+  if (GpuTextHasText(src->Gpu()->Native()))
+    LogOnce("GPU text: a surface with text on it was copied; the text does not go with it");
   temp.Reset();
   MarkGpuWritten();
 }
@@ -866,6 +874,7 @@ void Surface::FillGpu(const RECT& dr, DWORD color) {
   p.fill[2] = c[0] / 255.0f;
   p.fill[3] = c[3] / 255.0f;
   Blit(p);
+  GpuTextOcclude(d->Native(), &dr, "fill");
   MarkGpuWritten();
 }
 
@@ -1130,6 +1139,12 @@ HRESULT Surface::GetDC(HDC* out) {
   if (!out) return DDERR_INVALIDPARAMS;
   if (dc_) return DDERR_DCALREADYCREATED;
   if (layout_.depth) return DDERR_CANTCREATEDC;
+  if (HDC t = TextDC()) {
+    dc_ = t;
+    text_dc_ = true;
+    *out = t;
+    return DD_OK;
+  }
   if (GetGpuDC(out)) {
     GdiTrack(*out, nullptr, Width(), Height(), IsD3D9() ? "gpu" : "gpu (dxgi)");
     return DD_OK;
@@ -1179,6 +1194,14 @@ HRESULT Surface::ReleaseDC(HDC dc) {
   DD_LOCK;
   if (!dc_ || dc != dc_) return DDERR_INVALIDPARAMS;
   GdiUntrack(dc);
+  if (text_dc_) {
+    GpuTextEndDC(dc);
+    text_dc_ = false;
+    dc_ = nullptr;
+    ++uniqueness_;
+    if (IsVisible()) PresentFront(0);
+    return DD_OK;
+  }
   if (gpu_dc_) {
     ReleaseGpuDC();
     MarkGpuWritten();
@@ -1196,6 +1219,15 @@ HRESULT Surface::ReleaseDC(HDC dc) {
   MarkCpuWritten();
   if (IsVisible()) PresentFront(0);
   return DD_OK;
+}
+
+// GDI drawing by mcm2fix on the GPU (gputext.cpp), for render targets.
+HDC Surface::TextDC() {
+  if (!GpuTextActive() || layout_.depth || layout_.palette || has_key_ || !mips_.empty()) return nullptr;
+  if (SyncOwner() != this || !IsRenderTargetKind() || !Ready()) return nullptr;
+  GpuTexture* g = Gpu();  // uploads a newer CPU copy first
+  if (!g->CanRender() || !g->CanSample()) return nullptr;
+  return GpuTextBeginDC(*g, Width(), Height());
 }
 
 // GDI drawing straight onto the GPU texture (no readback). Used for render

@@ -93,6 +93,8 @@ struct Backend {
   ID3D11DepthStencilState* no_depth = nullptr;
   ID3D11BlendState* no_blend = nullptr;
   ID3D11BlendState* alpha_only = nullptr;
+  ID3D11BlendState* premul_blend = nullptr;
+  ID3D11BlendState* erase_blend = nullptr;
   ID3D11BlendState* alpha_blend = nullptr;
 
   // Direct3D 9
@@ -154,6 +156,9 @@ struct BlitParams {
   bool opaque = true;  // write alpha 1 (destination format has no alpha)
   bool alpha_only = false;  // write only the alpha channel
   bool blend = false;       // blend over the destination with the source's alpha
+  bool tint = false;        // output = texture x fill (GPU text glyphs)
+  bool premul = false;      // blend premultiplied colour and alpha over the destination
+  bool erase = false;       // destination x (1 - source alpha): cut the source's shape out
   // D3D9 colour key: src9 is a keyed copy whose key texels have alpha 0.
   bool alpha_key = false;
   bool HasSrc() const { return src || src9; }

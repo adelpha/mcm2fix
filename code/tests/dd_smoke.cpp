@@ -87,11 +87,16 @@ void Identity(D3DMATRIX& m) {
 
 int main(int argc, char** argv) {
   const char* api = argc > 1 ? argv[1] : "d3d9";
+  // "gputext" anywhere after the api: GDI drawn as GPU text (not in the back
+  // buffer, so the GDI pixel checks are skipped; look at the window instead).
+  bool gputext = false;
+  for (int i = 2; i < argc; ++i) gputext |= std::strcmp(argv[i], "gputext") == 0;
   char ini[MAX_PATH];
   GetModuleFileNameA(nullptr, ini, MAX_PATH);
   std::strcpy(std::strrchr(ini, '\\') + 1, "mcm2fix.ini");
   FILE* f = std::fopen(ini, "w");
-  std::fprintf(f, "[mcm2fix]\nRenderer=%s\nAntialiasing=4\nVSync=0\nD3D9Log=1\nDDStats=1\nGdiLog=1\nTextureReplace=0\n", api);
+  std::fprintf(f, "[mcm2fix]\nRenderer=%s\nAntialiasing=4\nVSync=0\nD3D9Log=1\nDDStats=1\nGdiLog=1\nTextLog=1\nGpuText=%d\nTextureReplace=0\n", api,
+               gputext ? 1 : 0);
   std::fclose(f);
   LoadConfig();
   dd::InstallGdiHooks();
@@ -281,6 +286,31 @@ int main(int argc, char** argv) {
       SetBkMode(dc, TRANSPARENT);
       SetTextColor(dc, RGB(255, 255, 255));
       TextOutA(dc, 10, 450, "dd_smoke", 8);
+      HFONT font = CreateFontA(15, 0, 0, 0, FW_BOLD, TRUE, 0, 0, ANSI_CHARSET, 0, 0, PROOF_QUALITY, 0, "Arial");
+      HGDIOBJ oldf = SelectObject(dc, font);
+      SetTextColor(dc, RGB(0, 0, 0));
+      TextOutA(dc, 400, 200, "SUPERCROSS", 10);
+      SetTextColor(dc, RGB(254, 185, 122));
+      TextOutA(dc, 401, 201, "SUPERCROSS", 10);
+      HRGN clip = CreateRectRgn(400, 230, 470, 250);
+      SelectClipRgn(dc, clip);
+      SetTextColor(dc, RGB(255, 255, 255));
+      TextOutA(dc, 400, 232, "Clipped text here", 17);
+      SelectClipRgn(dc, nullptr);
+      DeleteObject(clip);
+      RECT dr{400, 260, 620, 280};
+      SetBkMode(dc, OPAQUE);
+      SetBkColor(dc, RGB(64, 64, 64));
+      SetTextColor(dc, RGB(204, 204, 204));
+      DrawTextA(dc, "Follow the arrow as you race through easy, open terrain", -1, &dr,
+                DT_END_ELLIPSIS | DT_SINGLELINE | DT_VCENTER | DT_CENTER);
+      SetBkMode(dc, TRANSPARENT);
+      HBRUSH white = CreateSolidBrush(RGB(255, 255, 255));
+      RECT frr{398, 228, 472, 252};
+      FrameRect(dc, &frr, white);
+      DeleteObject(white);
+      SelectObject(dc, oldf);
+      DeleteObject(font);
       HBRUSH red = CreateSolidBrush(RGB(255, 0, 0));
       RECT fr{560, 400, 600, 430};
       FillRect(dc, &fr, red);
@@ -330,14 +360,18 @@ int main(int argc, char** argv) {
   Check(Near(c, 32, 32, 32), "keyed sprite, key colour skipped");
   ReadRGB(back, 600, 450, c);
   Check(Near(c, 32, 32, 32), "background (clear colour)");
-  ReadRGB(back, 580, 415, c);
-  std::printf("     GDI fill %d %d %d\n", c[0], c[1], c[2]);
-  Check(Near(c, 255, 0, 0), "GDI FillRect (red)");
-  ReadRGB(back, 556, 415, c);
-  Check(Near(c, 32, 32, 32), "GDI leaves pixels beside the fill alone");
+  if (!gputext) {
+    ReadRGB(back, 580, 415, c);
+    std::printf("     GDI fill %d %d %d\n", c[0], c[1], c[2]);
+    Check(Near(c, 255, 0, 0), "GDI FillRect (red)");
+    ReadRGB(back, 556, 415, c);
+    Check(Near(c, 32, 32, 32), "GDI leaves pixels beside the fill alone");
+  }
 
   primary->Flip(nullptr, DDFLIP_WAIT);
-  if (argc > 2 && std::strcmp(argv[2], "hold") == 0) {
+  bool hold = false;
+  for (int i = 2; i < argc; ++i) hold |= std::strcmp(argv[i], "hold") == 0;
+  if (hold) {
     // No 3D draws for a while: the renderer label should appear. Keep the
     // window up so it can be looked at.
     Sleep(700);

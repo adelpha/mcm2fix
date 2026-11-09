@@ -1,4 +1,5 @@
 #include "backend9.h"
+#include "gputext.h"
 #include "msaa.h"
 
 #include <d3dcompiler.h>
@@ -46,6 +47,7 @@ float4 ps_main(VSOut i) : SV_Target {
   if (flags.x == 0) return fill;
   float4 c = tex.Sample(smp, i.uv);
   if (flags.y != 0 && all(abs(c.rgb - key.rgb) < 0.002)) discard;
+  if (flags.w != 0) return c * fill;
   return flags.z != 0 ? float4(c.rgb, 1) : c;
 }
 )";
@@ -88,7 +90,10 @@ void LogOnce(const char* fmt, ...) {
 Api ActiveApi() { return g_api; }
 
 void GpuTexture::Reset() {
-  if (const void* n = Native()) MsaaForget(n);
+  if (const void* n = Native()) {
+    MsaaForget(n);
+    GpuTextForget(n);
+  }
   SafeRelease(srv);
   SafeRelease(rtv);
   SafeRelease(dsv);
@@ -230,6 +235,13 @@ bool CreatePipeline() {
   bd.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ONE;
   bd.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
   b.device->CreateBlendState(&bd, &b.alpha_blend);
+  bd.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
+  bd.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+  bd.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
+  b.device->CreateBlendState(&bd, &b.premul_blend);
+  bd.RenderTarget[0].SrcBlend = D3D11_BLEND_ZERO;
+  bd.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ZERO;
+  b.device->CreateBlendState(&bd, &b.erase_blend);
   return b.blit_vs && b.blit_ps && b.blit_cb;
 }
 
@@ -510,6 +522,7 @@ void Blit(const BlitParams& p) {
   cb.flags[0] = p.src ? 1.0f : 0.0f;
   cb.flags[1] = p.color_key ? 1.0f : 0.0f;
   cb.flags[2] = p.opaque ? 1.0f : 0.0f;
+  cb.flags[3] = p.tint ? 1.0f : 0.0f;
   for (int i = 0; i < 3; ++i) cb.key[i] = p.key[i];
   b.ctx->UpdateSubresource(b.blit_cb, 0, nullptr, &cb, 0, 0);
 
@@ -520,7 +533,9 @@ void Blit(const BlitParams& p) {
   b.ctx->RSSetViewports(1, &vp);
   b.ctx->RSSetState(b.blit_raster);
   b.ctx->OMSetDepthStencilState(b.no_depth, 0);
-  b.ctx->OMSetBlendState(p.blend && b.alpha_blend ? b.alpha_blend
+  b.ctx->OMSetBlendState(p.erase && b.erase_blend ? b.erase_blend
+                         : p.premul && b.premul_blend ? b.premul_blend
+                         : p.blend && b.alpha_blend ? b.alpha_blend
                          : p.alpha_only && b.alpha_only ? b.alpha_only : b.no_blend, nullptr,
                          0xffffffff);
   b.ctx->IASetInputLayout(nullptr);
@@ -610,6 +625,7 @@ void Present(const GpuTexture& src_tex, UINT src_w, UINT src_h, UINT interval) {
     p.src_rect = {0, 0, static_cast<LONG>(src_w), static_cast<LONG>(src_h)};
     p.linear = true;
     Blit(p);
+    GpuTextComposite(src_tex, b.swap_rtv, nullptr, b.swap_w, b.swap_h, p.dst_rect);
   }
   DrawRendererLabel(b.swap_rtv, nullptr, b.swap_w, b.swap_h);
   HRESULT hr = b.swapchain->Present(interval, interval == 0 && g_tearing ? DXGI_PRESENT_ALLOW_TEARING : 0);

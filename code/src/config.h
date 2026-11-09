@@ -12,6 +12,8 @@ struct Config {
   bool dd_stats = false;      // DDStats: log renderer activity every 2 seconds
   int renderer = 11;          // Renderer: 11 = Direct3D 11, 9 = Direct3D 9 (also used when D3D11 is missing)
   bool renderer_label = true;  // RendererLabel: name the active renderer in the corner of the menus
+  bool gpu_text = true;       // GpuText: draw the game's GDI text on the GPU at screen resolution
+  bool text_log = false;      // TextLog: log GPU text drawing (first calls, what erases it)
   bool gdi_log = false;       // GdiLog: log the GDI calls the game draws text and boxes with
   bool d3d9_log = true;       // D3D9Log: extra logging from the Direct3D 9 renderer (first frames, fallbacks)
   bool wide_fov = true;       // WideFov: wide modes show more to the sides instead of cropping

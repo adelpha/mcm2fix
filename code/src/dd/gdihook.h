@@ -11,11 +11,27 @@
 
 namespace dd {
 
+enum class GdiFn { kTextOut, kDrawText, kFillRect, kFrameRect, kLineTo };
+
+// One drawing call, as the game made it.
+struct GdiCall {
+  GdiFn fn;
+  HDC dc;
+  int x, y;           // TextOut position, LineTo end point
+  LPCSTR s;           // TextOut / DrawText string
+  int len;            // its length (DrawText: -1 = zero-terminated)
+  const RECT* rect;   // DrawText / FillRect / FrameRect
+  UINT fmt;           // DrawText format
+  HBRUSH brush;       // FillRect / FrameRect
+};
+
 class GdiTarget {
  public:
   virtual ~GdiTarget() = default;
-  // r is clipped to the surface and not empty.
-  virtual void Touch(const RECT& r) = 0;
+  // r is clipped to the surface and not empty. Called before the call runs.
+  virtual void Touch(const RECT&) {}
+  // Draw the call some other way. true: GDI does not run it.
+  virtual bool Draw(const GdiCall&) { return false; }
 };
 
 void InstallGdiHooks();

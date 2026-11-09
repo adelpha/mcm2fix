@@ -1,5 +1,6 @@
 #include "../smooth.h"
 #include "device.h"
+#include "gputext.h"
 
 #include <algorithm>
 #include <cmath>
@@ -722,6 +723,21 @@ HRESULT Device::GetRenderTarget(IDirectDrawSurface7** s) {
 
 HRESULT Device::Clear(DWORD count, D3DRECT* rects, DWORD flags, D3DCOLOR color, float z, DWORD) {
   DD_LOCK;
+  if (rt_ && (flags & D3DCLEAR_TARGET)) {
+    const void* n = rt_->Gpu()->Native();
+    if (GpuTextHasText(n)) {
+      RECT vp{static_cast<LONG>(viewport_.dwX), static_cast<LONG>(viewport_.dwY),
+              static_cast<LONG>(viewport_.dwX + viewport_.dwWidth), static_cast<LONG>(viewport_.dwY + viewport_.dwHeight)};
+      if (!count || !rects) {
+        GpuTextOcclude(n, &vp, "clear");
+      } else {
+        for (DWORD i = 0; i < count; ++i) {
+          RECT r{rects[i].x1, rects[i].y1, rects[i].x2, rects[i].y2}, o;
+          if (IntersectRect(&o, &r, &vp)) GpuTextOcclude(n, &o, "clear");
+        }
+      }
+    }
+  }
   if (IsD3D9()) return Clear9(count, rects, flags, color, z);
   if (!rt_ || !Ready() || !g_pipe.ready) return D3D_OK;
   RECT vp{static_cast<LONG>(viewport_.dwX), static_cast<LONG>(viewport_.dwY),
@@ -1376,7 +1392,34 @@ void Device::ApplyState(bool tl, bool depth_clip, bool has_depth) {
   (void)tl;
 }
 
+// Text the game drew with GDI earlier lies under this draw: erase it where the
+// draw lands (screen-space vertices: their bounding box; 3D: the viewport).
+void Device::OccludeText(const Draw& d) {
+  if (!rt_) return;
+  const void* n = rt_->Gpu()->Native();
+  if (!GpuTextHasText(n)) return;
+  RECT r{static_cast<LONG>(viewport_.dwX), static_cast<LONG>(viewport_.dwY),
+         static_cast<LONG>(viewport_.dwX + viewport_.dwWidth), static_cast<LONG>(viewport_.dwY + viewport_.dwHeight)};
+  if (d.layout.tl && d.verts && d.layout.stride && d.count) {
+    float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
+    for (DWORD i = 0; i < d.count; ++i) {
+      const float* v = reinterpret_cast<const float*>(d.verts + static_cast<size_t>(d.first + i) * d.layout.stride);
+      x0 = std::min(x0, v[0]);
+      y0 = std::min(y0, v[1]);
+      x1 = std::max(x1, v[0]);
+      y1 = std::max(y1, v[1]);
+    }
+    RECT b{static_cast<LONG>(std::floor(x0)), static_cast<LONG>(std::floor(y0)), static_cast<LONG>(std::ceil(x1)),
+           static_cast<LONG>(std::ceil(y1))};
+    if (!IntersectRect(&r, &r, &b)) return;
+    GpuTextOcclude(n, &r, "screen-space draw");
+    return;
+  }
+  GpuTextOcclude(n, &r, "3D draw");
+}
+
 void Device::Submit(const Draw& d) {
+  OccludeText(d);
   if (IsD3D9()) return Submit9(d);
   bool has_depth = false;
   if (!BindTarget(has_depth)) return;
