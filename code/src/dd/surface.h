@@ -201,7 +201,8 @@ class Surface : public IDirectDrawSurface7 {
   bool text_dc_ = false;           // set while the game's GDI calls are drawn as GPU text
   void* gpu_dc_handle_ = nullptr;
   bool GetGpuDC(HDC* out);
-  HDC TextDC();
+  HDC TextDC(const char** why);
+  void LogDcPath(const char* path, const char* why, void* caller, HRESULT hr);
   void ReleaseGpuDC();
   bool locked_ = false;
   bool lock_readonly_ = false;

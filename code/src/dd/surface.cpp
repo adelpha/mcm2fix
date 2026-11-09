@@ -1138,19 +1138,29 @@ HRESULT Surface::GetColorKey(DWORD flags, LPDDCOLORKEY key) {
 
 HRESULT Surface::GetDC(HDC* out) {
   DD_LOCK;
+  void* caller = __builtin_return_address(0);
   if (!out) return DDERR_INVALIDPARAMS;
-  if (dc_) return DDERR_DCALREADYCREATED;
-  if (layout_.depth) return DDERR_CANTCREATEDC;
-  if (HDC t = TextDC()) {
+  if (dc_) {
+    LogDcPath("failed, DC already handed out", nullptr, caller, DDERR_DCALREADYCREATED);
+    return DDERR_DCALREADYCREATED;
+  }
+  if (layout_.depth) {
+    LogDcPath("failed, depth buffer", nullptr, caller, DDERR_CANTCREATEDC);
+    return DDERR_CANTCREATEDC;
+  }
+  const char* why = nullptr;
+  if (HDC t = TextDC(&why)) {
     dc_ = t;
     text_dc_ = true;
     *out = t;
     return DD_OK;
   }
   if (GetGpuDC(out)) {
+    LogDcPath("GDI on the GPU copy", why, caller, DD_OK);
     GdiTrack(*out, nullptr, Width(), Height(), IsD3D9() ? "gpu" : "gpu (dxgi)");
     return DD_OK;
   }
+  LogDcPath("GDI on a CPU copy", why, caller, DD_OK);
   SyncToCpu("GetDC");
   struct {
     BITMAPINFOHEADER h;
@@ -1183,6 +1193,7 @@ HRESULT Surface::GetDC(HDC* out) {
     if (dib_) DeleteObject(dib_);
     dc_ = nullptr;
     dib_ = nullptr;
+    LogDcPath("failed, no DIB", why, caller, DDERR_CANTCREATEDC);
     return DDERR_CANTCREATEDC;
   }
   std::memcpy(dib_bits_, mem_.data(), mem_.size());
@@ -1224,20 +1235,49 @@ HRESULT Surface::ReleaseDC(HDC dc) {
 }
 
 // GDI drawing by mcm2fix on the GPU (gputext.cpp), for render targets.
-HDC Surface::TextDC() {
+HDC Surface::TextDC(const char** why) {
   // Not for textures: the 3D pipeline samples the texture itself, without
   // the overlay. Other surfaces (also system-memory ones, like the tooltip
   // the game draws and then blits to the screen) get GPU text, which goes
   // with them when they are blitted.
-  if (!GpuTextActive() || layout_.depth || layout_.palette || !mips_.empty()) return nullptr;
-  if (desc_.ddsCaps.dwCaps & DDSCAPS_TEXTURE) return nullptr;
-  if (SyncOwner() != this || !Ready()) return nullptr;
+  *why = nullptr;
+  if (!GpuTextActive()) return *why = "GPU text off", nullptr;
+  if (layout_.depth) return *why = "depth buffer", nullptr;
+  if (layout_.palette) return *why = "palettized", nullptr;
+  if (!mips_.empty() || level_ > 0) return *why = "mipmapped", nullptr;
+  if (desc_.ddsCaps.dwCaps & DDSCAPS_TEXTURE) return *why = "texture", nullptr;
+  if (SyncOwner() != this) return *why = "attached surface", nullptr;
+  if (!Ready()) return *why = "no device", nullptr;
   // Uploads a newer CPU copy first, but leaves a multisampled copy alone:
   // the overlay does not need the pixels, and resolving in the middle of a
   // frame would lose the antialiasing of what is drawn so far.
   GpuTexture* g = GpuForDraw();
-  if (!g->Valid() || !g->CanSample()) return nullptr;
-  return GpuTextBeginDC(*g, Width(), Height());
+  if (!g->Valid()) return *why = "no GPU copy", nullptr;
+  if (!g->CanSample()) return *why = "GPU copy cannot be sampled", nullptr;
+  HDC dc = GpuTextBeginDC(*g, Width(), Height());
+  if (!dc) *why = "GPU text refused";
+  return dc;
+}
+
+// GetDC calls that did not get GPU text (or failed), logged once for each
+// kind of surface and place in the game.
+void Surface::LogDcPath(const char* path, const char* why, void* caller, HRESULT hr) {
+  if (!GetConfig().gdi_log) return;
+  struct Key {
+    DWORD caps;
+    UINT w, h;
+    const char* path;
+    void* caller;
+  };
+  static std::vector<Key> seen;
+  const Key k{Caps(), Width(), Height(), path, caller};
+  for (const Key& e : seen)
+    if (e.caps == k.caps && e.w == k.w && e.h == k.h && e.path == k.path && e.caller == k.caller) return;
+  if (seen.size() >= 64) return;
+  seen.push_back(k);
+  Log("GetDC %ux%u caps %08lx%s%s: %s%s%s (hr %08lx), called from %p", Width(), Height(), Caps(),
+      layout_.palette ? " palettized" : "", has_key_ ? " colour-keyed" : "", path, why ? ", no GPU text: " : "",
+      why ? why : "", static_cast<unsigned long>(hr), caller);
 }
 
 // GDI drawing straight onto the GPU texture (no readback). Used for render

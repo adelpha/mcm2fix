@@ -4,6 +4,8 @@
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <utility>
+#include <vector>
 
 #include "../config.h"
 #include "../patch.h"
@@ -165,6 +167,30 @@ void Quote(char* out, size_t n, LPCSTR s, int len) {
   out[j] = 0;
 }
 
+// A drawing call on a DC that is not one of ours (not from Surface::GetDC):
+// log each place in the game that does this once, so it can be tracked down.
+void LogOtherDc(const char* fn, HDC dc, void* caller, int x, int y, LPCSTR s, int len) {
+  if (!Logging()) return;
+  static std::vector<std::pair<void*, HDC>> seen;
+  const bool null_dc = !dc;
+  for (auto& e : seen)
+    if (e.first == caller && (e.second == nullptr) == null_dc) return;
+  if (seen.size() >= 64) return;
+  seen.emplace_back(caller, dc);
+  BITMAP bm{};
+  const DWORD type = dc ? GetObjectType(dc) : 0;
+  if (dc) {
+    HGDIOBJ bmp = GetCurrentObject(dc, OBJ_BITMAP);
+    if (bmp) GetObjectA(bmp, sizeof(bm), &bm);
+  }
+  char text[64];
+  Quote(text, sizeof(text), s, len);
+  HWND wnd = dc ? WindowFromDC(dc) : nullptr;
+  Log("gdi: %s on a DC that is not a surface's: dc %p (type %lu, window %p, bitmap %ldx%ld %u bpp) at %d,%d \"%s\", "
+      "called from %p", fn, static_cast<void*>(dc), type, static_cast<void*>(wnd), bm.bmWidth, bm.bmHeight,
+      bm.bmBitsPixel, x, y, text, caller);
+}
+
 bool Divert(const Tracked* t, const GdiCall& c) { return t && t->target && t->target->Draw(c); }
 
 BOOL WINAPI HookTextOut(HDC dc, int x, int y, LPCSTR s, int len) {
@@ -177,18 +203,7 @@ BOOL WINAPI HookTextOut(HDC dc, int x, int y, LPCSTR s, int len) {
       DescribeFont(dc, font, sizeof(font));
       Log("gdi: TextOut on %s %ux%u at %d,%d \"%s\"; %s", t->what, t->w, t->h, x, y, text, font);
     }
-    if (!t && Logging()) {
-      static unsigned others = 0;
-      if (++others <= 12) {
-        BITMAP bm{};
-        HGDIOBJ bmp = GetCurrentObject(dc, OBJ_BITMAP);
-        if (bmp) GetObjectA(bmp, sizeof(bm), &bm);
-        char text[64];
-        Quote(text, sizeof(text), s, len);
-        Log("gdi: TextOut on another DC %p (type %lu, bitmap %ldx%ld %u bpp) at %d,%d \"%s\"", static_cast<void*>(dc),
-            GetObjectType(dc), bm.bmWidth, bm.bmHeight, bm.bmBitsPixel, x, y, text);
-      }
-    }
+    if (!t) LogOtherDc("TextOut", dc, __builtin_return_address(0), x, y, s, len);
     if (Divert(t, GdiCall{GdiFn::kTextOut, dc, x, y, s, len, nullptr, 0, nullptr})) return TRUE;
     if (t && t->target && s && len > 0) {
       SIZE sz{};
@@ -218,6 +233,7 @@ int WINAPI HookDrawText(HDC dc, LPCSTR s, int len, LPRECT rect, UINT fmt) {
   {
     Lock lock;
     const Tracked* t = Find(dc, kDrawText);
+    if (!t) LogOtherDc("DrawText", dc, __builtin_return_address(0), rect ? rect->left : 0, rect ? rect->top : 0, s, len);
     if (t && rect && !(fmt & DT_CALCRECT) && Detail()) {
       char text[96], font[256];
       Quote(text, sizeof(text), s, len);
@@ -255,6 +271,7 @@ int WINAPI HookFillRect(HDC dc, const RECT* r, HBRUSH br) {
   {
     Lock lock;
     const Tracked* t = Find(dc, kFillRect);
+    if (!t) LogOtherDc("FillRect", dc, __builtin_return_address(0), r ? r->left : 0, r ? r->top : 0, nullptr, 0);
     if (t && r) {
       LogRect("FillRect", t, r, br);
       if (Divert(t, GdiCall{GdiFn::kFillRect, dc, 0, 0, nullptr, 0, r, 0, br})) return 1;
@@ -268,6 +285,7 @@ int WINAPI HookFrameRect(HDC dc, const RECT* r, HBRUSH br) {
   {
     Lock lock;
     const Tracked* t = Find(dc, kFrameRect);
+    if (!t) LogOtherDc("FrameRect", dc, __builtin_return_address(0), r ? r->left : 0, r ? r->top : 0, nullptr, 0);
     if (t && r) {
       LogRect("FrameRect", t, r, br);
       if (Divert(t, GdiCall{GdiFn::kFrameRect, dc, 0, 0, nullptr, 0, r, 0, br})) return 1;
@@ -281,6 +299,7 @@ BOOL WINAPI HookLineTo(HDC dc, int x, int y) {
   {
     Lock lock;
     const Tracked* t = Find(dc, kLineTo);
+    if (!t) LogOtherDc("LineTo", dc, __builtin_return_address(0), x, y, nullptr, 0);
     if (Divert(t, GdiCall{GdiFn::kLineTo, dc, x, y, nullptr, 0, nullptr, 0, nullptr})) {
       MoveToEx(dc, x, y, nullptr);
       return TRUE;
