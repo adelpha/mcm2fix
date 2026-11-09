@@ -35,7 +35,7 @@ void TLog(const char* fmt, ...) {
 
 struct TextStats {
   unsigned dcs = 0, calls = 0, glyphs = 0, fills = 0, new_glyphs = 0, uploads = 0, occlusions = 0, composites = 0,
-           fallbacks = 0;
+           fallbacks = 0, copies = 0;
 } g_ts;
 
 void Report() {
@@ -45,9 +45,9 @@ void Report() {
   last = now;
   if ((GetConfig().text_log || GetConfig().dd_stats) && (g_ts.dcs || g_ts.composites))
     Log("gpu text 5s: %u DCs, %u calls, %u glyphs, %u fills, %u new glyphs, %u atlas uploads, %u erased, "
-        "%u composites, %u not drawn",
+        "%u composites, %u copies, %u not drawn",
         g_ts.dcs, g_ts.calls, g_ts.glyphs, g_ts.fills, g_ts.new_glyphs, g_ts.uploads, g_ts.occlusions,
-        g_ts.composites, g_ts.fallbacks);
+        g_ts.composites, g_ts.copies, g_ts.fallbacks);
   g_ts = TextStats{};
 }
 
@@ -700,6 +700,34 @@ void GpuTextOccludeSprite(const void* native, const BlitParams& sprite) {
   p.opaque = false;
   p.linear = false;
   Blit(p);
+}
+
+void GpuTextCopy(const void* src, const RECT& sr, const void* dst, UINT dst_w, UINT dst_h, const RECT& dr, bool over) {
+  if (!g_nonempty || !src || !dst) return;
+  auto it = g_overlays.find(src);
+  if (it == g_overlays.end() || it->second.empty) return;
+  if (src == dst) {
+    LogOnce("GPU text: text copied within one surface is not moved");
+    return;
+  }
+  Overlay* d = EnsureOverlay(dst, dst_w, dst_h);
+  it = g_overlays.find(src);  // EnsureOverlay may have added to the map
+  if (!d || it == g_overlays.end()) return;
+  const Overlay& s = it->second;
+  BlitParams p;
+  p.SetDst(d->tex);
+  p.dst_rect = ScaleRect(*d, dr);
+  p.SetSrc(s.tex);
+  p.src_rect = ScaleRect(s, sr);
+  p.linear = (p.dst_rect.right - p.dst_rect.left) != (p.src_rect.right - p.src_rect.left) ||
+             (p.dst_rect.bottom - p.dst_rect.top) != (p.src_rect.bottom - p.src_rect.top);
+  p.premul = over;
+  p.opaque = false;
+  Blit(p);
+  MarkUsed(*d);
+  ++g_ts.copies;
+  TLog("copied text %ld,%ld-%ld,%ld -> %ld,%ld-%ld,%ld%s", sr.left, sr.top, sr.right, sr.bottom, dr.left, dr.top,
+       dr.right, dr.bottom, over ? " (over)" : "");
 }
 
 bool GpuTextHasText(const void* native) {

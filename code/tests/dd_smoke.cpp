@@ -320,6 +320,23 @@ int main(int argc, char** argv) {
       FillRect(dc, &fr2, red);
       DeleteObject(red);
       back->ReleaseDC(dc);
+      // Copy the "SUPERCROSS" text away and back to the top left: GPU text
+      // must travel with blits (menus are built on offscreen surfaces).
+      static IDirectDrawSurface7* off = nullptr;
+      if (!off) {
+        DDSURFACEDESC2 od{};
+        od.dwSize = sizeof(od);
+        od.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT;
+        od.dwWidth = 128;
+        od.dwHeight = 32;
+        od.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN | DDSCAPS_VIDEOMEMORY;
+        dd->CreateSurface(&od, &off, nullptr);
+      }
+      if (off) {
+        RECT from{396, 196, 524, 228}, all{0, 0, 128, 32}, to{10, 10, 138, 42};
+        off->Blt(&all, back, &from, DDBLT_WAIT, nullptr);
+        back->Blt(&to, off, &all, DDBLT_WAIT, nullptr);
+      }
     }
 
     if (frames == 29) break;  // check the last frame before flipping

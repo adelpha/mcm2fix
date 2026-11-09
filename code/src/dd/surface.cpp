@@ -811,8 +811,10 @@ void Surface::BltGpu(const RECT& dr, Surface* src, const RECT& sr, bool key, DWO
     GpuTextOccludeSprite(d->Native(), p);
   else
     GpuTextOcclude(d->Native(), &dr, "blt");
-  if (GpuTextHasText(src->Gpu()->Native()))
-    LogOnce("GPU text: a surface with text on it was copied; the text does not go with it");
+  // Text on the source goes with the copy (menus are put together on an
+  // offscreen surface, and the cursor's background is patched from one).
+  const void* src_native = src->Gpu()->Native();
+  if (GpuTextHasText(src_native)) GpuTextCopy(src_native, sr, d->Native(), d->width, d->height, dr, key);
   temp.Reset();
   MarkGpuWritten();
 }

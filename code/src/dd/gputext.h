@@ -24,6 +24,10 @@ void GpuTextEndDC(HDC dc);
 // The game drew over r (surface pixels; null = everything) of `native`.
 void GpuTextOcclude(const void* native, const RECT* r, const char* why);
 bool GpuTextHasText(const void* native);
+// The game copied sr of `src` to dr of `dst` (dst_w x dst_h): take the text
+// along (after the destination's own text there was erased). `over`: blend
+// it over instead of replacing (colour-keyed copies).
+void GpuTextCopy(const void* src, const RECT& sr, const void* dst, UINT dst_w, UINT dst_h, const RECT& dr, bool over);
 // A colour-keyed sprite was blitted onto `native`: erase the overlay only
 // where the sprite is opaque (`sprite` is the blit as it was made).
 void GpuTextOccludeSprite(const void* native, const BlitParams& sprite);
