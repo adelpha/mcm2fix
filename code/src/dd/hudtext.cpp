@@ -182,6 +182,9 @@ void __fastcall ConvertHook(uintptr_t self, void* edx, int first_row, int rows, 
     GpuTextOcclude(s, &r, "converted");
     return;
   }
+  // The scratch can be larger than the panel (a 256 scratch for a 128 panel).
+  const RECT rb{0, y0, std::min<LONG>(r.right, static_cast<LONG>(t->Width())),
+                std::min<LONG>(y1, static_cast<LONG>(t->Height()))};
   float rgba[4] = {1, 1, 1, 1};
   uint8_t c[4];
   if (px >= 0 && t->CpuPixelBGRA(px, py, c)) {
@@ -190,7 +193,8 @@ void __fastcall ConvertHook(uintptr_t self, void* edx, int first_row, int rows, 
     rgba[2] = c[0] / 255.0f;
     rgba[3] = t->Layout().mask[3] ? c[3] / 255.0f : 1.0f;
   }
-  if (px >= 0 && GpuTextBake(s, r, *t->Hires(), rgba)) {
+  if (px >= 0 && GpuTextBake(s, rb, *t->Hires(), static_cast<float>(t->Hires()->width) / t->Width(),
+                              static_cast<float>(t->Hires()->height) / t->Height(), rgba)) {
     ++g_st.baked;
     static unsigned logged = 0;
     if (++logged <= 20)

@@ -27,9 +27,10 @@ bool GpuTextRecordDC(HDC dc, const void* key, UINT w, UINT h);
 float GpuTextTextureScale();
 void GpuTextSetTextureScale(float s);
 // Blend the overlay text of r (surface pixels) of `key`, tinted rgba
-// (0..1, straight), over the same place in `dst`, a copy of the surface
-// made at any size. false: no text there.
-bool GpuTextBake(const void* key, const RECT& r, const GpuTexture& dst, const float rgba[4]);
+// (0..1, straight), over the same pixels of another surface whose copy
+// `dst` has dst_sx x dst_sy copy pixels per surface pixel. false: no text there.
+bool GpuTextBake(const void* key, const RECT& r, const GpuTexture& dst, float dst_sx, float dst_sy,
+                 const float rgba[4]);
 
 // The game drew over r (surface pixels; null = everything) of `native`.
 void GpuTextOcclude(const void* native, const RECT* r, const char* why);

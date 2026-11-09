@@ -721,7 +721,8 @@ float g_texture_scale = 0;  // set from what the game's draws show (hudtext.cpp)
 float GpuTextTextureScale() { return g_texture_scale > 0 ? g_texture_scale : TextureScale(); }
 void GpuTextSetTextureScale(float s) { g_texture_scale = s; }
 
-bool GpuTextBake(const void* key, const RECT& r, const GpuTexture& dst, const float rgba[4]) {
+bool GpuTextBake(const void* key, const RECT& r, const GpuTexture& dst, float dst_sx, float dst_sy,
+                 const float rgba[4]) {
   if (!g_nonempty || !key || !dst.CanRender()) return false;
   auto it = g_overlays.find(key);
   if (it == g_overlays.end() || it->second.empty || !it->second.tex.Valid()) return false;
@@ -730,8 +731,10 @@ bool GpuTextBake(const void* key, const RECT& r, const GpuTexture& dst, const fl
   p.SetDst(dst);
   p.SetSrc(o.tex);
   p.src_rect = ScaleRect(o, r);
-  // The destination is the sharper copy made at the overlay's scale.
-  const float kx = static_cast<float>(dst.width) / o.tex.width, ky = static_cast<float>(dst.height) / o.tex.height;
+  // The destination is a copy of a surface of its own size, dst_sx/dst_sy
+  // copy pixels per surface pixel; surface pixel (x,y) of the source is
+  // surface pixel (x,y) there too.
+  const float kx = dst_sx / o.sx, ky = dst_sy / o.sy;
   p.dst_rect = {static_cast<LONG>(std::lround(p.src_rect.left * kx)), static_cast<LONG>(std::lround(p.src_rect.top * ky)),
                 static_cast<LONG>(std::lround(p.src_rect.right * kx)),
                 static_cast<LONG>(std::lround(p.src_rect.bottom * ky))};
