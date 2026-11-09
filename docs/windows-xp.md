@@ -28,7 +28,7 @@ it on every MinGW build.
 - **Per-user folder**: XP has no `%LOCALAPPDATA%`. Saves, logs and textures go
   to `SHGetFolderPath(CSIDL_LOCAL_APPDATA)`, i.e.
   `C:\Documents and Settings\<user>\Local Settings\Application Data\Motocross Madness 2`.
-- **Renderer**: Direct3D 11 does not exist on XP. Until the Direct3D 9
+- **Renderer**: Direct3D 11 does not exist on XP. The hook stays on when d3d9.dll exists (the D3D9 renderer, branch claude/project-thread-j58dm6, picks it in dd::InitDevice). Until that lands, or with no D3D9 at all, the Direct3D 9
   renderer lands, mcm2fix leaves the game on Windows' own DirectDraw/Direct3D 7
   when `d3d11.dll` is missing: original exclusive-fullscreen modes, no
   widescreen, no MSAA/anisotropy, no texture replacement. Everything else

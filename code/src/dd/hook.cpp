@@ -27,10 +27,18 @@ bool D3D11Available() {
   return ok;
 }
 
+// The Direct3D 9 renderer (fallback when D3D11 is missing) needs d3d9.dll.
+bool D3D9Available() {
+  HMODULE d3d9 = LoadLibraryA("d3d9.dll");
+  const bool ok = d3d9 && GetProcAddress(d3d9, "Direct3DCreate9");
+  patch::Log("d3d11 backend: d3d9.dll %s", ok ? "available" : "missing");
+  return ok;
+}
+
 void ApplyD3D11Backend() {
-  if (!D3D11Available()) {
-    patch::Log("d3d11 backend: off, Direct3D 11 not available; using Windows' own DirectDraw "
-               "(exclusive fullscreen, no widescreen, no graphics options)");
+  if (!D3D11Available() && !D3D9Available()) {
+    patch::Log("d3d11 backend: off, neither Direct3D 11 nor Direct3D 9 available; using Windows' "
+               "own DirectDraw (exclusive fullscreen, no widescreen, no graphics options)");
     return;
   }
   patch::HookIat(kIatDirectDrawCreateEx, reinterpret_cast<void*>(&dd::CreateDirectDraw));
