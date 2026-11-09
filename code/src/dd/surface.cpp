@@ -8,6 +8,13 @@
 #include <map>
 #include <set>
 
+#ifdef _MSC_VER
+#include <intrin.h>
+#define CALLER_ADDRESS() _ReturnAddress()
+#else
+#define CALLER_ADDRESS() __builtin_return_address(0)
+#endif
+
 #include "../config.h"
 #include "../framerate.h"
 #include "directdraw.h"
@@ -1138,7 +1145,7 @@ HRESULT Surface::GetColorKey(DWORD flags, LPDDCOLORKEY key) {
 
 HRESULT Surface::GetDC(HDC* out) {
   DD_LOCK;
-  void* caller = __builtin_return_address(0);
+  void* caller = CALLER_ADDRESS();
   if (!out) return DDERR_INVALIDPARAMS;
   if (dc_) {
     LogDcPath("failed, DC already handed out", nullptr, caller, DDERR_DCALREADYCREATED);

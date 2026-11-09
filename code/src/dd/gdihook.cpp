@@ -7,6 +7,13 @@
 #include <utility>
 #include <vector>
 
+#ifdef _MSC_VER
+#include <intrin.h>
+#define CALLER_ADDRESS() _ReturnAddress()
+#else
+#define CALLER_ADDRESS() __builtin_return_address(0)
+#endif
+
 #include "../config.h"
 #include "../patch.h"
 
@@ -203,7 +210,7 @@ BOOL WINAPI HookTextOut(HDC dc, int x, int y, LPCSTR s, int len) {
       DescribeFont(dc, font, sizeof(font));
       Log("gdi: TextOut on %s %ux%u at %d,%d \"%s\"; %s", t->what, t->w, t->h, x, y, text, font);
     }
-    if (!t) LogOtherDc("TextOut", dc, __builtin_return_address(0), x, y, s, len);
+    if (!t) LogOtherDc("TextOut", dc, CALLER_ADDRESS(), x, y, s, len);
     if (Divert(t, GdiCall{GdiFn::kTextOut, dc, x, y, s, len, nullptr, 0, nullptr})) return TRUE;
     if (t && t->target && s && len > 0) {
       SIZE sz{};
@@ -233,7 +240,7 @@ int WINAPI HookDrawText(HDC dc, LPCSTR s, int len, LPRECT rect, UINT fmt) {
   {
     Lock lock;
     const Tracked* t = Find(dc, kDrawText);
-    if (!t) LogOtherDc("DrawText", dc, __builtin_return_address(0), rect ? rect->left : 0, rect ? rect->top : 0, s, len);
+    if (!t) LogOtherDc("DrawText", dc, CALLER_ADDRESS(), rect ? rect->left : 0, rect ? rect->top : 0, s, len);
     if (t && rect && !(fmt & DT_CALCRECT) && Detail()) {
       char text[96], font[256];
       Quote(text, sizeof(text), s, len);
@@ -271,7 +278,7 @@ int WINAPI HookFillRect(HDC dc, const RECT* r, HBRUSH br) {
   {
     Lock lock;
     const Tracked* t = Find(dc, kFillRect);
-    if (!t) LogOtherDc("FillRect", dc, __builtin_return_address(0), r ? r->left : 0, r ? r->top : 0, nullptr, 0);
+    if (!t) LogOtherDc("FillRect", dc, CALLER_ADDRESS(), r ? r->left : 0, r ? r->top : 0, nullptr, 0);
     if (t && r) {
       LogRect("FillRect", t, r, br);
       if (Divert(t, GdiCall{GdiFn::kFillRect, dc, 0, 0, nullptr, 0, r, 0, br})) return 1;
@@ -285,7 +292,7 @@ int WINAPI HookFrameRect(HDC dc, const RECT* r, HBRUSH br) {
   {
     Lock lock;
     const Tracked* t = Find(dc, kFrameRect);
-    if (!t) LogOtherDc("FrameRect", dc, __builtin_return_address(0), r ? r->left : 0, r ? r->top : 0, nullptr, 0);
+    if (!t) LogOtherDc("FrameRect", dc, CALLER_ADDRESS(), r ? r->left : 0, r ? r->top : 0, nullptr, 0);
     if (t && r) {
       LogRect("FrameRect", t, r, br);
       if (Divert(t, GdiCall{GdiFn::kFrameRect, dc, 0, 0, nullptr, 0, r, 0, br})) return 1;
@@ -299,7 +306,7 @@ BOOL WINAPI HookLineTo(HDC dc, int x, int y) {
   {
     Lock lock;
     const Tracked* t = Find(dc, kLineTo);
-    if (!t) LogOtherDc("LineTo", dc, __builtin_return_address(0), x, y, nullptr, 0);
+    if (!t) LogOtherDc("LineTo", dc, CALLER_ADDRESS(), x, y, nullptr, 0);
     if (Divert(t, GdiCall{GdiFn::kLineTo, dc, x, y, nullptr, 0, nullptr, 0, nullptr})) {
       MoveToEx(dc, x, y, nullptr);
       return TRUE;
