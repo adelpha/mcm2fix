@@ -49,6 +49,7 @@ struct Item {
   int x = 0, y = 0;
   UINT fmt = 0, align = 0;
   int extra = 0;
+  int ascent = 0;  // the game font's, for lining up the baseline
   LOGFONTA font{};
   RECT box{};  // where its pixels are
   COLORREF colour = RGB(255, 255, 255);
@@ -206,6 +207,11 @@ class Capture : public GdiTarget {
     item.s.assign(call.s, static_cast<size_t>(std::max(len, 0)));
     GetObjectA(GetCurrentObject(dc, OBJ_FONT), sizeof(item.font), &item.font);
     item.extra = GetTextCharacterExtra(dc);
+    {
+      TEXTMETRICA tm{};
+      GetTextMetricsA(dc, &tm);
+      item.ascent = tm.tmAscent;
+    }
     if (call.fn == GdiFn::kTextOut) {
       SIZE ext{};
       GetTextExtentPoint32A(dc, item.s.c_str(), len, &ext);
@@ -367,6 +373,13 @@ void DrawPanel(Surface* rt, uintptr_t self, Panel& p) {
     SetTextColor(dc, it.colour);
     SetTextAlign(dc, it.align);
     SetTextCharacterExtra(dc, static_cast<int>(std::lround(it.extra * kx)));
+    // The scaled font can have a different share of space above its letters:
+    // put its baseline where the game's font had it, scaled.
+    TEXTMETRICA tm{};
+    GetTextMetricsA(dc, &tm);
+    const bool top_aligned = it.draw_text ? !(it.fmt & (DT_VCENTER | DT_BOTTOM))
+                                          : (it.align & (TA_BASELINE | TA_BOTTOM)) == TA_TOP;
+    const LONG dy = top_aligned ? static_cast<LONG>(std::lround(it.ascent * ky)) - tm.tmAscent : 0;
     GdiCall call{};
     call.dc = dc;
     call.s = it.s.c_str();
@@ -374,22 +387,30 @@ void DrawPanel(Surface* rt, uintptr_t self, Panel& p) {
     RECT r{};
     if (it.draw_text) {
       call.fn = GdiFn::kDrawText;
-      r = {X(it.rect.left), Y(it.rect.top), X(it.rect.right), Y(it.rect.bottom)};
+      r = {X(it.rect.left), Y(it.rect.top) + dy, X(it.rect.right), Y(it.rect.bottom) + dy};
       call.rect = &r;
       call.fmt = it.fmt;
     } else {
       call.fn = GdiFn::kTextOut;
       call.x = X(it.x);
-      call.y = Y(it.y);
+      call.y = Y(it.y) + dy;
     }
     if (GpuTextRun(call)) ++g_st.drawn;
   }
   SelectObject(dc, GetStockObject(SYSTEM_FONT));
   GpuTextEndDC(dc);
   static unsigned logged = 0;
-  if (++logged <= 5)
+  if (++logged <= 5) {
+    for (const Item& it : p.items) {
+      SelectObject(dc, ScaledFont(it.font, kx, ky));
+      TEXTMETRICA tm{};
+      GetTextMetricsA(dc, &tm);
+      Log("hud text:   \"%s\" %s %ld: game ascent %d, scaled font height %ld ascent %ld", it.s.c_str(),
+          it.font.lfFaceName, it.font.lfHeight, it.ascent, tm.tmHeight, tm.tmAscent);
+    }
     Log("hud text: panel %08x drawn at %.1f,%.1f, %.2f x %.2f screen pixels per texel, %u texts",
         static_cast<unsigned>(self), ox, oy, kx, ky, static_cast<unsigned>(p.items.size()));
+  }
 }
 
 }  // namespace
