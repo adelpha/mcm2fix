@@ -585,21 +585,55 @@ void Surface::Download() {
 }
 
 void Surface::InheritName(Surface* src) {
-  // The game loads textures into system-memory surfaces (which get the name)
-  // and copies them into the video-memory surface it draws with, so the name
-  // follows a whole-picture copy. A surface that now holds another picture
-  // starts afresh: new name (or none), and the next upload counts as the first.
+  // The game loads textures into system-memory surfaces and copies them
+  // (Device::Load or a whole-surface Blt) into the video-memory surface it
+  // draws with, so the name has to follow the copy. Two cases:
+  //  - Terrain and other cached textures reuse one staging surface and a pool
+  //    of drawn surfaces, so no surface is created for them: their name is
+  //    still pending from the texture's creation and is taken here.
+  //  - Otherwise the staging surface's own name is used, but only while it
+  //    still holds the picture it had at its first copy.
+  // A copy always starts the drawn surface afresh (the next upload is new).
   if (!(desc_.ddsCaps.dwCaps & DDSCAPS_TEXTURE) || src == this) return;
-  if (src->tex_name_ == tex_name_ && (tex_name_.empty() || tex_hash_ != 0)) return;
-  if (GetConfig().texture_log && !src->tex_name_.empty()) {
-    static unsigned n = 0;
-    if (++n <= 400)
-      Log("texture \"%s\" %lux%lu copied to drawn surface %p%s", src->tex_name_.c_str(), desc_.dwWidth,
-          desc_.dwHeight, static_cast<void*>(this), tex_name_.empty() ? "" : " (renamed)");
+  std::string name = TakePendingTextureName();
+  const char* how = "pending";
+  if (name.empty() && !src->tex_name_.empty()) {
+    const uint64_t h = src->RawHash();
+    if (!src->name_src_hash_) src->name_src_hash_ = h;
+    if (h == src->name_src_hash_) {
+      name = src->tex_name_;
+      how = "source";
+    } else {
+      if (GetConfig().texture_log) {
+        static unsigned n = 0;
+        if (++n <= 100)
+          Log("texture \"%s\": staging surface %p holds another picture now, its name no longer applies",
+              src->tex_name_.c_str(), static_cast<void*>(src));
+      }
+      src->tex_name_.clear();
+    }
   }
-  tex_name_ = src->tex_name_;
+  if (GetConfig().texture_log && (!name.empty() || !tex_name_.empty())) {
+    static unsigned n = 0;
+    if (++n <= 600)
+      Log("texture copy %lux%lu %p -> %p: name \"%s\" (%s), was \"%s\"", desc_.dwWidth, desc_.dwHeight,
+          static_cast<void*>(src), static_cast<void*>(this), name.c_str(), name.empty() ? "none" : how,
+          tex_name_.c_str());
+  }
+  tex_name_ = name;
   tex_hash_ = 0;
-  if (!tex_name_.empty()) uploads_ = 0;
+  uploads_ = 0;
+}
+
+uint64_t Surface::RawHash() const {
+  uint64_t h = 1469598103934665603ull;
+  const UINT row = Width() * (layout_.bpp ? layout_.bpp / 8 : 1);
+  for (UINT y = 0; y < Height(); ++y) {
+    const uint8_t* p = mem_.data() + static_cast<size_t>(y) * Pitch();
+    if (static_cast<size_t>(y) * Pitch() + row > mem_.size()) break;
+    for (UINT x = 0; x < row; ++x) h = (h ^ p[x]) * 1099511628211ull;
+  }
+  return h | 1;
 }
 
 void Surface::CopyFrom(Surface* src, const POINT* dst_pt, const RECT* src_rect) {
