@@ -2,9 +2,12 @@
 
 #include "config.h"
 
+#include <algorithm>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <string>
+#include <vector>
 
 namespace patch {
 
@@ -60,6 +63,26 @@ void* HookIat(uintptr_t slot, void* replacement) {
   return previous;
 }
 
+namespace {
+constexpr size_t kKeepLogs = 50;
+// Deletes the oldest mcm2fix-*.log files in dir so that at most
+// kKeepLogs - 1 remain (the new one makes kKeepLogs). Names sort by time.
+void PruneLogs(const char* dir) {
+  std::vector<std::string> names;
+  WIN32_FIND_DATAA fd{};
+  std::string pattern = std::string(dir) + "\\mcm2fix-*.log";
+  HANDLE h = FindFirstFileA(pattern.c_str(), &fd);
+  if (h == INVALID_HANDLE_VALUE) return;
+  do {
+    if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) names.push_back(fd.cFileName);
+  } while (FindNextFileA(h, &fd));
+  FindClose(h);
+  std::sort(names.begin(), names.end());
+  for (size_t i = 0; i + kKeepLogs - 1 < names.size(); ++i)
+    DeleteFileA((std::string(dir) + "\\" + names[i]).c_str());
+}
+}  // namespace
+
 void Log(const char* fmt, ...) {
   char msg[512];
   va_list ap;
@@ -82,7 +105,17 @@ void Log(const char* fmt, ...) {
     if (len > 0 && len < MAX_PATH - 40) {
       strncat_s(path, "\\Motocross Madness 2", _TRUNCATE);
       CreateDirectoryA(path, nullptr);
-      strncat_s(path, "\\mcm2fix.log", _TRUNCATE);
+      // One file per run: logs\mcm2fix-YYYYMMDD-HHMMSS.log, keeping the
+      // newest kKeepLogs.
+      strncat_s(path, "\\logs", _TRUNCATE);
+      CreateDirectoryA(path, nullptr);
+      PruneLogs(path);
+      SYSTEMTIME st;
+      GetLocalTime(&st);
+      char name[64];
+      std::snprintf(name, sizeof(name), "\\mcm2fix-%04u%02u%02u-%02u%02u%02u.log", st.wYear, st.wMonth,
+                    st.wDay, st.wHour, st.wMinute, st.wSecond);
+      strncat_s(path, name, _TRUNCATE);
       file = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS,
                          FILE_ATTRIBUTE_NORMAL, nullptr);
     }

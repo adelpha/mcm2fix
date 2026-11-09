@@ -29,7 +29,7 @@ What it does:
   DirectShow or Indeo codec is needed. A build without FFmpeg falls back to
   the game's DirectShow path (`src/dd/hook.cpp` keeps that working).
 
-The log is `%LOCALAPPDATA%\Motocross Madness 2\mcm2fix.log`.
+Each run writes its own log, `%LOCALAPPDATA%\Motocross Madness 2\logs\mcm2fix-YYYYMMDD-HHMMSS.log`; the newest 50 are kept.
 
 ## Building
 
@@ -64,7 +64,7 @@ All settings default to the values shown; set one to 0 or 1 to change it.
 
 ```ini
 [mcm2fix]
-Log=1          ; write %LOCALAPPDATA%\Motocross Madness 2\mcm2fix.log
+Log=1          ; write %LOCALAPPDATA%\Motocross Madness 2\logs\mcm2fix-<date>-<time>.log
 Startup=1      ; auto-pick the video card, skip the "detected a change" box
 Registry=1     ; keep settings in HKCU instead of HKLM
 Files=1        ; send file writes to %LOCALAPPDATA%\Motocross Madness 2
