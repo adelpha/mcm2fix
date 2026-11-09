@@ -813,7 +813,7 @@ void Surface::BltGpu(const RECT& dr, Surface* src, const RECT& sr, bool key, DWO
     GpuTextOcclude(d->Native(), &dr, "blt");
   // Text on the source goes with the copy (menus are put together on an
   // offscreen surface, and the cursor's background is patched from one).
-  const void* src_native = src->Gpu()->Native();
+  const void* src_native = src->GpuKey();
   if (GpuTextHasText(src_native)) GpuTextCopy(src_native, sr, d->Native(), d->width, d->height, dr, key);
   temp.Reset();
   MarkGpuWritten();
@@ -1232,7 +1232,10 @@ HDC Surface::TextDC() {
   if (!GpuTextActive() || layout_.depth || layout_.palette || !mips_.empty()) return nullptr;
   if (desc_.ddsCaps.dwCaps & DDSCAPS_TEXTURE) return nullptr;
   if (SyncOwner() != this || !Ready()) return nullptr;
-  GpuTexture* g = Gpu();  // uploads a newer CPU copy first
+  // Uploads a newer CPU copy first, but leaves a multisampled copy alone:
+  // the overlay does not need the pixels, and resolving in the middle of a
+  // frame would lose the antialiasing of what is drawn so far.
+  GpuTexture* g = GpuForDraw();
   if (!g->Valid() || !g->CanSample()) return nullptr;
   return GpuTextBeginDC(*g, Width(), Height());
 }

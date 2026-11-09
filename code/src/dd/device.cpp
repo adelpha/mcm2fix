@@ -724,7 +724,7 @@ HRESULT Device::GetRenderTarget(IDirectDrawSurface7** s) {
 HRESULT Device::Clear(DWORD count, D3DRECT* rects, DWORD flags, D3DCOLOR color, float z, DWORD) {
   DD_LOCK;
   if (rt_ && (flags & D3DCLEAR_TARGET)) {
-    const void* n = rt_->Gpu()->Native();
+    const void* n = rt_->GpuKey();
     if (GpuTextHasText(n)) {
       RECT vp{static_cast<LONG>(viewport_.dwX), static_cast<LONG>(viewport_.dwY),
               static_cast<LONG>(viewport_.dwX + viewport_.dwWidth), static_cast<LONG>(viewport_.dwY + viewport_.dwHeight)};
@@ -1396,7 +1396,7 @@ void Device::ApplyState(bool tl, bool depth_clip, bool has_depth) {
 // draw lands (screen-space vertices: their bounding box; 3D: the viewport).
 void Device::OccludeText(const Draw& d) {
   if (!rt_) return;
-  const void* n = rt_->Gpu()->Native();
+  const void* n = rt_->GpuKey();
   if (!GpuTextHasText(n)) return;
   RECT r{static_cast<LONG>(viewport_.dwX), static_cast<LONG>(viewport_.dwY),
          static_cast<LONG>(viewport_.dwX + viewport_.dwWidth), static_cast<LONG>(viewport_.dwY + viewport_.dwHeight)};

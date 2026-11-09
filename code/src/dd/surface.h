@@ -116,6 +116,9 @@ class Surface : public IDirectDrawSurface7 {
   // The same, for the device drawing 3D into it: leaves a multisampled
   // copy of a render target as it is (see msaa.h).
   GpuTexture* GpuForDraw();
+  // Identity of the GPU copy (what GPU text overlays are keyed by), with no
+  // side effects: asking Gpu() would resolve a multisampled render target.
+  const void* GpuKey() { return SyncOwner()->gpu_.Native(); }
   // The caller is about to draw into this surface on the GPU.
   void MarkGpuWritten();
   // Make the CPU copy current (reading back GPU changes).
