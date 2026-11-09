@@ -37,5 +37,8 @@ class HiresCarry {
 };
 // The 3D pipeline sampled a sharper copy (for the log's counts).
 void NoteHiresSample();
+// A texture with a sharp copy was drawn in screen space, `scale` screen
+// pixels per texel: the copies are remade at that scale.
+void NoteHudDraw(Surface* tex, float scale);
 
 }  // namespace dd

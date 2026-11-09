@@ -135,6 +135,16 @@ bool Refresh(Surface* t, const RECT* r) {
 
 bool Rebuild(Surface* t) { return Refresh(t, nullptr); }
 
+// The sharp copy exists at the size the current scale asks for.
+bool Fits(Surface* t) {
+  const GpuTexture* hi = t->Hires();
+  const float s = GpuTextTextureScale();
+  return hi->Valid() && hi->width == std::max<UINT>(1, static_cast<UINT>(std::lround(t->Width() * s))) &&
+         hi->height == std::max<UINT>(1, static_cast<UINT>(std::lround(t->Height() * s)));
+}
+
+bool Current(Surface* t) { return t->HiresCurrent() && Fits(t); }
+
 bool Active() { return GpuTextActive() && GetConfig().hud_text; }
 
 void __fastcall ConvertHook(uintptr_t self, void* edx, int first_row, int rows, DWORD colour) {
@@ -149,7 +159,7 @@ void __fastcall ConvertHook(uintptr_t self, void* edx, int first_row, int rows, 
   ++g_st.converts;
   // Bring the sharp copy up to date with the panel before the text goes in.
   t->Gpu();
-  if (!t->HiresCurrent()) Rebuild(t);
+  if (!Current(t)) Rebuild(t);
   // A pixel the game is about to turn into text: its colour afterwards is
   // the text colour (in the panel's own format, alpha included).
   const LONG y0 = std::max(first_row, 0);
@@ -164,7 +174,7 @@ void __fastcall ConvertHook(uintptr_t self, void* edx, int first_row, int rows, 
         break;
       }
     }
-  const bool was_current = t->HiresCurrent();
+  const bool was_current = Current(t);
   g_convert(self, edx, first_row, rows, colour);
   t->Gpu();
   const RECT r{0, y0, static_cast<LONG>(s->Width()), y1};
@@ -203,7 +213,7 @@ void __fastcall RestoreHook(uintptr_t self, void* edx, const RECT* rect) {
   Report();
   ++g_st.restores;
   t->Gpu();
-  const bool was_current = t->HiresCurrent();
+  const bool was_current = Current(t);
   g_restore(self, edx, rect);
   t->Gpu();
   if (!was_current) return;
@@ -225,17 +235,30 @@ bool PatchCall(uintptr_t site, uintptr_t original, const void* hook) {
 
 void NoteHiresSample() { ++g_st.samples; }
 
+void NoteHudDraw(Surface* tex, float scale) {
+  if (!Active() || !(scale > 0)) return;
+  // Quarter steps, at least 1 (text is never drawn smaller than the game's).
+  const float want = std::max(1.0f, std::min(4.0f, std::round(scale * 4.0f) / 4.0f));
+  const float now = GpuTextTextureScale();
+  if (std::fabs(want - now) < 0.01f) return;
+  static unsigned changes = 0;
+  if (++changes > 20) return;  // do not chase panels drawn at different sizes
+  Log("hud text: a %ux%u panel is drawn at %.2f screen pixels per texel; sharp copies now x%.2f (were x%.2f)",
+      tex->Width(), tex->Height(), scale, want, now);
+  GpuTextSetTextureScale(want);
+}
+
 HiresCarry::HiresCarry(Surface* src, const RECT& sr, Surface* dst, const RECT& dr, bool key)
     : src_(src), dst_(dst), sr_(sr), dr_(dr), key_(key) {
   if (!Active() || !src || src == dst || !src->Hires()->Valid()) {
     src_ = nullptr;
     return;
   }
-  dst_current_ = dst->HiresCurrent();
+  dst_current_ = Current(dst);
 }
 
 HiresCarry::~HiresCarry() {
-  if (!src_ || !src_->HiresCurrent()) return;
+  if (!src_ || !Current(src_)) return;
   Surface* d = dst_;
   if (!(d->Caps() & DDSCAPS_TEXTURE)) {
     LogOnce("hud text: a panel was copied to a %ux%u surface that is not a texture (caps %08lx); not sharp there",

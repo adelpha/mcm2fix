@@ -710,14 +710,16 @@ bool GpuTextRecordDC(HDC dc, const void* key, UINT w, UINT h) {
   r->w = w;
   r->h = h;
   r->native = key;
-  r->scale = TextureScale();
+  r->scale = GpuTextTextureScale();
   r->busy = true;
   GdiTrack(dc, r, w, h, "cpu copy + text recording");
   ++g_ts.dcs;
   return true;
 }
 
-float GpuTextTextureScale() { return TextureScale(); }
+float g_texture_scale = 0;  // set from what the game's draws show (hudtext.cpp)
+float GpuTextTextureScale() { return g_texture_scale > 0 ? g_texture_scale : TextureScale(); }
+void GpuTextSetTextureScale(float s) { g_texture_scale = s; }
 
 bool GpuTextBake(const void* key, const RECT& r, const GpuTexture& dst, const float rgba[4]) {
   if (!g_nonempty || !key || !dst.CanRender()) return false;

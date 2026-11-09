@@ -25,6 +25,7 @@ void GpuTextEndDC(HDC dc);
 // GpuTextEndDC ends it. false: not recording.
 bool GpuTextRecordDC(HDC dc, const void* key, UINT w, UINT h);
 float GpuTextTextureScale();
+void GpuTextSetTextureScale(float s);
 // Blend the overlay text of r (surface pixels) of `key`, tinted rgba
 // (0..1, straight), over the same place in `dst`, a copy of the surface
 // made at any size. false: no text there.
