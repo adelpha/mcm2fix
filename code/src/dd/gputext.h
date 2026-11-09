@@ -20,6 +20,15 @@ bool GpuTextActive();
 // whose GPU copy is `base` (w x h). Null if GPU text cannot be used.
 HDC GpuTextBeginDC(const GpuTexture& base, UINT w, UINT h);
 void GpuTextEndDC(HDC dc);
+// Record-only: GDI still draws on `dc` (a texture's CPU copy), and its text
+// is also drawn into an overlay keyed by `key` at GpuTextTextureScale().
+// GpuTextEndDC ends it. false: not recording.
+bool GpuTextRecordDC(HDC dc, const void* key, UINT w, UINT h);
+float GpuTextTextureScale();
+// Blend the overlay text of r (surface pixels) of `key`, tinted rgba
+// (0..1, straight), over the same place in `dst`, a copy of the surface
+// made at any size. false: no text there.
+bool GpuTextBake(const void* key, const RECT& r, const GpuTexture& dst, const float rgba[4]);
 
 // The game drew over r (surface pixels; null = everything) of `native`.
 void GpuTextOcclude(const void* native, const RECT* r, const char* why);

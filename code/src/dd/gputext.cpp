@@ -115,9 +115,25 @@ void ClearOverlay(Overlay& o, const RECT* r) {
     MarkEmpty(o);
 }
 
-Overlay* EnsureOverlay(const void* native, UINT bw, UINT bh) {
+// Overlay pixels per surface pixel for textures the game shows on screen at
+// about its 640x480 layout size (HUD panels): the screen's scale over that.
+float TextureScale() {
+  RECT rc{};
+  double s = 1.0;
+  if (B().hwnd && GetClientRect(B().hwnd, &rc) && rc.right > 0 && rc.bottom > 0)
+    s = std::min(rc.right / 640.0, rc.bottom / 480.0);
+  return static_cast<float>(std::max(1.0, std::min(s, 4.0)));
+}
+
+// scale 0: fitted to the window (FitSize).
+Overlay* EnsureOverlay(const void* native, UINT bw, UINT bh, float scale = 0) {
   UINT ow = 0, oh = 0;
-  FitSize(bw, bh, &ow, &oh);
+  if (scale > 0) {
+    ow = std::min<UINT>(static_cast<UINT>(bw * scale + 0.5f), 4096);
+    oh = std::min<UINT>(static_cast<UINT>(bh * scale + 0.5f), 4096);
+  } else {
+    FitSize(bw, bh, &ow, &oh);
+  }
   Overlay& o = g_overlays[native];
   if (o.tex.Valid() && o.tex.width == ow && o.tex.height == oh && o.base_w == bw && o.base_h == bh) return &o;
   MarkEmpty(o);
@@ -513,10 +529,19 @@ class Recorder : public GdiTarget {
   UINT w = 0, h = 0;
   bool busy = false;
   const void* native = nullptr;
+  // Record only: GDI still draws on the DC (a texture's CPU copy); the text
+  // is also drawn into an overlay at `scale`, for hudtext.cpp to use.
+  bool record_only = false;
+  float scale = 0;
 
   bool Draw(const GdiCall& call) override {
+    const bool drawn = Record(call);
+    return drawn && !record_only;
+  }
+
+  bool Record(const GdiCall& call) {
     ++g_ts.calls;
-    Overlay* o = EnsureOverlay(native, w, h);
+    Overlay* o = EnsureOverlay(native, w, h, scale);
     if (!o) {
       ++g_ts.fallbacks;
       return false;
@@ -542,7 +567,8 @@ class Recorder : public GdiTarget {
         else if (align & TA_RIGHT) left -= ext.cx;
         if ((align & TA_BASELINE) == TA_BASELINE) top -= tm.tmAscent;
         else if (align & TA_BOTTOM) top -= ext.cy;
-        if (align & TA_UPDATECP) MoveToEx(dc, (align & TA_RIGHT) ? x - ext.cx : x + ext.cx, y, nullptr);
+        if ((align & TA_UPDATECP) && !record_only)
+          MoveToEx(dc, (align & TA_RIGHT) ? x - ext.cx : x + ext.cx, y, nullptr);
         ReadClip(dc, c, nullptr);
         DrawLine(c, dc, left, top, call.s, call.len);
         TLog("TextOut %d,%d \"%.*s\"", left, top, std::min(call.len, 40), call.s);
@@ -617,7 +643,7 @@ HDC GpuTextBeginDC(const GpuTexture& base, UINT w, UINT h) {
   Report();
   Recorder* r = nullptr;
   for (auto& rec : g_recorders)
-    if (!rec->busy && rec->w == w && rec->h == h) {
+    if (!rec->busy && !rec->record_only && rec->w == w && rec->h == h) {
       r = rec.get();
       break;
     }
@@ -667,10 +693,70 @@ HDC GpuTextBeginDC(const GpuTexture& base, UINT w, UINT h) {
   return dc;
 }
 
+bool GpuTextRecordDC(HDC dc, const void* key, UINT w, UINT h) {
+  if (!GpuTextActive() || !dc || !key || !w || !h) return false;
+  Recorder* r = nullptr;
+  for (auto& rec : g_recorders)
+    if (!rec->busy && rec->record_only) {
+      r = rec.get();
+      break;
+    }
+  if (!r) {
+    g_recorders.push_back(std::make_unique<Recorder>());
+    r = g_recorders.back().get();
+    r->record_only = true;
+  }
+  r->dc = dc;
+  r->w = w;
+  r->h = h;
+  r->native = key;
+  r->scale = TextureScale();
+  r->busy = true;
+  GdiTrack(dc, r, w, h, "cpu copy + text recording");
+  ++g_ts.dcs;
+  return true;
+}
+
+float GpuTextTextureScale() { return TextureScale(); }
+
+bool GpuTextBake(const void* key, const RECT& r, const GpuTexture& dst, const float rgba[4]) {
+  if (!g_nonempty || !key || !dst.CanRender()) return false;
+  auto it = g_overlays.find(key);
+  if (it == g_overlays.end() || it->second.empty || !it->second.tex.Valid()) return false;
+  const Overlay& o = it->second;
+  BlitParams p;
+  p.SetDst(dst);
+  p.SetSrc(o.tex);
+  p.src_rect = ScaleRect(o, r);
+  // The destination is the sharper copy made at the overlay's scale.
+  const float kx = static_cast<float>(dst.width) / o.tex.width, ky = static_cast<float>(dst.height) / o.tex.height;
+  p.dst_rect = {static_cast<LONG>(std::lround(p.src_rect.left * kx)), static_cast<LONG>(std::lround(p.src_rect.top * ky)),
+                static_cast<LONG>(std::lround(p.src_rect.right * kx)),
+                static_cast<LONG>(std::lround(p.src_rect.bottom * ky))};
+  p.src_rect.left = std::max<LONG>(p.src_rect.left, 0);
+  p.src_rect.top = std::max<LONG>(p.src_rect.top, 0);
+  p.src_rect.right = std::min<LONG>(p.src_rect.right, static_cast<LONG>(o.tex.width));
+  p.src_rect.bottom = std::min<LONG>(p.src_rect.bottom, static_cast<LONG>(o.tex.height));
+  if (p.src_rect.left >= p.src_rect.right || p.src_rect.top >= p.src_rect.bottom) return false;
+  p.linear = std::fabs(kx - 1) > 1e-4f || std::fabs(ky - 1) > 1e-4f;
+  // Premultiplied tint: the overlay is white text with coverage in alpha.
+  p.fill[0] = rgba[0] * rgba[3];
+  p.fill[1] = rgba[1] * rgba[3];
+  p.fill[2] = rgba[2] * rgba[3];
+  p.fill[3] = rgba[3];
+  p.tint = true;
+  p.premul = true;
+  p.opaque = false;
+  Blit(p);
+  ++g_ts.composites;
+  TLog("baked text %ld,%ld-%ld,%ld into a %ux%u copy", r.left, r.top, r.right, r.bottom, dst.width, dst.height);
+  return true;
+}
+
 void GpuTextEndDC(HDC dc) {
   GdiUntrack(dc);
   for (auto& rec : g_recorders)
-    if (rec->dc == dc) rec->busy = false;
+    if (rec->busy && rec->dc == dc) rec->busy = false;
 }
 
 void GpuTextOcclude(const void* native, const RECT* r, const char* why) {

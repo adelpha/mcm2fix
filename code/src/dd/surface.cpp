@@ -2,6 +2,7 @@
 #include "surface.h"
 #include "gdihook.h"
 #include "gputext.h"
+#include "hudtext.h"
 
 #include <algorithm>
 #include <cstring>
@@ -252,6 +253,8 @@ Surface::~Surface() {
   gpu_.Reset();
   replaced_.Reset();
   keyed_.Reset();
+  hires_.Reset();
+  GpuTextForget(this);  // text recorded on the CPU copy (hudtext.cpp)
   if (!root_ && dd_ && DirectDraw::Current() == dd_) dd_->ForgetSurface(this);
 }
 
@@ -451,7 +454,15 @@ GpuTexture* Surface::GpuForDraw() {
 void Surface::MarkGpuWritten() {
   Surface* o = SyncOwner();
   o->sync_ = kGpuNewer;
+  ++o->content_serial_;
   ++uniqueness_;
+}
+
+bool Surface::CpuPixelBGRA(UINT x, UINT y, uint8_t out[4]) {
+  if (x >= Width() || y >= Height() || layout_.depth || layout_.palette || mem_.empty()) return false;
+  SyncToCpu("pixel read");
+  layout_.ToBGRA(ReadPx(Pixel(static_cast<LONG>(x), static_cast<LONG>(y)), layout_.bpp), out);
+  return true;
 }
 
 void Surface::SyncToCpu(const char* why) {
@@ -543,6 +554,7 @@ bool Surface::LevelBGRA(UINT level, std::vector<uint8_t>& bgra, UINT& w, UINT& h
 void Surface::Upload() {
   if (!gpu_.Valid() || layout_.depth) return;
   ++uploads_;
+  ++content_serial_;
   GpuTextOcclude(gpu_.Native(), nullptr, "cpu write");
   std::vector<uint8_t> bgra;
   for (UINT level = 0; level < gpu_.levels; ++level) {
@@ -603,6 +615,7 @@ void Surface::DeviceLost9() {
   unsigned dropped = 0, lost = 0;
   for (Surface* s : AllSurfaces()) {
     s->keyed_.Reset();
+    s->hires_.Reset();
     if (s->gpu_.pool_default) {
       if (s->sync_ == kGpuNewer) ++lost;
       s->gpu_.Reset();
@@ -648,6 +661,10 @@ void Surface::MatchReplacement(const uint8_t* bgra, UINT w, UINT h) {
 const GpuTexture* Surface::SampleTex() {
   GpuTexture* g = Gpu();
   Surface* o = SyncOwner();
+  if (o->HiresCurrent()) {
+    NoteHiresSample();
+    return &o->hires_;
+  }
   return o->replaced_.Valid() ? &o->replaced_ : g;
 }
 
@@ -1206,7 +1223,12 @@ HRESULT Surface::GetDC(HDC* out) {
   std::memcpy(dib_bits_, mem_.data(), mem_.size());
   old_bitmap_ = SelectObject(dc_, dib_);
   *out = dc_;
-  GdiTrack(dc_, nullptr, Width(), Height(), "cpu copy");
+  // Textures: GDI draws on the CPU copy as usual, and the text is also
+  // recorded at screen resolution, for the game's HUD panels that turn GDI
+  // text into texture pixels (hudtext.cpp).
+  if (!(GpuTextActive() && (Caps() & DDSCAPS_TEXTURE) && !layout_.palette && mips_.empty() && level_ == 0 &&
+        GpuTextRecordDC(dc_, this, Width(), Height())))
+    GdiTrack(dc_, nullptr, Width(), Height(), "cpu copy");
   return DD_OK;
 }
 
@@ -1228,6 +1250,7 @@ HRESULT Surface::ReleaseDC(HDC dc) {
     if (IsVisible()) PresentFront(0);
     return DD_OK;
   }
+  GpuTextEndDC(dc);
   GdiFlush();
   std::memcpy(mem_.data(), dib_bits_, mem_.size());
   SelectObject(dc_, old_bitmap_);

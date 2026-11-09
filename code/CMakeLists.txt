@@ -35,6 +35,7 @@ add_library(mcm2fix SHARED
   src/dd/device.cpp
   src/dd/gdihook.cpp
   src/dd/gputext.cpp
+  src/dd/hudtext.cpp
   src/dd/hook.cpp
   src/dd/msaa.cpp
   src/dd/texreplace.cpp
