@@ -33,6 +33,9 @@ void DumpTexture(uint64_t hash, const uint8_t* bgra, UINT w, UINT h);
 // about to create; Surface::Create takes it for the next texture surface.
 void SetPendingTextureName(const char* name);  // nullptr clears
 std::string TakePendingTextureName();
+// Name of the texture being created, for the next copy into a drawn surface.
+void SetCopyTextureName(const char* name);  // nullptr clears
+std::string TakeCopyTextureName();
 std::string TextureKey(const char* name);  // "Riders\Rider01.tga" -> "riders_rider01"
 
 bool LoadReplacementByName(const std::string& key, GpuTexture& out);

@@ -589,14 +589,16 @@ void Surface::InheritName(Surface* src) {
   // (Device::Load or a whole-surface Blt) into the video-memory surface it
   // draws with, so the name has to follow the copy. Two cases:
   //  - Terrain and other cached textures reuse one staging surface and a pool
-  //    of drawn surfaces, so no surface is created for them: their name is
-  //    still pending from the texture's creation and is taken here.
+  //    of drawn surfaces, so no surface is created for them: the name of the
+  //    texture just created waits for its copy (TakeCopyTextureName).
   //  - Otherwise the staging surface's own name is used, but only while it
   //    still holds the picture it had at its first copy.
-  // A copy always starts the drawn surface afresh (the next upload is new).
+  // A named copy starts the drawn surface afresh (the next upload is new).
+  // Unnamed copies (shadows, every frame) leave the upload count alone so
+  // streaming textures stay out of dumping and replacement.
   if (!(desc_.ddsCaps.dwCaps & DDSCAPS_TEXTURE) || src == this) return;
-  std::string name = TakePendingTextureName();
-  const char* how = "pending";
+  std::string name = TakeCopyTextureName();
+  const char* how = "created";
   if (name.empty() && !src->tex_name_.empty()) {
     const uint64_t h = src->RawHash();
     if (!src->name_src_hash_) src->name_src_hash_ = h;
@@ -613,7 +615,8 @@ void Surface::InheritName(Surface* src) {
       src->tex_name_.clear();
     }
   }
-  if (GetConfig().texture_log && (!name.empty() || !tex_name_.empty())) {
+  if (name.empty() && tex_name_.empty()) return;  // unnamed before and after: nothing changes
+  if (GetConfig().texture_log) {
     static unsigned n = 0;
     if (++n <= 600)
       Log("texture copy %lux%lu %p -> %p: name \"%s\" (%s), was \"%s\"", desc_.dwWidth, desc_.dwHeight,
@@ -622,7 +625,7 @@ void Surface::InheritName(Surface* src) {
   }
   tex_name_ = name;
   tex_hash_ = 0;
-  uploads_ = 0;
+  if (!name.empty()) uploads_ = 0;
 }
 
 uint64_t Surface::RawHash() const {

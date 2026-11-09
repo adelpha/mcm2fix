@@ -450,6 +450,10 @@ int __stdcall OnFormatChosen(int id, uintptr_t tex, uintptr_t esp) {
   // only used for texture surfaces anyway.
   g_next_name = dd::TextureKey(tex_name.c_str());
   dd::SetPendingTextureName(nullptr);
+  // Cached textures (terrain) create no surface: the game fills a shared
+  // staging surface and copies it into a pooled drawn surface, so the name
+  // also waits for that copy.
+  dd::SetCopyTextureName(g_next_name.empty() ? nullptr : g_next_name.c_str());
   ++g_count;
   ++g_pairs[{id, out}];
   if (GetConfig().texture_log && g_count <= kDetailed) {

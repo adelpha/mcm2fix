@@ -230,10 +230,19 @@ bool WritePng(const std::wstring& path, const uint8_t* bgra, UINT w, UINT h) {
 }
 
 std::string g_pending_name;
+std::string g_copy_name;
 
 }  // namespace
 
 void SetPendingTextureName(const char* name) { g_pending_name = name ? name : ""; }
+
+void SetCopyTextureName(const char* name) { g_copy_name = name ? name : ""; }
+
+std::string TakeCopyTextureName() {
+  std::string s;
+  s.swap(g_copy_name);
+  return s;
+}
 
 std::string TakePendingTextureName() {
   std::string s;
