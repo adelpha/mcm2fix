@@ -186,6 +186,7 @@ void MsaaRelease(const void* tex) {
     B().ctx->ResolveSubresource(static_cast<ID3D11Texture2D*>(const_cast<void*>(g.owner)), 0,
                                 g.color, 0, DXGI_FORMAT_B8G8R8A8_UNORM);
   if (g.dirty && g.rt9 && g.owner_surf9) {
+    EndScene9();
     HRESULT hr = B().dev9->StretchRect(g.rt9, nullptr, g.owner_surf9, nullptr, D3DTEXF_NONE);
     if (FAILED(hr)) LogOnce("MSAA resolve (StretchRect) failed %08lx", hr);
   }

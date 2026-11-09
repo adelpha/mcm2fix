@@ -463,6 +463,7 @@ void Device::Submit9(const Draw& d) {
   ApplyState9(mode, has_depth);
 
   dev->SetFVF(mode == 1 ? kFvfScreen : kFvfWorld);
+  BeginScene9();
   HRESULT hr;
   if (d.idx) {
     hr = dev->DrawIndexedPrimitiveUP(static_cast<D3DPRIMITIVETYPE>(d.prim), 0, d.count, prims, d.idx,

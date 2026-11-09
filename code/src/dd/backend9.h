@@ -48,5 +48,10 @@ unsigned ResetCount9();
 const D3DCAPS9& Caps9();
 // 1x1 white texture (stages that use a texture but have none).
 IDirect3DTexture9* WhiteTex9();
+// Direct3D 9 only draws between BeginScene and EndScene (Wine does not
+// check, real drivers return D3DERR_INVALIDCALL). Draws open a scene when
+// none is open; copies, GetDC, readbacks, Reset and Present close it.
+void BeginScene9();
+void EndScene9();
 
 }  // namespace dd

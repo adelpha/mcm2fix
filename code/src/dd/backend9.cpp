@@ -35,6 +35,7 @@ HWND g_dummy = nullptr;  // hidden window the device is created on
 D3DPRESENT_PARAMETERS g_pp{};
 DWORD g_behavior = 0;
 bool g_lost = false;
+bool g_in_scene = false;
 unsigned g_resets = 0;
 
 // Two swap chains on the game window: Present waits for the refresh on one
@@ -172,6 +173,7 @@ bool TryRecover() {
   for (auto& kv : g_depth_clear_rt) SafeRelease(kv.second);
   g_depth_clear_rt.clear();
   Surface::DeviceLost9();
+  EndScene9();
   hr = b.dev9->Reset(&g_pp);
   if (FAILED(hr)) {
     LogOnce("Reset failed %08lx (will retry)", hr);
@@ -222,6 +224,7 @@ bool EnsureChains() {
   // Black straight away.
   IDirect3DSurface9* back = nullptr;
   if (SUCCEEDED(g_sc.now->GetBackBuffer(0, D3DBACKBUFFER_TYPE_MONO, &back))) {
+    EndScene9();
     b.dev9->ColorFill(back, nullptr, D3DCOLOR_XRGB(0, 0, 0));
     back->Release();
     g_sc.now->Present(nullptr, nullptr, nullptr, nullptr, 0);
@@ -501,6 +504,7 @@ void UploadLevel9(GpuTexture& t, UINT level, const uint8_t* bgra, UINT w, UINT h
       std::memcpy(static_cast<uint8_t*>(lr.pBits) + static_cast<size_t>(y) * lr.Pitch,
                   bgra + static_cast<size_t>(y) * w * 4, static_cast<size_t>(w) * 4);
     stage->UnlockRect();
+    EndScene9();
     HRESULT hr = B().dev9->UpdateSurface(stage, nullptr, dst, nullptr);
     if (FAILED(hr)) {
       // Fallback: a managed copy drawn into the target.
@@ -544,6 +548,7 @@ bool DownloadTop9(GpuTexture& t, void (*row)(void*, UINT, const uint8_t*), void*
   if (!t.surf9) return false;
   IDirect3DSurface9* stage = Staging(t.width, t.height, static_cast<D3DFORMAT>(t.fmt9));
   if (!stage) return false;
+  EndScene9();
   HRESULT hr = B().dev9->GetRenderTargetData(t.surf9, stage);
   if (FAILED(hr)) {
     LogOnce("GetRenderTargetData %ux%u failed %08lx", t.width, t.height, hr);
@@ -562,6 +567,7 @@ bool CopyTexture9(GpuTexture& dst, const GpuTexture& src) {
   if (!CreateGpuTexture9(dst, src.width, src.height, 1, true, false, src.fmt9 != D3DFMT_X8R8G8B8))
     return false;
   if (src.surf9 && src.rt) {
+    EndScene9();
     HRESULT hr = B().dev9->StretchRect(src.surf9, nullptr, dst.surf9, nullptr, D3DTEXF_NONE);
     if (FAILED(hr)) {
       LogOnce("StretchRect copy failed %08lx", hr);
@@ -603,6 +609,7 @@ bool GpuGetDC9(GpuTexture& t, HDC* dc) {
     }
     cur->Release();
   }
+  EndScene9();
   HRESULT hr = t.surf9->GetDC(dc);
   if (FAILED(hr) || !*dc) {
     ++g_stats.gdi_fail;
@@ -618,6 +625,24 @@ bool GpuGetDC9(GpuTexture& t, HDC* dc) {
 
 void GpuReleaseDC9(GpuTexture& t, HDC dc) {
   if (t.surf9 && dc) t.surf9->ReleaseDC(dc);
+}
+
+// ---------------------------------------------------------------------- scene
+
+void BeginScene9() {
+  if (g_in_scene || !B().dev9) return;
+  HRESULT hr = B().dev9->BeginScene();
+  if (FAILED(hr)) {
+    LogOnce("BeginScene failed %08lx", hr);
+    return;
+  }
+  g_in_scene = true;
+}
+
+void EndScene9() {
+  if (!g_in_scene) return;
+  g_in_scene = false;
+  if (B().dev9) B().dev9->EndScene();
 }
 
 // ----------------------------------------------------------------------- blit
@@ -702,6 +727,7 @@ void Blit9(const BlitParams& p) {
                   {x0, y1, 0, 1, color, u0, v1},
                   {x1, y1, 0, 1, color, u1, v1}};
   d->SetFVF(kFvf9XYZRHW | kFvf9Diffuse | kFvf9Tex1);
+  BeginScene9();
   HRESULT hr = d->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, v, sizeof(V));
   if (FAILED(hr)) LogOnce("blit draw failed %08lx", hr);
 }
@@ -720,6 +746,7 @@ void Present9(const GpuTexture& src, UINT src_w, UINT src_h, UINT interval) {
   IDirect3DSwapChain9* sc = interval ? g_sc.vsync : g_sc.now;
   IDirect3DSurface9* back = nullptr;
   if (FAILED(sc->GetBackBuffer(0, D3DBACKBUFFER_TYPE_MONO, &back)) || !back) return;
+  EndScene9();
   b.dev9->ColorFill(back, nullptr, D3DCOLOR_XRGB(0, 0, 0));
   if (src.tex9 && src_w && src_h) {
     // Fit inside the window, keeping the game's aspect ratio.
@@ -742,6 +769,7 @@ void Present9(const GpuTexture& src, UINT src_w, UINT src_h, UINT interval) {
   }
   DrawRendererLabel(nullptr, back, g_sc.w, g_sc.h);
   back->Release();
+  EndScene9();
   HRESULT hr = sc->Present(nullptr, nullptr, nullptr, nullptr, 0);
   if (hr == D3DERR_DEVICELOST) {
     if (!g_lost) Log("device lost (Present)");
