@@ -19,6 +19,7 @@ void ApplyFramePacing();
 void ApplyDetailFixes();
 void ApplyArrowFix();
 void ApplyRestartFixes();
+void ApplyHelpFix();
 void ApplyTextureFixes();
 void LogTextureSummary();
 
@@ -63,6 +64,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
       ApplyDetailFixes();
       ApplyArrowFix();
       ApplyRestartFixes();
+      ApplyHelpFix();
       ApplyTextureFixes();
       video::ApplyVideoPlayer();
       if (c.activate_log) ApplyDiagnostics();
