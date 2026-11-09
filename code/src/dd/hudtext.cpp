@@ -31,7 +31,7 @@ const ConvertFn g_convert = reinterpret_cast<ConvertFn>(kConvert);
 const RestoreFn g_restore = reinterpret_cast<RestoreFn>(kRestore);
 
 struct Stats {
-  unsigned converts = 0, baked = 0, no_text = 0, restores = 0, rebuilds = 0, samples = 0, skipped = 0;
+  unsigned converts = 0, baked = 0, no_text = 0, restores = 0, rebuilds = 0, samples = 0, skipped = 0, carries = 0;
 } g_st;
 DWORD g_last_report = 0;
 
@@ -42,8 +42,8 @@ void Report() {
   g_last_report = now;
   if (!g_st.converts && !g_st.restores && !g_st.samples) return;
   Log("hud text 5s: %u text conversions (%u drawn sharp, %u without text), %u wipes, %u full rebuilds, "
-      "%u draws with a sharp panel, %u skipped",
-      g_st.converts, g_st.baked, g_st.no_text, g_st.restores, g_st.rebuilds, g_st.samples, g_st.skipped);
+      "%u copies to other textures, %u draws with a sharp panel, %u skipped",
+      g_st.converts, g_st.baked, g_st.no_text, g_st.restores, g_st.rebuilds, g_st.carries, g_st.samples, g_st.skipped);
   g_st = Stats{};
 }
 
@@ -224,6 +224,52 @@ bool PatchCall(uintptr_t site, uintptr_t original, const void* hook) {
 }  // namespace
 
 void NoteHiresSample() { ++g_st.samples; }
+
+HiresCarry::HiresCarry(Surface* src, const RECT& sr, Surface* dst, const RECT& dr, bool key)
+    : src_(src), dst_(dst), sr_(sr), dr_(dr), key_(key) {
+  if (!Active() || !src || src == dst || !src->Hires()->Valid()) {
+    src_ = nullptr;
+    return;
+  }
+  dst_current_ = dst->HiresCurrent();
+}
+
+HiresCarry::~HiresCarry() {
+  if (!src_ || !src_->HiresCurrent()) return;
+  Surface* d = dst_;
+  if (!(d->Caps() & DDSCAPS_TEXTURE)) {
+    LogOnce("hud text: a panel was copied to a %ux%u surface that is not a texture (caps %08lx); not sharp there",
+            d->Width(), d->Height(), d->Caps());
+    return;
+  }
+  d->Gpu();
+  if (!dst_current_ && !Refresh(d, nullptr)) return;
+  GpuTexture* sh = src_->Hires();
+  GpuTexture* dh = d->Hires();
+  if (!dh->Valid() || !dh->CanRender()) return;
+  const float skx = static_cast<float>(sh->width) / src_->Width(), sky = static_cast<float>(sh->height) / src_->Height();
+  const float dkx = static_cast<float>(dh->width) / d->Width(), dky = static_cast<float>(dh->height) / d->Height();
+  BlitParams p;
+  p.SetDst(*dh);
+  p.dst_rect = {static_cast<LONG>(std::lround(dr_.left * dkx)), static_cast<LONG>(std::lround(dr_.top * dky)),
+                static_cast<LONG>(std::lround(dr_.right * dkx)), static_cast<LONG>(std::lround(dr_.bottom * dky))};
+  p.SetSrc(*sh);
+  p.src_rect = {static_cast<LONG>(std::lround(sr_.left * skx)), static_cast<LONG>(std::lround(sr_.top * sky)),
+                static_cast<LONG>(std::lround(sr_.right * skx)), static_cast<LONG>(std::lround(sr_.bottom * sky))};
+  p.linear = (p.dst_rect.right - p.dst_rect.left) != (p.src_rect.right - p.src_rect.left) ||
+             (p.dst_rect.bottom - p.dst_rect.top) != (p.src_rect.bottom - p.src_rect.top);
+  // A colour-keyed copy leaves the destination where the key is: blend.
+  p.premul = key_;
+  p.opaque = false;
+  if (p.dst_rect.left >= p.dst_rect.right || p.dst_rect.top >= p.dst_rect.bottom) return;
+  Blit(p);
+  d->SetHiresSerial(d->ContentSerial());
+  ++g_st.carries;
+  static unsigned logged = 0;
+  if (++logged <= 5)
+    Log("hud text: panel %ux%u copied to a %ux%u texture (caps %08lx)%s; sharp copy carried along", src_->Width(),
+        src_->Height(), d->Width(), d->Height(), d->Caps(), key_ ? " with its colour key" : "");
+}
 
 void InstallHudTextHooks() {
   if (!GetConfig().gpu_text || !GetConfig().hud_text) return;

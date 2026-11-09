@@ -752,19 +752,8 @@ uint64_t Surface::RawHash() const {
   return h | 1;
 }
 
-// A surface with a sharper copy (hudtext.cpp) copied somewhere: the copy
-// does not go along (yet). Logged to find where the game shows it.
-static void NoteHiresCopy(Surface* src, Surface* dst, const char* how) {
-  if (!src || !src->HiresCurrent()) return;
-  static unsigned n = 0;
-  if (++n <= 10)
-    Log("hud text: panel %ux%u copied by %s to a %ux%u surface (caps %08lx); the sharp copy is not used there",
-        src->Width(), src->Height(), how, dst->Width(), dst->Height(), dst->Caps());
-}
-
 void Surface::CopyFrom(Surface* src, const POINT* dst_pt, const RECT* src_rect) {
   // Device::Load: copy every level both chains have.
-  NoteHiresCopy(src, this, "Device::Load");
   Surface* s = src;
   Surface* d = this;
   RECT sr = src_rect ? *src_rect : RECT{0, 0, static_cast<LONG>(src->Width()), static_cast<LONG>(src->Height())};
@@ -806,7 +795,7 @@ bool Surface::UseGpuFor(Surface* src) {
 }
 
 void Surface::BltGpu(const RECT& dr, Surface* src, const RECT& sr, bool key, DWORD key_value) {
-  NoteHiresCopy(src, this, "a GPU blit");
+  HiresCarry carry(src, sr, this, dr, key);
   GpuTexture* d = Gpu();
   const GpuTexture* s = nullptr;
   if (key && IsD3D9()) {
@@ -862,7 +851,7 @@ void Surface::BltGpu(const RECT& dr, Surface* src, const RECT& sr, bool key, DWO
 }
 
 void Surface::BltCpu(const RECT& dr, Surface* src, const RECT& sr, bool key, DWORD key_value) {
-  if (src != this) NoteHiresCopy(src, this, "a CPU blit");
+  HiresCarry carry(src, sr, this, dr, key);
   src->SyncToCpu("blt-src");
   SyncToCpu("blt-dst");
   std::vector<uint8_t> copy;

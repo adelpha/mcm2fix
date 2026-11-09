@@ -13,10 +13,28 @@
 // copy in step: the wipe is copied over from the panel, and the converted
 // text is drawn with antialiased glyphs in the colour the game used.
 #pragma once
+#include <windows.h>
 
 namespace dd {
 
+class Surface;
+
 void InstallHudTextHooks();
+// A blit from a panel with a sharper copy: the copy goes along to the
+// destination texture once the blit is done (the game copies its panels
+// into the video-memory textures it draws with).
+class HiresCarry {
+ public:
+  HiresCarry(Surface* src, const RECT& sr, Surface* dst, const RECT& dr, bool key);
+  ~HiresCarry();
+
+ private:
+  Surface* src_;
+  Surface* dst_;
+  RECT sr_, dr_;
+  bool key_;
+  bool dst_current_ = false;
+};
 // The 3D pipeline sampled a sharper copy (for the log's counts).
 void NoteHiresSample();
 
