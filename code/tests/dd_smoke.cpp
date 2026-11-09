@@ -284,6 +284,10 @@ int main(int argc, char** argv) {
       HBRUSH red = CreateSolidBrush(RGB(255, 0, 0));
       RECT fr{560, 400, 600, 430};
       FillRect(dc, &fr, red);
+      // A second, far-away call: pixels between the two must not be
+      // copied back (they were never fetched from the GPU).
+      RECT fr2{4, 4, 8, 8};
+      FillRect(dc, &fr2, red);
       DeleteObject(red);
       back->ReleaseDC(dc);
     }

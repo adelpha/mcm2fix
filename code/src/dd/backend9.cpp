@@ -625,7 +625,8 @@ struct LazyDC : GdiTarget {
   HGDIOBJ old = nullptr;
   uint8_t* bits = nullptr;
   std::vector<uint8_t> loaded;
-  std::vector<RECT> dirty;
+  std::vector<uint8_t> dirty;  // tiles a call may have drawn on (always loaded)
+  bool any_dirty = false;
 
   ~LazyDC() override {
     if (dc) {
@@ -656,12 +657,14 @@ struct LazyDC : GdiTarget {
     bits = static_cast<uint8_t*>(p);
     old = SelectObject(dc, dib);
     loaded.assign(static_cast<size_t>(tw) * th, 0);
+    dirty.assign(static_cast<size_t>(tw) * th, 0);
     return true;
   }
 
   void Begin() {
     std::fill(loaded.begin(), loaded.end(), 0);
-    dirty.clear();
+    std::fill(dirty.begin(), dirty.end(), 0);
+    any_dirty = false;
     // A fresh DC state for every session, as IDirect3DSurface9::GetDC gives.
     SelectClipRgn(dc, nullptr);
     SetTextColor(dc, RGB(0, 0, 0));
@@ -743,49 +746,52 @@ struct LazyDC : GdiTarget {
     if (bx0 < bx1) {
       RECT f{static_cast<LONG>(bx0 * kGdiTile), static_cast<LONG>(by0 * kGdiTile),
              static_cast<LONG>(std::min(bx1 * kGdiTile, w)), static_cast<LONG>(std::min(by1 * kGdiTile, h))};
-      if (!Fetch(f)) LogOnce("GDI fetch of %ld,%ld-%ld,%ld failed", f.left, f.top, f.right, f.bottom);
+      if (!Fetch(f)) {
+        LogOnce("GDI fetch of %ld,%ld-%ld,%ld failed", f.left, f.top, f.right, f.bottom);
+        return;  // never copy back pixels that were not fetched
+      }
     }
-    dirty.push_back(r);
+    for (UINT ty = static_cast<UINT>(r.top) / kGdiTile; ty * kGdiTile < static_cast<UINT>(r.bottom); ++ty)
+      for (UINT tx = static_cast<UINT>(r.left) / kGdiTile; tx * kGdiTile < static_cast<UINT>(r.right); ++tx)
+        dirty[static_cast<size_t>(ty) * tw + tx] = 1;
+    any_dirty = true;
   }
 
   void End() {
     GdiFlush();
-    if (dirty.empty()) return;
-    // Merge overlapping rectangles.
-    for (bool merged = true; merged;) {
-      merged = false;
-      for (size_t i = 0; i < dirty.size() && !merged; ++i)
-        for (size_t j = i + 1; j < dirty.size(); ++j) {
-          RECT u;
-          if (dirty[i].left <= dirty[j].right && dirty[j].left <= dirty[i].right && dirty[i].top <= dirty[j].bottom &&
-              dirty[j].top <= dirty[i].bottom) {
-            UnionRect(&u, &dirty[i], &dirty[j]);
-            dirty[i] = u;
-            dirty.erase(dirty.begin() + static_cast<std::ptrdiff_t>(j));
-            merged = true;
-            break;
-          }
-        }
-    }
+    if (!any_dirty) return;
     IDirect3DSurface9* stage = Staging(w, h, D3DFMT_X8R8G8B8);
     if (!stage) return;
     EndScene9();
-    for (const RECT& r : dirty) {
-      D3DLOCKED_RECT lr{};
-      if (FAILED(stage->LockRect(&lr, &r, 0))) continue;
-      const UINT rw = static_cast<UINT>(r.right - r.left);
-      for (LONG y = r.top; y < r.bottom; ++y)
-        std::memcpy(static_cast<uint8_t*>(lr.pBits) + static_cast<size_t>(y - r.top) * lr.Pitch,
-                    bits + (static_cast<size_t>(y) * w + static_cast<size_t>(r.left)) * 4, rw * 4);
-      stage->UnlockRect();
-      POINT pt{r.left, r.top};
-      HRESULT hr = B().dev9->UpdateSurface(stage, &r, surf, &pt);
-      if (FAILED(hr)) {
-        LogOnce("GDI UpdateSurface failed %08lx", hr);
-        continue;
+    // Copy back runs of touched tiles, one rectangle per run in a tile row.
+    // Only touched tiles: they are the only ones known to be fetched.
+    for (UINT ty = 0; ty < th; ++ty) {
+      for (UINT tx = 0; tx < tw;) {
+        if (!dirty[static_cast<size_t>(ty) * tw + tx]) {
+          ++tx;
+          continue;
+        }
+        UINT end = tx;
+        while (end < tw && dirty[static_cast<size_t>(ty) * tw + end]) ++end;
+        RECT r{static_cast<LONG>(tx * kGdiTile), static_cast<LONG>(ty * kGdiTile),
+               static_cast<LONG>(std::min(end * kGdiTile, w)), static_cast<LONG>(std::min((ty + 1) * kGdiTile, h))};
+        tx = end;
+        D3DLOCKED_RECT lr{};
+        if (FAILED(stage->LockRect(&lr, &r, 0))) continue;
+        const UINT rw = static_cast<UINT>(r.right - r.left);
+        for (LONG y = r.top; y < r.bottom; ++y)
+          std::memcpy(static_cast<uint8_t*>(lr.pBits) + static_cast<size_t>(y - r.top) * lr.Pitch,
+                      bits + (static_cast<size_t>(y) * w + static_cast<size_t>(r.left)) * 4, rw * 4);
+        stage->UnlockRect();
+        POINT pt{r.left, r.top};
+        HRESULT hr = B().dev9->UpdateSurface(stage, &r, surf, &pt);
+        if (FAILED(hr)) {
+          LogOnce("GDI UpdateSurface failed %08lx", hr);
+          continue;
+        }
+        ++g_gdi.uploads;
+        g_gdi.upload_px += static_cast<uint64_t>(rw) * static_cast<UINT>(r.bottom - r.top);
       }
-      ++g_gdi.uploads;
-      g_gdi.upload_px += static_cast<uint64_t>(rw) * static_cast<UINT>(r.bottom - r.top);
     }
   }
 };
