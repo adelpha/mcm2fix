@@ -139,6 +139,23 @@ std::vector<std::pair<uintptr_t, uintptr_t>> g_ranges;
 // transform calls, normal calls, game rebuilds in sim, game rebuilds in draw, objects dropped (bad vtable),
 // draws left to us
 unsigned g_pw[13] = {};
+
+// Which drawn objects move. Rebuilding a still object (a gate) at draw time
+// throws away what the game did to it after its own rebuild (inactive
+// gates lost their see-through look once the race started), so only moving
+// ones are rebuilt from blended parts. An object counts as moving when the
+// game itself marked it for a rebuild (+0x18c) in two steps in a row, or
+// when one of its parts changed between steps in the last second. Keyed by
+// address only, never dereferenced outside the draw call.
+struct ObjMotion {
+  unsigned dirty_tick = 0, dirty_run = 0;  // game-marked rebuilds, consecutive steps
+  unsigned moved_tick = 0;                 // last step a part changed
+  bool marked_last = false;                // we marked it at the end of last frame's draw
+};
+std::unordered_map<uintptr_t, ObjMotion> g_motion;
+uintptr_t g_cur_obj = 0;  // object whose draw is running
+unsigned g_still_skipped = 0, g_last_prune = 0;
+constexpr unsigned kMovedKeep = 30;  // steps a part change keeps an object "moving"
 bool g_part_sample = false;
 float g_max_turn = 0.0f;
 
@@ -176,6 +193,7 @@ const float* BlendPart(const float* m) {
   std::memcpy(r.cur, m, sizeof(r.cur));
   if (r.prev_tick == 0 || r.prev_tick + 1 != tick) { ++g_pw[3]; return m; }
   if (std::memcmp(r.prev, r.cur, sizeof(r.cur)) == 0) { ++g_pw[2]; return m; }
+  if (g_cur_obj) g_motion[g_cur_obj].moved_tick = tick;
   const float dx = r.cur[12] - r.prev[12], dy = r.cur[13] - r.prev[13], dz = r.cur[14] - r.prev[14];
   if (dx * dx + dy * dy + dz * dz > kMaxPartMove * kMaxPartMove) { ++g_pw[4]; return m; }
   float s0[3], s1[3];
@@ -252,44 +270,15 @@ int __fastcall PartLight(void* self, void*, const float* m, int n, int a, int b,
 using RebuildFn = void(__thiscall*)(void*, int);
 RebuildFn g_rebuild = nullptr;  // trampoline to the original
 
-// Objects the game itself rebuilds during simulation steps, i.e. the ones
-// that move (bikes, riders). Only these are rebuilt from blended parts at
-// draw time: rebuilding a still object there throws away what the game did
-// to it after its own rebuild (inactive gates lost their see-through look
-// once the race started). Keyed by address only, never dereferenced.
-struct SimRebuild {
-  unsigned tick = 0;  // last step it was rebuilt in
-  unsigned run = 0;   // consecutive steps
-};
-std::unordered_map<uintptr_t, SimRebuild> g_sim_rebuilt;
-constexpr unsigned kMovingRun = 3;  // rebuilt in this many steps in a row = moving
-unsigned g_still_skipped = 0, g_last_prune = 0;
-
 void __fastcall RebuildHook(void* self, void*, int level) {
   unsigned tick;
   float alpha;
   if (SimDrawPoint(&tick, &alpha)) {
     ++g_pw[g_drawing ? 10 : 9];
-    if (!g_drawing) {
-      SimRebuild& r = g_sim_rebuilt[reinterpret_cast<uintptr_t>(self)];
-      if (r.tick != tick) {
-        r.run = (r.tick + 1 == tick) ? r.run + 1 : 1;
-        r.tick = tick;
-      }
-      if (tick - g_last_prune > 600) {
-        g_last_prune = tick;
-        for (auto it = g_sim_rebuilt.begin(); it != g_sim_rebuilt.end();)
-          it = (tick - it->second.tick > 300) ? g_sim_rebuilt.erase(it) : std::next(it);
-      }
-    }
   }
   g_rebuild(self, level);
 }
 
-bool IsMoving(uintptr_t obj, unsigned tick) {
-  auto it = g_sim_rebuilt.find(obj);
-  return it != g_sim_rebuilt.end() && it->second.run >= kMovingRun && it->second.tick + 2 >= tick;
-}
 
 // 0x441ed0: draw one object (thiscall, called from 0x444fea). It rebuilds
 // the vertices first only if the object is marked dirty (+0x18c); while
@@ -300,14 +289,37 @@ const DrawObjFn kDrawObj = reinterpret_cast<DrawObjFn>(0x441ED0);
 void __fastcall PartDraw(void* self, void*) {
   unsigned tick;
   float alpha;
-  if (g_drawing && SimDrawPoint(&tick, &alpha) && !IsMoving(reinterpret_cast<uintptr_t>(self), tick)) {
-    ++g_still_skipped;
-  } else if (g_drawing) {
-    ++g_pw[0];
-    *reinterpret_cast<int*>(reinterpret_cast<uintptr_t>(self) + 0x18c) = 1;
-    g_drawn.push_back(reinterpret_cast<uintptr_t>(self));
+  if (!g_drawing || !SimDrawPoint(&tick, &alpha)) {
+    kDrawObj(self);
+    return;
   }
+  const uintptr_t o = reinterpret_cast<uintptr_t>(self);
+  int& dirty = *reinterpret_cast<int*>(o + 0x18c);
+  ObjMotion& mo = g_motion[o];
+  if (dirty && !mo.marked_last && mo.dirty_tick != tick) {
+    mo.dirty_run = (mo.dirty_tick + 1 == tick) ? mo.dirty_run + 1 : 1;
+    mo.dirty_tick = tick;
+  }
+  const bool moving = (mo.dirty_run >= 2 && mo.dirty_tick + 2 >= tick) ||
+                      (mo.moved_tick && mo.moved_tick + kMovedKeep >= tick);
+  mo.marked_last = moving;
+  if (moving) {
+    ++g_pw[0];
+    dirty = 1;
+    g_drawn.push_back(o);
+  } else {
+    ++g_still_skipped;
+  }
+  if (tick - g_last_prune > 600) {
+    g_last_prune = tick;
+    for (auto it = g_motion.begin(); it != g_motion.end();) {
+      const unsigned last = it->second.dirty_tick > it->second.moved_tick ? it->second.dirty_tick : it->second.moved_tick;
+      it = (it->first != o && tick - last > 300) ? g_motion.erase(it) : std::next(it);
+    }
+  }
+  g_cur_obj = o;
   kDrawObj(self);
+  g_cur_obj = 0;
 }
 
 }  // namespace
@@ -532,8 +544,8 @@ void PartsFrameEnd(bool log) {
                "the long way round); skipped: unchanged %u, no previous %u, jumped %u, bad matrix %u; %u tracked",
                g_pw[0], g_pw[7], g_pw[8], g_pw[1], g_max_turn * 180 / kPi, g_pw[6], g_pw[2], g_pw[3], g_pw[4],
                g_pw[5], static_cast<unsigned>(g_parts.size()));
-    patch::Log("smoothing: parts: game rebuilds %u during steps, %u while drawing; %u draws left unblended by the vertex smoother; %u matrices changed within a frame; %u still-object draws left alone (%u objects seen moving)",
-               g_pw[9], g_pw[10], g_pw[12], g_changed, g_still_skipped, static_cast<unsigned>(g_sim_rebuilt.size()));
+    patch::Log("smoothing: parts: game rebuilds %u during steps, %u while drawing; %u draws left unblended by the vertex smoother; %u matrices changed within a frame; %u still-object draws left alone (%u objects tracked)",
+               g_pw[9], g_pw[10], g_pw[12], g_changed, g_still_skipped, static_cast<unsigned>(g_motion.size()));
   }
   g_changed = 0;
   if (g_nw[0]) {
