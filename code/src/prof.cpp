@@ -31,6 +31,7 @@
 #include "config.h"
 #include "framerate.h"
 #include "patch.h"
+#include "xp_compat.h"
 
 namespace prof {
 namespace {
@@ -129,9 +130,10 @@ HANDLE g_csv = INVALID_HANDLE_VALUE;
 uint64_t g_csv_bytes = 0;
 
 void OpenFiles() {
-  DWORD len = GetEnvironmentVariableA("LOCALAPPDATA", g_dir, MAX_PATH);
-  if (!len || len > MAX_PATH - 80) return;
-  strncat_s(g_dir, "\\Motocross Madness 2\\logs", _TRUNCATE);
+  const std::string local = xp::LocalAppData();
+  if (local.empty() || local.size() > MAX_PATH - 80) return;
+  xp::Copy(g_dir, local.c_str());
+  xp::Append(g_dir, "\\Motocross Madness 2\\logs");
   SYSTEMTIME st;
   GetLocalTime(&st);
   std::snprintf(g_stamp, sizeof(g_stamp), "%04u%02u%02u-%02u%02u%02u", st.wYear, st.wMonth, st.wDay, st.wHour,
@@ -514,8 +516,7 @@ void ReportHitch(const Hitch& h) {
 
 DWORD WINAPI SamplerMain(void*) {
   SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
-  HANDLE timer = CreateWaitableTimerExW(nullptr, nullptr, 0x00000002, TIMER_ALL_ACCESS);
-  if (!timer) timer = CreateWaitableTimerExW(nullptr, nullptr, 0, TIMER_ALL_ACCESS);
+  HANDLE timer = xp::CreateFrameTimer();
   const int us = GetConfig().profile_sample_us;
   unsigned hitch_r = 0;
   DWORD last_dump = GetTickCount(), last_flush = GetTickCount(), last_mods = GetTickCount();
