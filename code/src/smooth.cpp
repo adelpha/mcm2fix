@@ -831,6 +831,7 @@ void BlendCasterMeshes(uintptr_t c, unsigned tick, float alpha) {
   }
 }
 unsigned g_ps_casters_max = 0;
+unsigned g_ps_dirtied = 0;  // casters we marked for a rebuild from blended parts (frames after a step)
 
 void PsRestore() {
   for (uintptr_t c : g_casters_written) {
@@ -853,11 +854,31 @@ int __fastcall SmoothPsPreDraw(void* self, void*) {
   const int n = *reinterpret_cast<int*>(obj + 0x30);
   if (!casters || n <= 0 || n > 64) { ++g_ps_why[2]; return kPsPreDraw(self); }
   if (static_cast<unsigned>(n) > g_ps_casters_max) g_ps_casters_max = n;
+  int dirty_before[4] = {};  // for the SmoothLog=3 trace
+  for (int i = 0; i < n && i < 4; ++i)
+    if (casters[i]) dirty_before[i] = *reinterpret_cast<int*>(casters[i] + 0x18c);
   for (int i = 0; i < n; ++i) {
     const uintptr_t c = casters[i];
     if (!c) continue;
     ++g_ps_why[3];
-    if (!SmoothPartsActive()) BlendCasterMeshes(c, tick, alpha);  // else already built from blended parts
+    if (!SmoothPartsActive()) {
+      BlendCasterMeshes(c, tick, alpha);
+    } else {
+      // The shadow texture is drawn from the caster's world-space vertices,
+      // which GetMesh (0x444390) rebuilds only when the object is marked
+      // dirty. Between steps our draw leaves it marked, so they are rebuilt
+      // from blended parts; but on a frame right after a simulation step
+      // the game has already rebuilt them at the new step's positions and
+      // cleared the mark, while the shadow window is placed with the blend
+      // (still near the previous step). The shadow then jumped ahead of the
+      // rider for one frame in every step. Mark it, so they are rebuilt from
+      // blended parts every frame.
+      int& dirty = *reinterpret_cast<int*>(c + 0x18c);
+      if (!dirty) {
+        dirty = 1;
+        ++g_ps_dirtied;
+      }
+    }
     CasterRec& r = g_casters[c];
     float* m = reinterpret_cast<float*>(c + kCasterMatrix);
     if (r.tick != tick) {
@@ -893,9 +914,6 @@ int __fastcall SmoothPsPreDraw(void* self, void*) {
   // shows the riders where they are drawn now.
   // SmoothLog=3: trace the shadow window and the first caster's mesh.
   const bool trace = GetConfig().smooth_log == 3 && g_race_frames >= 900 && g_race_frames < 2700;
-  int dirty_before[4] = {};
-  for (int i = 0; i < n && i < 4; ++i)
-    if (casters[i]) dirty_before[i] = *reinterpret_cast<int*>(casters[i] + 0x18c);
   int* want = reinterpret_cast<int*>(obj + 0x11c);
   g_ps_tex[3] = *reinterpret_cast<unsigned*>(obj + 0x120);
   if (*want) ++g_ps_tex[0];
@@ -966,8 +984,10 @@ void ProjectedShadowFrameEnd() {
                  g_ps_why[6], g_ps_why[7], static_cast<unsigned>(g_casters.size()));
     }
     if (g_ps_why[0]) {
-      patch::Log("smoothing: shadow texture renders: game asked %u, forced %u, drew casters %u; period %u steps",
-                 g_ps_tex[0], g_ps_tex[1], g_ps_tex[2], g_ps_tex[3]);
+      patch::Log("smoothing: shadow texture renders: game asked %u, forced %u, drew casters %u; period %u steps; "
+                 "casters re-marked for a blended rebuild %u",
+                 g_ps_tex[0], g_ps_tex[1], g_ps_tex[2], g_ps_tex[3], g_ps_dirtied);
+      g_ps_dirtied = 0;
     }
     if (g_ps_why[0]) {
       patch::Log("smoothing: shadow meshes: %u seen, %u blended (%u vertices, mean move %.3f); skipped: count "
