@@ -48,6 +48,8 @@ unsigned g_shadow_why[6] = {};  // calls, no meshes, no prev, moved too far, off
 unsigned g_total = 0, g_blended = 0;
 unsigned g_race_frames = 0;  // frames drawn while smoothing could run
 bool g_trace = false;          // SmoothLog: tracing this frame
+float g_arrow_pos[3] = {};
+unsigned g_arrow_frames = 0;  // ArrowLog: frames left to trace
 bool g_trace_view = false;     // SmoothLog=2: tracing the camera this frame  // matrices seen / blended, for the log
 
 bool Affine(const float* m) {
@@ -400,6 +402,17 @@ uint32_t g_proj_use = 0;
 unsigned g_proj_why[4] = {};  // seen, blended, no previous, jumped
 bool g_proj_sample = false;
 
+void SmoothArrowTrace(const float pos[3], unsigned frames) {
+  std::memcpy(g_arrow_pos, pos, sizeof(g_arrow_pos));
+  if (frames > g_arrow_frames) g_arrow_frames = frames;
+}
+
+bool SmoothArrowTracing(const float* m) {
+  if (!g_arrow_frames) return false;
+  const float dx = m[12] - g_arrow_pos[0], dy = m[13] - g_arrow_pos[1], dz = m[14] - g_arrow_pos[2];
+  return dx * dx + dy * dy + dz * dz < 25.0f;
+}
+
 void SmoothProjection(float* m) {
   unsigned tick;
   float alpha;
@@ -412,6 +425,9 @@ void SmoothProjection(float* m) {
     r.tick = tick;
   }
   r.cur[0] = m[0]; r.cur[1] = m[5]; r.cur[2] = m[8]; r.cur[3] = m[9];
+  if (g_arrow_frames)
+    patch::Log("arrow trace: projection tick %u a=%.3f m00 prev %.4f cur %.4f (prev tick %u)", tick, alpha, r.prev[0],
+               r.cur[0], r.prev_tick);
   if (r.prev_tick == 0 || r.prev_tick + 1 != tick) { ++g_proj_why[2]; return; }
   if (r.prev[0] == 0.0f || r.prev[1] == 0.0f) { ++g_proj_why[2]; return; }
   const float k0 = r.cur[0] / r.prev[0], k1 = r.cur[1] / r.prev[1];
@@ -454,7 +470,13 @@ void SmoothTransform(uint32_t type, const float* in, const void* src, float* out
     std::memcpy(out, blended, sizeof(blended));
     ++g_blended;
   }
-  if (g_trace_view && type == 2) {
+  if (g_trace_view && type == 2 && g_arrow_frames) {
+    float ei[3], eo[3];
+    ViewEye(in, ei);
+    ViewEye(out, eo);
+    patch::Log("arrow trace: view tick %u a=%.3f use %u eye now (%.2f %.2f %.2f) drawn (%.2f %.2f %.2f)%s", tick, alpha,
+               use, ei[0], ei[1], ei[2], eo[0], eo[1], eo[2], ok ? "" : " NOT blended");
+  } else if (g_trace_view && type == 2) {
     patch::Log("view: f=%u tick=%u a=%.3f use=%u in=(%.3f %.3f %.3f | %.2f %.2f %.2f) out=(%.3f %.3f %.3f | %.2f %.2f %.2f)",
                g_race_frames, tick, alpha, use, in[0], in[1], in[2], in[12], in[13], in[14], out[0], out[1],
                out[2], out[12], out[13], out[14]);
@@ -490,7 +512,11 @@ void SmoothFrameEnd() {
       // Trace 6 frames, 5 seconds or so into the race.
       const int mode = GetConfig().smooth_log;
       g_trace = mode == 1 && g_race_frames >= 600 && g_race_frames < 606;
-      g_trace_view = mode == 2 && g_race_frames >= 600 && g_race_frames < 720;
+      g_trace_view = (mode == 2 && g_race_frames >= 600 && g_race_frames < 720) || g_arrow_frames > 0;
+      if (g_arrow_frames > 0) {
+        --g_arrow_frames;
+        patch::Log("arrow trace: ---- frame %u, tick %u, a=%.3f", g_race_frames, tick, alpha);
+      }
       if (g_trace) patch::Log("trace: ---- frame %u, tick %u, a=%.3f", g_race_frames, tick, alpha);
     } else {
       g_trace = g_trace_view = false;

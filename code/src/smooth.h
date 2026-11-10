@@ -53,6 +53,10 @@ unsigned SmoothMarginHits();
 
 // Blend a perspective projection's zoom between simulation steps (in place).
 void SmoothProjection(float* m);
+// ArrowLog: the direction arrow was placed at pos this step; trace it (and
+// the camera) for the next `frames` frames.
+void SmoothArrowTrace(const float pos[3], unsigned frames);
+bool SmoothArrowTracing(const float* m);  // a part matrix at the arrow's spot, while tracing
 
 // Frame end bookkeeping for smooth_parts.cpp; `log` every 600 frames.
 void PartsFrameEnd(bool log);

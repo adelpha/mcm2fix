@@ -59,10 +59,17 @@ struct SpotState {
 };
 std::map<uintptr_t, SpotState> g_spot;
 
+constexpr uintptr_t kSetPosition = 0x4014f0;  // object position, thiscall (const float* pos)
+using SetPositionFn = void(__thiscall*)(uintptr_t self, const float* pos);
+DWORD g_last_call = 0;      // ArrowLog: GetTickCount of the last AdjustCue
+unsigned g_log_steps = 0;   // ArrowLog: steps left to log
+unsigned g_step = 0;
+
 // While smoothing widens the camera for culling (fixes_widescreen.cpp) the
 // game places and sizes the arrow for the wider view; it is drawn with the
 // real one, so bring it back by that ratio.
-float MarginFix(uintptr_t cue, uintptr_t cam) {
+float MarginFix(uintptr_t cue, uintptr_t cam, bool* fresh) {
+  *fresh = false;
   float r = 1.0f;
   if (!SmoothCullMargin(cam, &r) || !(r > 0.0f)) r = 1.0f;
   float& h = *reinterpret_cast<float*>(cue + 0xb4);
@@ -73,6 +80,8 @@ float MarginFix(uintptr_t cue, uintptr_t cam) {
   if (it != g_spot.end() && h == it->second.h && v == it->second.v) {
     st.base_h = it->second.base_h;
     st.base_v = it->second.base_v;
+  } else {
+    *fresh = true;  // the game worked h and v out again this step
   }
   st.h = h = st.base_h / r;
   st.v = v = st.base_v / r;
@@ -84,7 +93,44 @@ void __stdcall AdjustCue(uintptr_t cue, float* dir) {
   if (*reinterpret_cast<uint32_t*>(cue) != kVisualCueVtable) return;
   const uintptr_t cam = *reinterpret_cast<uintptr_t*>(cue + 0x40);
   if (!cam) return;
-  const float margin = MarginFix(cue, cam);
+  bool fresh = false;
+  const float raw_h = *reinterpret_cast<float*>(cue + 0xb4), raw_v = *reinterpret_cast<float*>(cue + 0xb8);
+  const float margin = MarginFix(cue, cam, &fresh);
+
+  // The game placed the arrow (0x48c2f2) with h and v as they were before we
+  // got here. When it has just worked them out again (the field of view
+  // changed: at the start of a race the camera zooms out as the bike speeds
+  // up) that was its own uncorrected spot, out toward the corner, so the
+  // arrow jumped there until the zoom settled. Place it again, the same way
+  // the game does, with the corrected values.
+  const float h = *reinterpret_cast<float*>(cue + 0xb4), v = *reinterpret_cast<float*>(cue + 0xb8);
+  const float dist = *reinterpret_cast<float*>(cue + 0x44);
+  const float* cf = reinterpret_cast<const float*>(cam);
+  float pos[3];
+  for (int i = 0; i < 3; ++i)
+    pos[i] = cf[0x170 / 4 + i] + dist * cf[0xb4 / 4 + i * 4] + h * cf[0xac / 4 + i * 4] + v * cf[0xb0 / 4 + i * 4];
+  const bool moved = h != raw_h || v != raw_v;
+  if (moved && std::isfinite(pos[0]) && std::isfinite(pos[1]) && std::isfinite(pos[2]))
+    reinterpret_cast<SetPositionFn>(kSetPosition)(cue, pos);
+
+  if (GetConfig().arrow_log) {
+    const DWORD now = GetTickCount();
+    if (now - g_last_call > 500) {
+      g_log_steps = 120;
+      g_step = 0;
+      patch::Log("arrow: ---- start (%lu ms since the last update)", static_cast<unsigned long>(now - g_last_call));
+      SmoothArrowTrace(pos, 120);
+    }
+    g_last_call = now;
+    if (g_log_steps) {
+      --g_log_steps;
+      patch::Log("arrow: step %u fov %.4f cached %.4f %s h %.4f->%.4f v %.4f->%.4f margin %.4f %s dist %.3f "
+                 "cam (%.2f %.2f %.2f) pos (%.2f %.2f %.2f)",
+                 g_step++, cf[0x16c / 4], *reinterpret_cast<float*>(cue + 0xb0), fresh ? "NEW" : "same", raw_h, h,
+                 raw_v, v, margin, moved ? "re-placed" : "kept", dist, cf[0x170 / 4], cf[0x174 / 4],
+                 cf[0x178 / 4], pos[0], pos[1], pos[2]);
+    }
+  }
 
   if (GetConfig().arrow_heading && dir) {
     // Camera basis (columns of its rotation matrix, see 0x48c14c).
@@ -94,8 +140,6 @@ void __stdcall AdjustCue(uintptr_t cue, float* dir) {
               *reinterpret_cast<float*>(cam + 0xd0)};
     Vec fwd = {*reinterpret_cast<float*>(cam + 0xb4), *reinterpret_cast<float*>(cam + 0xc4),
                *reinterpret_cast<float*>(cam + 0xd4)};
-    const float dist = *reinterpret_cast<float*>(cue + 0x44);
-    const float h = *reinterpret_cast<float*>(cue + 0xb4);
     if (Normalize(right) && Normalize(up) && Normalize(fwd) && dist > 0.0f && std::isfinite(h)) {
       // view axis -> arrow, about camera up; ArrowTurn scales it (1 = full).
       const float a = std::atan2(h, dist) * GetConfig().arrow_turn;
