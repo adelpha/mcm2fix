@@ -9,6 +9,11 @@ struct Config {
   bool files = true;          // Files: send file writes to the per-user folder
   bool activate_log = false;  // ActivateLog: log window activation
   bool reg_log = false;       // RegLog: log every registry call
+  bool profile = false;       // Profile: performance profiling (see prof.cpp)
+  int profile_sample_us = 1000;  // ProfileSampleUs: sampling profiler interval (0 = off)
+  bool fast_crt = true;
+  int async_sound = 2;        // AsyncSound: 3D sound listener commit on a worker thread; 2 = started at Present (fixes_perf.cpp)
+  bool state_cache = true;    // StateCache: skip D3D11 state the device already has bound (device.cpp)       // FastCrt: QPC game clock and table-driven _stricmp (fixes_perf.cpp)
   bool dd_stats = false;      // DDStats: log renderer activity every 2 seconds
   int renderer = 11;          // Renderer: 11 = Direct3D 11, 9 = Direct3D 9 (also used when D3D11 is missing)
   bool renderer_label = true;  // RendererLabel: name the active renderer in the corner of the menus
@@ -18,6 +23,7 @@ struct Config {
   float label_scale = 1.5f;   // LabelScale: name labels over the riders drawn this many times larger (1..4)
   char hud_font[260] = {};    // HudFont: .ttf file (relative to the game folder) for HUD panel and label text
   char hud_digit_font[260] = {};  // HudDigitFont: .ttf for the numbers in the stats panel (times, position, lap)
+  float hud_stunt_text_size = 0.8f;  // HudStuntTextSize: stunt score panel text, relative to the race panel's
   float hud_digit_size = 0.7f;    // HudDigitSize: size of those numbers relative to the text around them
   bool hud_text = true;       // HudText: race HUD panel text (GDI turned into textures) drawn sharp too
   bool text_log = false;      // TextLog: log GPU text drawing (first calls, what erases it)
@@ -41,6 +47,7 @@ struct Config {
   float arrow_scale = 2.0f;   // ArrowScale: size of the race direction arrow (1 = original)
   bool restart_fix = true;   // RestartFix: Restart Race turns the bikes to face the course again
   bool restart_log = false;  // RestartLog: log the start grid at race load and Restart Race
+  bool alpha_log = false;    // AlphaLog: log each blended/alpha-tested draw combination and whether AlphaCut applied
   int alpha_cut = 128;        // AlphaCut: alpha-tested blended pixels below this (0-255) are dropped
   // Graphics options.
   float fov = 0.0f;           // Fov: camera field of view in degrees at 4:3 (0 = game's own, 77)

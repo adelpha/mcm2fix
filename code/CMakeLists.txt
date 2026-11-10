@@ -22,10 +22,12 @@ add_library(mcm2fix SHARED
   src/fixes_restart.cpp
   src/fixes_help.cpp
   src/fixes_textures.cpp
+  src/fixes_perf.cpp
   src/diagnostics.cpp
   src/regtrace.cpp
   src/config.cpp
   src/framerate.cpp
+  src/prof.cpp
   src/smooth.cpp
   src/smooth_parts.cpp
   src/dd/backend.cpp

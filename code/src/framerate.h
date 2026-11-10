@@ -12,3 +12,6 @@ void WaitForFrameSlot();
 // simulation step and how far (0..1) the frame being drawn is past it.
 // Returns false when drawing should use the game's values as they are.
 bool SimDrawPoint(unsigned* tick, float* alpha);
+
+// True while races run at the fixed simulation rate.
+bool SimRacing();

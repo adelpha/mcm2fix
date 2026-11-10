@@ -27,6 +27,15 @@ void GpuTextEndDC(HDC dc);
 // Draw one GDI call on a DC from GpuTextBeginDC (calls mcm2fix makes itself,
 // which the GDI hooks do not see). Uses the DC's font, colours and clip.
 bool GpuTextRun(const GdiCall& call);
+// A font that is never deleted (the HUD's own scaled fonts): its metrics and
+// the extents of strings drawn with it are cached.
+void GpuTextKeepFont(HFONT f);
+// The clip of a DC from GpuTextBeginDC, set by mcm2fix (null: none), so
+// drawing does not have to read it back from GDI. Instead of SelectClipRgn.
+void GpuTextSetClip(HDC dc, const RECT* r);
+// GetTextExtentPoint32A / GetTextMetricsA, cached for kept fonts.
+SIZE GpuTextExtent(HDC dc, const char* s, int n);
+void GpuTextMetrics(HDC dc, TEXTMETRICA* tm);
 
 // The game drew over r (surface pixels; null = everything) of `native`.
 void GpuTextOcclude(const void* native, const RECT* r, const char* why);

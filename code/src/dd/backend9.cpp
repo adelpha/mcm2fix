@@ -20,10 +20,13 @@
 
 #include "../config.h"
 #include "../patch.h"
+#include "../prof.h"
 #include "gdihook.h"
 #include "gputext.h"
 #include "msaa.h"
 #include "surface.h"
+
+void PerfBeforePresent();  // fixes_perf.cpp
 
 namespace dd {
 
@@ -62,6 +65,14 @@ struct StateCache {
   bool ss_ok[8][14];
   IDirect3DBaseTexture9* tex[8];
   bool tex_ok[8];
+  IDirect3DSurface9* rt;
+  bool rt_ok;
+  IDirect3DSurface9* ds;
+  bool ds_ok;
+  D3DVIEWPORT9 vp;
+  bool vp_ok;
+  RECT sc;
+  bool sc_ok;
 } g_state;
 
 // Sysmem staging surfaces for uploads to / readbacks from video memory.
@@ -157,6 +168,8 @@ void ResetState() {
   std::memset(&g_state, 0, sizeof(g_state));
 }
 
+void GpuTimerRelease9();
+
 // Device reset after a loss: drop everything in video memory, reset, and
 // let the next frame recreate it.
 bool TryRecover() {
@@ -179,6 +192,7 @@ bool TryRecover() {
   for (auto& kv : g_depth_clear_rt) SafeRelease(kv.second);
   g_depth_clear_rt.clear();
   Surface::DeviceLost9();
+  GpuTimerRelease9();
   EndScene9();
   hr = b.dev9->Reset(&g_pp);
   if (FAILED(hr)) {
@@ -239,8 +253,12 @@ bool EnsureChains() {
 }
 
 void SetRT(IDirect3DSurface9* s) {
-  // (SetRenderTarget also resets the viewport; callers set it after.)
+  // (SetRenderTarget also resets the viewport and scissor; callers set them after.)
+  if (g_state.rt_ok && g_state.rt == s) return;
   B().dev9->SetRenderTarget(0, s);
+  g_state.rt = s;
+  g_state.rt_ok = s != nullptr;
+  g_state.vp_ok = g_state.sc_ok = false;
 }
 
 void BoxDown(const std::vector<uint8_t>& src, UINT sw, UINT sh, std::vector<uint8_t>& dst, UINT& dw,
@@ -307,6 +325,32 @@ void Tex9(DWORD stage, IDirect3DBaseTexture9* t) {
 }
 
 void InvalidateState9() { ResetState(); }
+
+void SetTarget9(IDirect3DSurface9* rt, IDirect3DSurface9* ds) {
+  SetRT(rt);
+  SetDS9(ds);
+}
+
+void SetDS9(IDirect3DSurface9* ds) {
+  if (g_state.ds_ok && g_state.ds == ds) return;
+  B().dev9->SetDepthStencilSurface(ds);
+  g_state.ds = ds;
+  g_state.ds_ok = true;
+}
+
+void SetViewport9(const D3DVIEWPORT9& vp) {
+  if (g_state.vp_ok && std::memcmp(&g_state.vp, &vp, sizeof(vp)) == 0) return;
+  B().dev9->SetViewport(&vp);
+  g_state.vp = vp;
+  g_state.vp_ok = true;
+}
+
+void SetScissor9(const RECT& r) {
+  if (g_state.sc_ok && EqualRect(&g_state.sc, &r)) return;
+  B().dev9->SetScissorRect(&r);
+  g_state.sc = r;
+  g_state.sc_ok = true;
+}
 
 const D3DCAPS9& Caps9() { return g_caps; }
 
@@ -595,8 +639,7 @@ void ClearDepth9(GpuTexture& t, float z) {
     LogOnce("depth clear target %ux%u failed", t.width, t.height);
     return;
   }
-  SetRT(rt);
-  b.dev9->SetDepthStencilSurface(t.surf9);
+  SetTarget9(rt, t.surf9);
   b.dev9->Clear(0, nullptr, kClear9ZBuffer | (t.fmt9 == D3DFMT_D24S8 ? kClear9Stencil : 0), 0, z, 0);
 }
 
@@ -864,15 +907,14 @@ void EndScene9() {
 
 // ----------------------------------------------------------------------- blit
 
-void Blit9(const BlitParams& p) {
+namespace {
+
+// Everything of a blit but the vertices and the draw; returns the vertex colour.
+DWORD SetupBlit9(const BlitParams& p) {
   Backend& b = B();
-  if (!b.dev9 || !p.dst9 || !p.dst_w || !p.dst_h || g_lost) return;
-  ++g_stats.blits;
   IDirect3DDevice9* d = b.dev9;
-  SetRT(p.dst9);
-  d->SetDepthStencilSurface(nullptr);
-  D3DVIEWPORT9 vp{0, 0, p.dst_w, p.dst_h, 0.0f, 1.0f};
-  d->SetViewport(&vp);
+  SetTarget9(p.dst9, nullptr);
+  SetViewport9(D3DVIEWPORT9{0, 0, p.dst_w, p.dst_h, 0.0f, 1.0f});
   RS9(D3DRS_ZENABLE, FALSE);
   RS9(D3DRS_ZWRITEENABLE, FALSE);
   RS9(D3DRS_ALPHABLENDENABLE, p.blend || p.premul || p.erase ? TRUE : FALSE);
@@ -937,13 +979,26 @@ void Blit9(const BlitParams& p) {
   auto to8 = [](float v) {
     return static_cast<DWORD>(v <= 0 ? 0 : v >= 1 ? 255 : v * 255.0f + 0.5f);
   };
-  const DWORD color = p.src9 && !p.tint ? 0xffffffff
-                             : (to8(p.fill[3]) << 24) | (to8(p.fill[0]) << 16) | (to8(p.fill[1]) << 8) | to8(p.fill[2]);
-  struct V {
-    float x, y, z, rhw;
-    DWORD c;
-    float u, v;
-  };
+  d->SetFVF(kFvf9XYZRHW | kFvf9Diffuse | kFvf9Tex1);
+  return p.src9 && !p.tint ? 0xffffffff
+                           : (to8(p.fill[3]) << 24) | (to8(p.fill[0]) << 16) | (to8(p.fill[1]) << 8) | to8(p.fill[2]);
+}
+
+struct BlitV9 {
+  float x, y, z, rhw;
+  DWORD c;
+  float u, v;
+};
+
+}  // namespace
+
+void Blit9(const BlitParams& p) {
+  Backend& b = B();
+  if (!b.dev9 || !p.dst9 || !p.dst_w || !p.dst_h || g_lost) return;
+  ++g_stats.blits;
+  IDirect3DDevice9* d = b.dev9;
+  const DWORD color = SetupBlit9(p);
+  using V = BlitV9;
   // Direct3D 9 pixel centres are at integer coordinates: shift by half a
   // pixel so texels land on pixels exactly.
   const float x0 = static_cast<float>(p.dst_rect.left) - 0.5f, x1 = static_cast<float>(p.dst_rect.right) - 0.5f;
@@ -954,13 +1009,118 @@ void Blit9(const BlitParams& p) {
                   {x1, y0, 0, 1, color, u1, v0},
                   {x0, y1, 0, 1, color, u0, v1},
                   {x1, y1, 0, 1, color, u1, v1}};
-  d->SetFVF(kFvf9XYZRHW | kFvf9Diffuse | kFvf9Tex1);
   BeginScene9();
   HRESULT hr = d->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, v, sizeof(V));
   if (FAILED(hr)) LogOnce("blit draw failed %08lx", hr);
 }
 
+void BlitQuads9(const BlitParams& p, const BlitQuad* q, size_t n) {
+  Backend& b = B();
+  if (!b.dev9 || !p.dst9 || !p.dst_w || !p.dst_h || g_lost || !n) return;
+  ++g_stats.blits;
+  IDirect3DDevice9* d = b.dev9;
+  const DWORD color = SetupBlit9(p);
+  static std::vector<BlitV9> v;
+  const float ku = 1.0f / p.src_w, kv = 1.0f / p.src_h;
+  BeginScene9();
+  for (size_t done = 0; done < n;) {
+    const size_t m = std::min<size_t>(n - done, kQuadBatch);
+    v.resize(m * 6);
+    for (size_t i = 0; i < m; ++i) {
+      const BlitQuad& e = q[done + i];
+      const float x0 = e.dst.left - 0.5f, x1 = e.dst.right - 0.5f;
+      const float y0 = e.dst.top - 0.5f, y1 = e.dst.bottom - 0.5f;
+      const float u0 = e.src.left * ku, u1 = e.src.right * ku, v0 = e.src.top * kv, v1 = e.src.bottom * kv;
+      BlitV9* o = &v[i * 6];
+      o[0] = {x0, y0, 0, 1, color, u0, v0};
+      o[1] = {x1, y0, 0, 1, color, u1, v0};
+      o[2] = {x0, y1, 0, 1, color, u0, v1};
+      o[3] = o[2];
+      o[4] = o[1];
+      o[5] = {x1, y1, 0, 1, color, u1, v1};
+    }
+    HRESULT hr = d->DrawPrimitiveUP(D3DPT_TRIANGLELIST, static_cast<UINT>(m * 2), v.data(), sizeof(BlitV9));
+    if (FAILED(hr)) LogOnce("batched blit draw failed %08lx", hr);
+    done += m;
+  }
+}
+
 // -------------------------------------------------------------------- present
+
+namespace {
+// GPU time per frame (Profile=1), as in the D3D11 renderer.
+struct GpuTimer9 {
+  IDirect3DQuery9* disjoint = nullptr;
+  IDirect3DQuery9* freq = nullptr;
+  IDirect3DQuery9* begin = nullptr;
+  IDirect3DQuery9* end = nullptr;
+  bool pending = false;
+};
+GpuTimer9 g_gpu9[6];
+unsigned g_gpu9_i = 0;
+bool g_gpu9_open = false;
+bool g_gpu9_begun = false;
+bool g_gpu9_broken = false;
+
+void GpuTimerRelease9() {
+  for (GpuTimer9& t : g_gpu9) {
+    SafeRelease(t.disjoint);
+    SafeRelease(t.freq);
+    SafeRelease(t.begin);
+    SafeRelease(t.end);
+    t.pending = false;
+  }
+  g_gpu9_open = false;
+}
+
+void GpuTimerFrame9() {
+  if (!prof::On() || g_gpu9_broken) return;
+  IDirect3DDevice9* dev = B().dev9;
+  if (g_gpu9_open) {
+    GpuTimer9& t = g_gpu9[g_gpu9_i % 6];
+    if (!g_gpu9_begun) t.begin->Issue(D3DISSUE_END);
+    t.end->Issue(D3DISSUE_END);
+    t.freq->Issue(D3DISSUE_END);
+    t.disjoint->Issue(D3DISSUE_END);
+    t.pending = true;
+    g_gpu9_open = false;
+    ++g_gpu9_i;
+  }
+  for (GpuTimer9& t : g_gpu9) {
+    if (!t.pending) continue;
+    BOOL dj = FALSE;
+    UINT64 f = 0, t0 = 0, t1 = 0;
+    if (t.disjoint->GetData(&dj, sizeof(dj), 0) != S_OK) continue;
+    if (t.freq->GetData(&f, sizeof(f), 0) != S_OK) continue;
+    if (t.begin->GetData(&t0, sizeof(t0), 0) != S_OK) continue;
+    if (t.end->GetData(&t1, sizeof(t1), 0) != S_OK) continue;
+    t.pending = false;
+    if (!dj && f && t1 >= t0) prof::GpuFrameTime(static_cast<double>(t1 - t0) * 1000.0 / static_cast<double>(f));
+  }
+  GpuTimer9& n = g_gpu9[g_gpu9_i % 6];
+  if (n.pending) return;
+  if (!n.disjoint) {
+    if (FAILED(dev->CreateQuery(D3DQUERYTYPE_TIMESTAMPDISJOINT, &n.disjoint)) ||
+        FAILED(dev->CreateQuery(D3DQUERYTYPE_TIMESTAMPFREQ, &n.freq)) ||
+        FAILED(dev->CreateQuery(D3DQUERYTYPE_TIMESTAMP, &n.begin)) ||
+        FAILED(dev->CreateQuery(D3DQUERYTYPE_TIMESTAMP, &n.end))) {
+      Log("perf: Direct3D 9 timestamp queries not available");
+      GpuTimerRelease9();
+      g_gpu9_broken = true;
+      return;
+    }
+  }
+  n.disjoint->Issue(D3DISSUE_BEGIN);
+  g_gpu9_open = true;
+  g_gpu9_begun = false;  // the begin stamp goes in at the frame's first draw
+}
+}  // namespace
+
+void GpuTimerMark9() {
+  if (!g_gpu9_open || g_gpu9_begun) return;
+  g_gpu9_begun = true;
+  g_gpu9[g_gpu9_i % 6].begin->Issue(D3DISSUE_END);
+}
 
 void Present9(const GpuTexture& src, UINT src_w, UINT src_h, UINT interval) {
   Backend& b = B();
@@ -968,7 +1128,9 @@ void Present9(const GpuTexture& src, UINT src_w, UINT src_h, UINT interval) {
   ++g_stats.presents;
   ReportStats();
   if (!b.dev9 || !b.hwnd || IsIconic(b.hwnd)) return;
+  if (g_lost) GpuTimerRelease9();
   if (g_lost && !TryRecover()) return;
+  prof::Scope zone(prof::kCompose);
   KeepBorderless();
   if (!EnsureChains()) return;
   IDirect3DSwapChain9* sc = interval ? g_sc.vsync : g_sc.now;
@@ -999,7 +1161,11 @@ void Present9(const GpuTexture& src, UINT src_w, UINT src_h, UINT interval) {
   DrawRendererLabel(nullptr, back, g_sc.w, g_sc.h);
   back->Release();
   EndScene9();
+  PerfBeforePresent();
+  zone.Switch(prof::kSwapPresent);
   HRESULT hr = sc->Present(nullptr, nullptr, nullptr, nullptr, 0);
+  zone.Switch(prof::kCompose);
+  if (!g_lost && hr != D3DERR_DEVICELOST) GpuTimerFrame9();
   if (hr == D3DERR_DEVICELOST) {
     if (!g_lost) Log("device lost (Present)");
     g_lost = true;

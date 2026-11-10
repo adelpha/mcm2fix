@@ -12,6 +12,7 @@
 // operand at a value of our own, recomputed every tick so that it does per
 // frame what the original constant did per frame at RefRate (30 by default).
 #include "framerate.h"
+#include "prof.h"
 #include "smooth.h"
 
 #include <windows.h>
@@ -417,18 +418,38 @@ Fn VFunc(void* obj, size_t offset) {
 }
 
 void SimUpdate(uintptr_t g, float step, float raw_dt) {
+  PROF_ZONE(kSim);
+  prof::Count(prof::cSteps);
   *reinterpret_cast<float*>(g + 0x2f0) = raw_dt;  // the game's global frame time
   ++g_tick;
   g_tick_dt = step;
   UpdateFixValues(step);
-  if (void* ctl = *reinterpret_cast<void**>(g + 0x14)) kControlUpdate(ctl, step);
+  if (void* ctl = *reinterpret_cast<void**>(g + 0x14)) {
+    PROF_ZONE(kSimControl);
+    kControlUpdate(ctl, step);
+  }
   if (*reinterpret_cast<uint8_t*>(g + 0x2d5) & 1) return;  // paused
-  if (void* mgr = *reinterpret_cast<void**>(g + 0x8)) kManagerUpdate(mgr, step);
+  if (void* mgr = *reinterpret_cast<void**>(g + 0x8)) {
+    PROF_ZONE(kSimManager);
+    kManagerUpdate(mgr, step);
+  }
   void* state = *reinterpret_cast<void**>(g + 0x2f4);
+  PROF_ZONE(kSimState);
   VFunc<ThisFloatFn>(state, 0x28)(state, step);
 }
 
+void FixedTickBody(uintptr_t g);
+
 int __stdcall FixedTick(uintptr_t g) {
+  {
+    PROF_ZONE(kTick);
+    FixedTickBody(g);
+  }
+  prof::TickEnd();  // the frame shown during this tick ends here
+  return 1;
+}
+
+void FixedTickBody(uintptr_t g) {
   auto& now_ms = *reinterpret_cast<DWORD*>(g + 0x2d8);
   auto& last_ms = *reinterpret_cast<DWORD*>(g + 0x2dc);
   const LONGLONG now = Now();
@@ -464,10 +485,21 @@ int __stdcall FixedTick(uintptr_t g) {
 
   if (!(*reinterpret_cast<uint8_t*>(g + 0x2d5) & 1)) {
     kProfilerFrame(*reinterpret_cast<void**>(0x5724F0));
-    SmoothDrawBegin();
-    VFunc<ThisFn>(reinterpret_cast<void*>(g), 0x20)(reinterpret_cast<void*>(g));
-    SmoothDrawEnd();
-    VFunc<ThisFn>(reinterpret_cast<void*>(g), 0x24)(reinterpret_cast<void*>(g));
+    {
+      PROF_ZONE(kDraw);
+      {
+        PROF_ZONE(kSmoothBegin);
+        SmoothDrawBegin();
+      }
+      VFunc<ThisFn>(reinterpret_cast<void*>(g), 0x20)(reinterpret_cast<void*>(g));
+      PROF_ZONE(kSmoothEnd);
+      SmoothDrawEnd();
+    }
+    {
+      PROF_ZONE(kGamePresent);
+      VFunc<ThisFn>(reinterpret_cast<void*>(g), 0x24)(reinterpret_cast<void*>(g));
+    }
+    PROF_ZONE(kPostFrame);
     kStatePostFrame(*reinterpret_cast<void**>(g + 0x2f4));
     kPostFrame10(*reinterpret_cast<void**>(g + 0x10));
   }
@@ -476,7 +508,6 @@ int __stdcall FixedTick(uintptr_t g) {
     *reinterpret_cast<int*>(g + 0x1c4) = 1;
     *reinterpret_cast<int*>(g + 0x1c8) = 0;
   }
-  return 1;
 }
 
 void __stdcall NoteBikeSim() { g_bike_seen = Now(); }
@@ -577,6 +608,8 @@ void ApplyFramePacing() {
              c.vsync, c.frame_cap, c.precise_timer, c.frame_fix, c.ref_rate, c.ai_rate,
              c.ai_steer_rate, c.sim_rate);
 }
+
+bool SimRacing() { return g_sim_fixed; }
 
 bool SimDrawPoint(unsigned* tick, float* alpha) {
   if (!g_sim_fixed || !GetConfig().sim_smooth) return false;

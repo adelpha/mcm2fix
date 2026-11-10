@@ -87,6 +87,9 @@ struct Backend {
   ID3D11VertexShader* blit_vs = nullptr;
   ID3D11PixelShader* blit_ps = nullptr;
   ID3D11Buffer* blit_cb = nullptr;
+  ID3D11VertexShader* quad_vs = nullptr;  // BlitQuads
+  ID3D11InputLayout* quad_layout = nullptr;
+  ID3D11Buffer* quad_vb = nullptr;
   ID3D11SamplerState* point_sampler = nullptr;
   ID3D11SamplerState* linear_sampler = nullptr;
   ID3D11RasterizerState* blit_raster = nullptr;
@@ -170,8 +173,23 @@ struct BlitParams {
   }
   void SetSrc(const GpuTexture& t);
 };
+// Code other than the Device that changes the D3D11 context's bindings calls
+// ContextTouched; the Device then binds everything again on its next draw.
+void ContextTouched();
+// Profile=1 GPU frame time: the frame's GPU work starts now (first draw).
+void GpuTimerMark();
+void GpuTimerMark9();
+unsigned ContextEpoch();
 void Blit(const BlitParams& p);
 void Blit9(const BlitParams& p);
+// Many rectangles with the same source, destination and settings, in one
+// draw (p's own rectangles are not used).
+struct BlitQuad {
+  RECT dst, src;
+};
+constexpr unsigned kQuadBatch = 1024;
+void BlitQuads(const BlitParams& p, const BlitQuad* q, size_t n);
+void BlitQuads9(const BlitParams& p, const BlitQuad* q, size_t n);
 
 // Scale src (game resolution) into the window, keeping its aspect ratio,
 // and present.

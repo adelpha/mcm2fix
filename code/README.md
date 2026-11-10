@@ -114,6 +114,14 @@ OneCore=0      ; 1 = pin the game to one CPU core (old stopgap)
 ActivateLog=0  ; debugging: log window activation
 RegLog=0       ; debugging: log every registry call
 DDStats=0      ; debugging: log renderer activity every 2 seconds
+Profile=0      ; debugging: performance profile - frame times, timed sections, GPU time and a sampling
+               ; profile of the game thread in logs\perf-*.csv / perf-samples-*.txt (tools/perf_report.py)
+ProfileSampleUs=1000 ; how often (microseconds) Profile samples the game thread (0 = no sampling)
+FastCrt=1      ; the game's millisecond clock reads QueryPerformanceCounter (no timer-period change per
+               ; call) and its case-insensitive name compares use a table (0 = the game's own code)
+AsyncSound=2   ; the 3D sound listener update the game makes every physics step runs on a worker thread,
+               ; started while the frame waits for VSync (1 = started at once, 0 = on the game thread)
+StateCache=1   ; Direct3D 11: state the renderer already has bound is not sent again for every draw
 D3D9Log=1      ; debugging: extra Direct3D 9 renderer logging (device caps, first frames, fallbacks)
 GpuText=1      ; draw the game's menu and HUD text (GDI) on the GPU, antialiased, at screen resolution
 HudText=1      ; with GpuText: the race HUD panels' text is drawn by mcm2fix on screen, sharp
@@ -123,6 +131,7 @@ LineWidth=3    ; speedometer needle width in pixels, antialiased (1 = original t
 HudFont=       ; a .ttf for the HUD panel and name label text, e.g. FONTS\ContrailOne-Regular.ttf (empty = the game's fonts)
 HudDigitFont=   ; .ttf for the numbers in the stats panel (times, position, lap); words keep HudFont
 HudDigitSize=0.7 ; size of those numbers relative to the words beside them
+HudStuntTextSize=0.8 ; stunt events: size of the score panel's text (1 = as big as the race panel's)
 TextLog=0      ; debugging: log GPU text drawing and what erases it
 GdiLog=0       ; debugging: log the GDI calls (text, boxes, lines) the game draws onto the screen with
 RestartLog=0   ; debugging: log the start grid at race load and on Restart Race

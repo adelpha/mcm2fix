@@ -217,8 +217,13 @@ struct Thunk {
 }  // namespace
 
 float SmoothProjectionScale(const float* m) {
+  // Recognised by shape (width to height), not by value: the game zooms the
+  // camera at a race start (supercross gates), so the projection being drawn
+  // is often not the one seen at the last update, and drawing it unnarrowed
+  // made the view jump in and out by the margin.
+  if (m[11] == 0.0f || m[0] == 0.0f) return 1.0f;
   for (const auto& c : g_margin)
-    if (c.second.p00 != 0.0f && m[0] == c.second.p00 && m[5] == c.second.p11) {
+    if (c.second.p00 != 0.0f && std::fabs(m[5] / m[0] - c.second.p11 / c.second.p00) < 1e-3f * (c.second.p11 / c.second.p00)) {
       ++g_margin_hits;
       return c.second.ratio;
     }

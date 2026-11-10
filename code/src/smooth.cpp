@@ -40,13 +40,65 @@ struct Rec {
 constexpr float kMaxStepMove = 30.0f;
 
 std::unordered_map<uint64_t, Rec> g_recs;
-std::unordered_map<uint64_t, uint32_t> g_uses;  // draws so far this frame per source
+// How many times each key was seen this frame: an open-addressing table that
+// is emptied by a generation number (no allocations per draw or per frame,
+// unlike an unordered_map cleared every frame).
+class UseCounter {
+ public:
+  uint32_t Next(uint64_t key) {
+    if ((used_ + 1) * 2 > slots_.size()) Grow();
+    size_t i = Hash(key) & (slots_.size() - 1);
+    for (;;) {
+      Slot& s = slots_[i];
+      if (s.gen != gen_) {
+        s = Slot{key, gen_, 1};
+        ++used_;
+        return 0;
+      }
+      if (s.key == key) return s.n++;
+      i = (i + 1) & (slots_.size() - 1);
+    }
+  }
+  void clear() {
+    ++gen_;
+    used_ = 0;
+  }
+
+ private:
+  struct Slot {
+    uint64_t key;
+    uint32_t gen, n;
+  };
+  static size_t Hash(uint64_t k) { return static_cast<size_t>((k * 0x9E3779B97F4A7C15ull) >> 32); }
+  void Grow() {
+    std::vector<Slot> old;
+    old.swap(slots_);
+    slots_.assign(old.empty() ? 1024 : old.size() * 2, Slot{0, 0, 0});
+    used_ = 0;
+    for (const Slot& s : old) {
+      if (s.gen != gen_) continue;
+      size_t i = Hash(s.key) & (slots_.size() - 1);
+      while (slots_[i].gen == gen_) i = (i + 1) & (slots_.size() - 1);
+      slots_[i] = s;
+      ++used_;
+    }
+  }
+  std::vector<Slot> slots_;
+  uint32_t gen_ = 1;
+  size_t used_ = 0;
+};
+
+UseCounter g_uses;  // draws so far this frame per source
 unsigned g_frames = 0;
 bool g_bypass = false;  // drawing something already placed between steps (shadow camera)
 unsigned g_shadow_blends = 0;  // shadows rebuilt from blended riders
 unsigned g_shadow_why[6] = {};  // calls, no meshes, no prev, moved too far, off, ok
 unsigned g_total = 0, g_blended = 0;
 unsigned g_race_frames = 0;  // frames drawn while smoothing could run
+// SmoothLog=4: every camera set for the first frames after a race starts
+// (the supercross start-gate jitter). Counts down per frame.
+unsigned g_cam_trace = 0;
+bool g_was_racing = false;
 bool g_trace = false;          // SmoothLog: tracing this frame
 float g_arrow_pos[3] = {};
 unsigned g_arrow_frames = 0;  // ArrowLog: frames left to trace
@@ -152,7 +204,7 @@ struct TextRec {
   unsigned prev_tick = 0, tick = 0;
 };
 std::unordered_map<uint64_t, TextRec> g_trecs;
-std::unordered_map<uint64_t, uint32_t> g_tuses;
+UseCounter g_tuses;
 using TextOutFn = BOOL(WINAPI*)(HDC, int, int, LPCSTR, int);
 TextOutFn g_text_out = nullptr;
 
@@ -165,7 +217,7 @@ BOOL WINAPI SmoothTextOut(HDC dc, int x, int y, LPCSTR text, int len) {
   if (text && len > 0 && SimDrawPoint(&tick, &alpha)) {
     uint64_t h = 1469598103934665603ull;
     for (int i = 0; i < len; ++i) h = (h ^ static_cast<uint8_t>(text[i])) * 1099511628211ull;
-    const uint32_t use = g_tuses[h]++;
+    const uint32_t use = g_tuses.Next(h);
     TextRec& r = g_trecs[h * 0x9E3779B97F4A7C15ull ^ use];
     if (r.tick != tick) {
       r.prev[0] = r.cur[0];
@@ -189,7 +241,7 @@ struct CentreRec {
   unsigned prev_tick = 0, tick = 0;
 };
 std::unordered_map<uint64_t, CentreRec> g_crecs;
-std::unordered_map<uint64_t, uint32_t> g_luses;
+UseCounter g_luses;
 
 // Rotation (unit quaternion w,x,y,z) that best turns the points `a` onto
 // `b` about their centres (Horn's method: the top eigenvector of a 4x4
@@ -260,7 +312,7 @@ void Rotate(const float* q, const float* v, float* o) {
   o[1] = v[1] + w * ty + (uz * tx - ux * tz);
   o[2] = v[2] + w * tz + (ux * ty - uy * tx);
 }
-std::unordered_map<uint64_t, uint32_t> g_vuses;
+UseCounter g_vuses;
 std::vector<uint8_t> g_vout;
 unsigned g_vtotal = 0, g_vblended = 0;
 
@@ -283,7 +335,7 @@ const uint8_t* SmoothVertices(const uint8_t* verts, uint32_t stride, uint32_t co
   uint64_t source = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(verts));
   source = source * 0x9E3779B97F4A7C15ull ^ static_cast<uint64_t>(reinterpret_cast<uintptr_t>(idx));
   source = source * 0x9E3779B97F4A7C15ull ^ count;
-  const uint32_t use = g_vuses[source]++;
+  const uint32_t use = g_vuses.Next(source);
   const uint64_t key = source * 0x9E3779B97F4A7C15ull ^ use;
   VertRec& r = g_vrecs[key];
   if (r.tick != tick) {
@@ -308,7 +360,7 @@ const uint8_t* SmoothVertices(const uint8_t* verts, uint32_t stride, uint32_t co
   for (double& c : centre) c /= count;
   uint64_t loose = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(verts));
   loose = loose * 0x9E3779B97F4A7C15ull ^ static_cast<uint64_t>(reinterpret_cast<uintptr_t>(idx));
-  const uint32_t loose_use = g_luses[loose]++;
+  const uint32_t loose_use = g_luses.Next(loose);
   CentreRec& cr = g_crecs[loose * 0x9E3779B97F4A7C15ull ^ loose_use];
   if (cr.tick != tick) {
     std::memcpy(cr.prev, cr.cur, sizeof(cr.prev));
@@ -425,6 +477,9 @@ void SmoothProjection(float* m) {
     r.tick = tick;
   }
   r.cur[0] = m[0]; r.cur[1] = m[5]; r.cur[2] = m[8]; r.cur[3] = m[9];
+  if (g_cam_trace)
+    patch::Log("cam: f=%u projection use %u tick %u a=%.3f m00 %.4f (prev step %.4f, tick %u)", g_race_frames,
+               g_proj_use - 1, tick, alpha, r.cur[0], r.prev[0], r.prev_tick);
   if (g_arrow_frames)
     patch::Log("arrow trace: projection tick %u a=%.3f m00 prev %.4f cur %.4f (prev tick %u)", tick, alpha, r.prev[0],
                r.cur[0], r.prev_tick);
@@ -449,7 +504,7 @@ void SmoothTransform(uint32_t type, const float* in, const void* src, float* out
   float alpha;
   if (g_bypass || !SimDrawPoint(&tick, &alpha)) return;
   const uint64_t source = (static_cast<uint64_t>(reinterpret_cast<uintptr_t>(src)) << 8) | (type & 0xff);
-  const uint32_t use = g_uses[source]++;
+  const uint32_t use = g_uses.Next(source);
   const uint64_t key = source ^ (static_cast<uint64_t>(use) << 40);
   Rec& r = g_recs[key];
   if (r.tick != tick) {
@@ -462,13 +517,25 @@ void SmoothTransform(uint32_t type, const float* in, const void* src, float* out
   }
   std::memcpy(r.cur, in, sizeof(r.cur));
   ++g_total;
-  if (!r.has_prev || r.prev_tick + 1 != tick) return;
+  const bool have_prev = r.has_prev && r.prev_tick + 1 == tick;
+  if (!have_prev && !(g_cam_trace && type == 2)) return;
   float blended[16];
-  const bool ok = type == 2 ? BlendView(r.prev, r.cur, alpha, blended)
-                            : Blend(r.prev, r.cur, alpha, blended);
+  const bool ok = have_prev && (type == 2 ? BlendView(r.prev, r.cur, alpha, blended)
+                                          : Blend(r.prev, r.cur, alpha, blended));
   if (ok) {
     std::memcpy(out, blended, sizeof(blended));
     ++g_blended;
+  }
+  if (g_cam_trace && type == 2) {
+    float ei[3], ep[3], eo[3];
+    ViewEye(in, ei);
+    ViewEye(r.prev, ep);
+    ViewEye(out, eo);
+    patch::Log("cam: f=%u tick=%u a=%.3f use=%u src=%p eye cur (%.3f %.3f %.3f) prev (%.3f %.3f %.3f) tick %u "
+               "drawn (%.3f %.3f %.3f) fwd (%.3f %.3f %.3f)%s",
+               g_race_frames, tick, alpha, use, src, ei[0], ei[1], ei[2], ep[0], ep[1], ep[2], r.prev_tick, eo[0],
+               eo[1], eo[2], out[2], out[6], out[10],
+               !have_prev ? " NO PREV" : ok ? "" : " NOT blended");
   }
   if (g_trace_view && type == 2 && g_arrow_frames) {
     float ei[3], eo[3];
@@ -509,6 +576,12 @@ void SmoothFrameEnd() {
     float alpha;
     if (SimDrawPoint(&tick, &alpha)) {
       ++g_race_frames;
+      if (g_cam_trace) --g_cam_trace;
+      if (!g_was_racing && GetConfig().smooth_log == 4) {
+        g_cam_trace = 3000;
+        patch::Log("cam: tracing the camera for the next 3000 frames (SmoothLog=4)");
+      }
+      g_was_racing = true;
       // Trace 6 frames, 5 seconds or so into the race.
       const int mode = GetConfig().smooth_log;
       g_trace = mode == 1 && g_race_frames >= 600 && g_race_frames < 606;
@@ -520,6 +593,8 @@ void SmoothFrameEnd() {
       if (g_trace) patch::Log("trace: ---- frame %u, tick %u, a=%.3f", g_race_frames, tick, alpha);
     } else {
       g_trace = g_trace_view = false;
+      g_was_racing = false;
+      g_cam_trace = 0;
     }
   }
   if (++g_frames % 600 == 0) {

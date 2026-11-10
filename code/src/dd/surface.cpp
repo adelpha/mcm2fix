@@ -1,5 +1,6 @@
 #include "../smooth.h"
 #include "surface.h"
+#include "../prof.h"
 #include "gdihook.h"
 #include "gputext.h"
 #include "hudtext.h"
@@ -175,6 +176,48 @@ DWORD PixelLayout::FromBGRA(const uint8_t in[4]) const {
   }
   return px;
 }
+
+namespace {
+double MsSince(const LARGE_INTEGER& a) {
+  LARGE_INTEGER b, f;
+  QueryPerformanceCounter(&b);
+  QueryPerformanceFrequency(&f);
+  return (b.QuadPart - a.QuadPart) * 1000.0 / f.QuadPart;
+}
+
+bool Is8888(const PixelLayout& l) {
+  return l.bpp == 32 && l.mask[0] == 0xFF0000 && l.mask[1] == 0xFF00 && l.mask[2] == 0xFF &&
+         (l.mask[3] == 0 || l.mask[3] == 0xFF000000u);
+}
+bool Is565(const PixelLayout& l) {
+  return l.bpp == 16 && l.mask[0] == 0xF800 && l.mask[1] == 0x7E0 && l.mask[2] == 0x1F && l.mask[3] == 0;
+}
+
+// n pixels of B8G8R8A8 into the surface format: whole rows at a time, with
+// straight paths for X8R8G8B8/A8R8G8B8 and R5G6B5 (the pause menu reads
+// back a full-screen frame, 2 million pixels).
+void RowFromBGRA(const PixelLayout& l, uint8_t* dst, const uint8_t* src, UINT n) {
+  if (Is8888(l)) {
+    if (l.mask[3]) {
+      std::memcpy(dst, src, static_cast<size_t>(n) * 4);
+    } else {
+      const uint32_t* s = reinterpret_cast<const uint32_t*>(src);
+      uint32_t* d = reinterpret_cast<uint32_t*>(dst);
+      for (UINT x = 0; x < n; ++x) d[x] = s[x] & 0x00FFFFFFu;
+    }
+    return;
+  }
+  if (Is565(l)) {
+    const ChannelTables& t = Tables();
+    uint16_t* d = reinterpret_cast<uint16_t*>(dst);
+    for (UINT x = 0; x < n; ++x, src += 4)
+      d[x] = static_cast<uint16_t>((t.compress[5][src[2]] << 11) | (t.compress[6][src[1]] << 5) | t.compress[5][src[0]]);
+    return;
+  }
+  const UINT bytes = l.bpp / 8;
+  for (UINT x = 0; x < n; ++x) WritePx(dst + x * bytes, l.bpp, l.FromBGRA(src + x * 4));
+}
+}  // namespace
 
 DDPIXELFORMAT MakeRGBFormat(UINT bpp, DWORD r, DWORD g, DWORD b, DWORD a) {
   DDPIXELFORMAT pf{};
@@ -471,18 +514,24 @@ void Surface::SyncToCpu(const char* why) {
 }
 
 void Surface::BlendTextIntoCpu() {
+  LARGE_INTEGER t0;
+  QueryPerformanceCounter(&t0);
   std::vector<uint8_t> ov;
   UINT ow = 0, oh = 0;
   if (!gpu_.Valid() || layout_.palette || layout_.depth || !GpuTextReadOverlay(gpu_.Native(), ov, ow, oh)) return;
   const UINT w = Width(), h = Height(), bytes = layout_.bpp / 8;
   unsigned touched = 0;
+  // Overlay column for each surface column, worked out once (not a 64-bit
+  // divide per pixel).
+  std::vector<UINT> oxs(w);
+  for (UINT x = 0; x < w; ++x) oxs[x] = static_cast<UINT>(static_cast<uint64_t>(x) * ow / w);
   for (UINT y = 0; y < h; ++y) {
     const UINT oy = static_cast<UINT>(static_cast<uint64_t>(y) * oh / h);
+    const uint32_t* orow = reinterpret_cast<const uint32_t*>(ov.data() + static_cast<size_t>(oy) * ow * 4);
     uint8_t* row = mem_.data() + static_cast<size_t>(y) * Pitch();
     for (UINT x = 0; x < w; ++x) {
-      const UINT ox = static_cast<UINT>(static_cast<uint64_t>(x) * ow / w);
-      const uint8_t* t = ov.data() + (static_cast<size_t>(oy) * ow + ox) * 4;
-      if (!t[3] && !t[0] && !t[1] && !t[2]) continue;
+      if (!orow[oxs[x]]) continue;  // nothing drawn there
+      const uint8_t* t = reinterpret_cast<const uint8_t*>(orow + oxs[x]);
       uint8_t px[4];
       layout_.ToBGRA(ReadPx(row + x * bytes, layout_.bpp), px);
       const unsigned inv = 255 - t[3];
@@ -491,7 +540,8 @@ void Surface::BlendTextIntoCpu() {
       ++touched;
     }
   }
-  Log("readback of %ux%u: blended %u pixels of GPU text (overlay %ux%u)", w, h, touched, ow, oh);
+  Log("readback of %ux%u: blended %u pixels of GPU text (overlay %ux%u) in %.2f ms (with overlay readback)", w, h,
+      touched, ow, oh, MsSince(t0));
 }
 
 void Surface::MarkCpuWritten() {
@@ -508,6 +558,8 @@ namespace {
 // each transparent texel the average colour of its visible neighbours
 // (a few passes, so the colour spreads a little way in); alpha is unchanged.
 void BleedIntoTransparent(uint8_t* px, UINT w, UINT h) {
+  // Only texels next to visible ones are visited (a frontier that grows by
+  // one ring a pass), not the whole picture four times over.
   const size_t n = static_cast<size_t>(w) * h;
   std::vector<uint8_t> known(n);
   size_t unknown = 0;
@@ -516,34 +568,85 @@ void BleedIntoTransparent(uint8_t* px, UINT w, UINT h) {
     if (!known[i]) ++unknown;
   }
   if (!unknown || unknown == n) return;
-  std::vector<uint8_t> next;
-  for (int pass = 0; pass < 4 && unknown; ++pass) {
-    next = known;
-    for (UINT y = 0; y < h; ++y) {
-      for (UINT x = 0; x < w; ++x) {
-        size_t i = static_cast<size_t>(y) * w + x;
-        if (known[i]) continue;
-        unsigned sum[3] = {}, count = 0;
-        for (int dy = -1; dy <= 1; ++dy) {
-          for (int dx = -1; dx <= 1; ++dx) {
-            int nx = static_cast<int>(x) + dx, ny = static_cast<int>(y) + dy;
-            if (nx < 0 || ny < 0 || nx >= static_cast<int>(w) || ny >= static_cast<int>(h)) continue;
-            size_t j = static_cast<size_t>(ny) * w + nx;
-            if (!known[j]) continue;
-            for (int c = 0; c < 3; ++c) sum[c] += px[j * 4 + c];
-            ++count;
-          }
+  const int W = static_cast<int>(w), H = static_cast<int>(h);
+  std::vector<uint32_t> frontier, next, added;
+  std::vector<uint8_t> queued(n);
+  auto queue_neighbours = [&](size_t i, std::vector<uint32_t>& out) {
+    const int x = static_cast<int>(i % w), y = static_cast<int>(i / w);
+    for (int dy = -1; dy <= 1; ++dy)
+      for (int dx = -1; dx <= 1; ++dx) {
+        const int nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const size_t j = static_cast<size_t>(ny) * w + nx;
+        if (!known[j] && !queued[j]) {
+          queued[j] = 1;
+          out.push_back(static_cast<uint32_t>(j));
         }
-        if (!count) continue;
-        for (int c = 0; c < 3; ++c) px[i * 4 + c] = static_cast<uint8_t>(sum[c] / count);
-        next[i] = 1;
-        --unknown;
       }
+  };
+  for (size_t i = 0; i < n; ++i)
+    if (known[i]) {
+      // Visible texel with a hidden neighbour: its neighbours start the frontier.
+      const int x = static_cast<int>(i % w), y = static_cast<int>(i / w);
+      bool edge = false;
+      for (int dy = -1; dy <= 1 && !edge; ++dy)
+        for (int dx = -1; dx <= 1 && !edge; ++dx) {
+          const int nx = x + dx, ny = y + dy;
+          if (nx >= 0 && ny >= 0 && nx < W && ny < H && !known[static_cast<size_t>(ny) * w + nx]) edge = true;
+        }
+      if (edge) queue_neighbours(i, frontier);
     }
-    known.swap(next);
+  for (int pass = 0; pass < 4 && !frontier.empty(); ++pass) {
+    added.clear();
+    for (uint32_t i : frontier) {
+      const int x = static_cast<int>(i % w), y = static_cast<int>(i / w);
+      unsigned sum[3] = {}, count = 0;
+      for (int dy = -1; dy <= 1; ++dy)
+        for (int dx = -1; dx <= 1; ++dx) {
+          const int nx = x + dx, ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+          const size_t j = static_cast<size_t>(ny) * w + nx;
+          if (!known[j]) continue;
+          for (int c = 0; c < 3; ++c) sum[c] += px[j * 4 + c];
+          ++count;
+        }
+      if (!count) continue;
+      for (int c = 0; c < 3; ++c) px[static_cast<size_t>(i) * 4 + c] = static_cast<uint8_t>(sum[c] / count);
+      added.push_back(i);
+    }
+    // Texels coloured in this pass count as visible from the next pass on.
+    for (uint32_t i : added) known[i] = 1;
+    next.clear();
+    for (uint32_t i : added) queue_neighbours(i, next);
+    frontier.swap(next);
   }
 }
 }  // namespace
+
+// 16-bit pixels to BGRA through a table per pixel format (65536 entries):
+// the game's textures are mostly 16-bit, and some are uploaded every frame.
+static const uint32_t* Lut16(const PixelLayout& l) {
+  struct Entry {
+    DWORD mask[4];
+    std::vector<uint32_t> lut;
+  };
+  static std::vector<Entry> cache;
+  for (const Entry& e : cache)
+    if (std::memcmp(e.mask, l.mask, sizeof(e.mask)) == 0) return e.lut.data();
+  if (cache.size() >= 8) return nullptr;
+  Entry e;
+  std::memcpy(e.mask, l.mask, sizeof(e.mask));
+  e.lut.resize(65536);
+  for (DWORD px = 0; px < 65536; ++px) {
+    uint8_t c[4];
+    l.ToBGRA(px, c);
+    std::memcpy(&e.lut[px], c, 4);
+  }
+  cache.push_back(std::move(e));
+  Log("16-bit texture format %04lx/%04lx/%04lx/%04lx: conversion table made", l.mask[0], l.mask[1], l.mask[2],
+      l.mask[3]);
+  return cache.back().lut.data();
+}
 
 bool Surface::LevelBGRA(UINT level, std::vector<uint8_t>& bgra, UINT& w, UINT& h) {
   Surface* s = level == 0 ? this : (level - 1 < mips_.size() ? mips_[level - 1] : nullptr);
@@ -554,11 +657,18 @@ bool Surface::LevelBGRA(UINT level, std::vector<uint8_t>& bgra, UINT& w, UINT& h
   h = s->Height();
   const UINT bytes = layout_.bpp / 8;
   bgra.resize(static_cast<size_t>(w) * h * 4);
+  const uint32_t* lut = !layout_.palette && layout_.bpp == 16 ? Lut16(layout_) : nullptr;
   for (UINT y = 0; y < h; ++y) {
     const uint8_t* src = s->mem_.data() + static_cast<size_t>(y) * s->Pitch();
     uint8_t* dst = bgra.data() + static_cast<size_t>(y) * w * 4;
     if (layout_.palette) {
       for (UINT x = 0; x < w; ++x) std::memcpy(dst + x * 4, pal[src[x]], 4);
+    } else if (lut) {
+      for (UINT x = 0; x < w; ++x) {
+        uint16_t px;
+        std::memcpy(&px, src + x * 2, 2);
+        std::memcpy(dst + x * 4, &lut[px], 4);
+      }
     } else if (layout_.bpp == 32 && layout_.mask[0] == 0xff0000 && layout_.mask[2] == 0xff) {
       for (UINT x = 0; x < w; ++x) {
         std::memcpy(dst + x * 4, src + x * 4, 4);
@@ -573,6 +683,8 @@ bool Surface::LevelBGRA(UINT level, std::vector<uint8_t>& bgra, UINT& w, UINT& h
 
 void Surface::Upload() {
   if (!gpu_.Valid() || layout_.depth) return;
+  PROF_ZONE(kUpload);
+  prof::Count(prof::cUploads);
   ++uploads_;
   GpuTextOcclude(gpu_.Native(), nullptr, "cpu write");
   std::vector<uint8_t> bgra;
@@ -580,8 +692,23 @@ void Surface::Upload() {
     UINT w = 0, h = 0;
     if (!LevelBGRA(level, bgra, w, h)) break;
     if (level == 0) MatchReplacement(bgra.data(), w, h);
+    if (level == 0 && layout_.mask[3] && uploads_ < 4) {
+      // Share of texels that are neither (nearly) clear nor (nearly) solid.
+      size_t soft = 0, n = static_cast<size_t>(w) * h;
+      for (size_t i = 0; i < n; ++i) {
+        uint8_t a = bgra[i * 4 + 3];
+        soft += a > 8 && a < 247;
+      }
+      bool was = soft_alpha_;
+      soft_alpha_ = n && soft * 4 > n;
+      if (soft_alpha_ != was)
+        Log("texture %ux%u \"%s\": %u%% partly transparent texels, %s AlphaCut", w, h,
+            tex_name_.empty() ? "?" : tex_name_.c_str(), static_cast<unsigned>(soft * 100 / n),
+            soft_alpha_ ? "kept out of" : "back under");
+    }
     if (layout_.mask[3] && uploads_ < 4) BleedIntoTransparent(bgra.data(), w, h);
     UploadLevel(gpu_, level, bgra.data(), w, h);
+    prof::Count(prof::cUploadKB, (w * h * 4 + 1023) / 1024);
   }
 }
 
@@ -596,6 +723,7 @@ const GpuTexture* Surface::KeyedTex(DWORD key) {
   }
   const uint64_t stamp = (static_cast<uint64_t>(cpu_version_) << 32) ^ key ^ 0x8000000000000000ull;
   if (keyed_.Valid() && keyed_stamp_ == stamp) return &keyed_;
+  PROF_ZONE(kKeyed);
   keyed_.Reset();
   const UINT levels = static_cast<UINT>(mips_.size()) + 1;
   if (!CreateGpuTexture(keyed_, Width(), Height(), levels, false, false)) return nullptr;
@@ -654,7 +782,8 @@ void Surface::MatchReplacement(const uint8_t* bgra, UINT w, UINT h) {
     tex_hash_ = 0;
     return;
   }
-  const uint64_t hash = TextureHash(bgra, w, h);
+  const bool exact = ExactTextureHashNeeded();
+  const uint64_t hash = exact ? TextureHash(bgra, w, h) : FastTextureHash(bgra, w, h);
   if (hash == tex_hash_) return;  // same picture as last time
   const bool first = tex_hash_ == 0;
   tex_hash_ = hash;
@@ -670,10 +799,10 @@ void Surface::MatchReplacement(const uint8_t* bgra, UINT w, UINT h) {
     // streamed it in. Falls back to the hash below.
     DumpNamedTexture(tex_name_, bgra, w, h);
     if (LoadReplacementByName(tex_name_, replaced_)) return;
-  } else {
+  } else if (exact) {
     DumpTexture(hash, bgra, w, h);
   }
-  LoadReplacement(hash, replaced_);
+  if (exact) LoadReplacement(hash, replaced_);
 }
 
 const GpuTexture* Surface::SampleTex() {
@@ -685,24 +814,31 @@ const GpuTexture* Surface::SampleTex() {
 void Surface::Download() {
   if (!gpu_.Valid() || layout_.depth) return;
   MsaaRelease(gpu_.Native());
+  PROF_ZONE(kReadback);
+  prof::Count(prof::cReadbacks);
   ++Counters().downloads;
   if (!mips_.empty()) LogOnce("reading back a mipmapped surface (top level only)");
   if (layout_.palette) return;  // cannot map colours back to indices
   struct Ctx {
     Surface* s;
   } ctx{this};
+  LARGE_INTEGER t0;
+  QueryPerformanceCounter(&t0);
   const bool ok = DownloadTop(
       gpu_,
       [](void* c, UINT y, const uint8_t* src) {
         Surface* s = static_cast<Ctx*>(c)->s;
         if (y >= s->Height()) return;
-        const UINT bytes = s->layout_.bpp / 8;
-        uint8_t* dst = s->mem_.data() + static_cast<size_t>(y) * s->Pitch();
-        for (UINT x = 0; x < s->Width(); ++x)
-          WritePx(dst + x * bytes, s->layout_.bpp, s->layout_.FromBGRA(src + x * 4));
+        RowFromBGRA(s->layout_, s->mem_.data() + static_cast<size_t>(y) * s->Pitch(), src, s->Width());
       },
       &ctx);
   if (!ok) LogOnce("reading back a %ux%u surface failed", Width(), Height());
+  if (Width() * Height() >= 256 * 256) {
+    static unsigned logged = 0;
+    if (++logged <= 40)
+      Log("readback %ux%u %ubpp%s: %.2f ms (GPU wait + copy + convert)", Width(), Height(), layout_.bpp,
+          Is8888(layout_) ? " 8888" : Is565(layout_) ? " 565" : "", MsSince(t0));
+  }
 }
 
 void Surface::InheritName(Surface* src) {
@@ -999,6 +1135,8 @@ HRESULT Surface::AddOverlayDirtyRect(LPRECT) { return DDERR_UNSUPPORTED; }
 HRESULT Surface::Blt(LPRECT dr_in, LPDIRECTDRAWSURFACE7 src_in, LPRECT sr_in, DWORD flags,
                      LPDDBLTFX fx) {
   DD_LOCK;
+  PROF_ZONE(kBlt);
+  prof::Count(prof::cBlts);
   RECT full{0, 0, static_cast<LONG>(Width()), static_cast<LONG>(Height())};
   RECT dr = dr_in ? *dr_in : full;
   if (flags & DDBLT_COLORFILL) {
@@ -1116,11 +1254,27 @@ HRESULT Surface::EnumOverlayZOrders(DWORD, LPVOID, LPDDENUMSURFACESCALLBACK7) {
   return DDERR_UNSUPPORTED;
 }
 
-HRESULT Surface::Flip(LPDIRECTDRAWSURFACE7, DWORD flags) {
+HRESULT Surface::Flip(LPDIRECTDRAWSURFACE7 s, DWORD flags) {
+  HRESULT hr;
+  {
+    PROF_ZONE(kFlip);
+    hr = FlipImpl(s, flags);
+  }
+  prof::FrameEnd();
+  return hr;
+}
+
+HRESULT Surface::FlipImpl(LPDIRECTDRAWSURFACE7, DWORD flags) {
   if (!back_) return DDERR_NOTFLIPPABLE;
-  WaitForFrameSlot();  // frame cap, outside the lock
+  {
+    PROF_ZONE(kCapWait);
+    WaitForFrameSlot();  // frame cap, outside the lock
+  }
   DD_LOCK;
-  HudTextFlush();  // in case the scene was not ended
+  {
+    PROF_ZONE(kHudFlush);
+    HudTextFlush();  // in case the scene was not ended
+  }
   if (!back_) return DDERR_NOTFLIPPABLE;
   ++Counters().flips;
   Surface* cur = this;
@@ -1179,6 +1333,8 @@ HRESULT Surface::GetColorKey(DWORD flags, LPDDCOLORKEY key) {
 
 HRESULT Surface::GetDC(HDC* out) {
   DD_LOCK;
+  PROF_ZONE(kGetDC);
+  prof::Count(prof::cGetDCs);
   void* caller = CALLER_ADDRESS();
   if (!out) return DDERR_INVALIDPARAMS;
   if (dc_) {
@@ -1248,6 +1404,7 @@ HRESULT Surface::GetDC(HDC* out) {
 
 HRESULT Surface::ReleaseDC(HDC dc) {
   DD_LOCK;
+  PROF_ZONE(kGetDC);
   if (!dc_ || dc != dc_) return DDERR_INVALIDPARAMS;
   GdiUntrack(dc);
   if (text_dc_) {
@@ -1395,6 +1552,8 @@ HRESULT Surface::IsLost() { return DD_OK; }
 
 HRESULT Surface::Lock(LPRECT rect, LPDDSURFACEDESC2 desc, DWORD flags, HANDLE) {
   DD_LOCK;
+  PROF_ZONE(kLock);
+  prof::Count(prof::cLocks);
   if (!desc) return DDERR_INVALIDPARAMS;
   if (layout_.depth) LogOnce("Lock of a Z-buffer (contents not kept)");
   ++Counters().locks;

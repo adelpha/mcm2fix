@@ -11,10 +11,14 @@
 #include <cstring>
 #include <map>
 #include <set>
+#include <unordered_map>
 #include <string>
 
 #include "../config.h"
 #include "../patch.h"
+#include "../prof.h"
+
+void PerfBeforePresent();  // fixes_perf.cpp
 
 namespace dd {
 
@@ -41,6 +45,12 @@ VSOut vs_main(uint id : SV_VertexID) {
   VSOut o;
   o.pos = float4(lerp(dst.x, dst.z, c.x), lerp(dst.y, dst.w, c.y), 0, 1);
   o.uv = float2(lerp(src.x, src.z, c.x), lerp(src.y, src.w, c.y));
+  return o;
+}
+VSOut vs_quads(float2 pos : POSITION, float2 uv : TEXCOORD0) {
+  VSOut o;
+  o.pos = float4(pos, 0, 1);
+  o.uv = uv;
   return o;
 }
 float4 ps_main(VSOut i) : SV_Target {
@@ -77,17 +87,34 @@ void Log(const char* fmt, ...) {
 }
 
 void LogOnce(const char* fmt, ...) {
+  // Some callers run every draw or every frame (fog state, swap chain size).
+  // Formatting is the expensive part, so after 64 calls with the same format
+  // string we stop formatting it: later new values of it are not logged.
   static std::set<std::string> seen;
+  static std::unordered_map<const char*, unsigned> calls;
+  DD_LOCK;
+  unsigned& n = calls[fmt];
+  if (n > 64) return;
+  if (++n > 64) {
+    patch::Log("%s: (LogOnce: \"%.60s\" called 64 times; not logging it any more)",
+               g_api == Api::kD3D9 ? "d3d9" : "d3d11", fmt);
+    return;
+  }
   char buf[480];
   va_list ap;
   va_start(ap, fmt);
   std::vsnprintf(buf, sizeof(buf), fmt, ap);
   va_end(ap);
-  DD_LOCK;
   if (seen.insert(buf).second) patch::Log("%s: %s", g_api == Api::kD3D9 ? "d3d9" : "d3d11", buf);
 }
 
 Api ActiveApi() { return g_api; }
+
+namespace {
+unsigned g_ctx_epoch = 1;
+}
+void ContextTouched() { ++g_ctx_epoch; }
+unsigned ContextEpoch() { return g_ctx_epoch; }
 
 void GpuTexture::Reset() {
   if (const void* n = Native()) {
@@ -194,6 +221,23 @@ bool CreatePipeline() {
   b.device->CreatePixelShader(ps->GetBufferPointer(), ps->GetBufferSize(), nullptr, &b.blit_ps);
   vs->Release();
   ps->Release();
+  // Batched quads (GPU text glyphs): same pixel shader, vertices from a buffer.
+  if (ID3DBlob* qvs = Compile(kBlitShader, "vs_quads", "vs_4_0")) {
+    const D3D11_INPUT_ELEMENT_DESC el[] = {
+        {"POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 8, D3D11_INPUT_PER_VERTEX_DATA, 0},
+    };
+    b.device->CreateVertexShader(qvs->GetBufferPointer(), qvs->GetBufferSize(), nullptr, &b.quad_vs);
+    b.device->CreateInputLayout(el, 2, qvs->GetBufferPointer(), qvs->GetBufferSize(), &b.quad_layout);
+    qvs->Release();
+    D3D11_BUFFER_DESC vd{};
+    vd.ByteWidth = kQuadBatch * 6 * 16;
+    vd.Usage = D3D11_USAGE_DYNAMIC;
+    vd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+    vd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    b.device->CreateBuffer(&vd, nullptr, &b.quad_vb);
+  }
+  if (!b.quad_vs || !b.quad_layout || !b.quad_vb) Log("batched blits unavailable: one draw per glyph");
 
   D3D11_BUFFER_DESC cb{};
   cb.ByteWidth = sizeof(BlitCB);
@@ -360,6 +404,7 @@ bool ResizeSwapchain() {
   SafeRelease(b.swap_rtv);
   if (b.swapchain) {
     b.ctx->OMSetRenderTargets(0, nullptr, nullptr);
+    ContextTouched();
     b.ctx->Flush();
     if (FAILED(b.swapchain->ResizeBuffers(
             0, w, h, DXGI_FORMAT_UNKNOWN, g_tearing ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0)))
@@ -462,6 +507,7 @@ bool CreateGpuTexture9(GpuTexture& t, UINT w, UINT h, UINT levels, bool render_t
 bool CreateGpuTexture(GpuTexture& t, UINT w, UINT h, UINT levels, bool render_target,
                       bool depth, bool alpha) {
   t.Reset();
+  prof::Count(prof::cTexCreates);
   if (IsD3D9()) return CreateGpuTexture9(t, w, h, levels, render_target, depth, alpha);
   Backend& b = g_backend;
   D3D11_TEXTURE2D_DESC td{};
@@ -505,10 +551,12 @@ bool CreateGpuTexture(GpuTexture& t, UINT w, UINT h, UINT levels, bool render_ta
   return true;
 }
 
-void Blit(const BlitParams& p) {
-  if (IsD3D9()) return Blit9(p);
+namespace {
+
+// Everything of a blit but the shaders, vertices and the draw.
+void SetupBlit(const BlitParams& p) {
   Backend& b = g_backend;
-  if (!p.dst || !p.dst_w || !p.dst_h) return;
+  ContextTouched();
   BlitCB cb{};
   cb.dst[0] = 2.0f * p.dst_rect.left / p.dst_w - 1.0f;
   cb.dst[1] = 1.0f - 2.0f * p.dst_rect.top / p.dst_h;
@@ -538,16 +586,70 @@ void Blit(const BlitParams& p) {
                          : p.blend && b.alpha_blend ? b.alpha_blend
                          : p.alpha_only && b.alpha_only ? b.alpha_only : b.no_blend, nullptr,
                          0xffffffff);
-  b.ctx->IASetInputLayout(nullptr);
-  b.ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-  b.ctx->VSSetShader(b.blit_vs, nullptr, 0);
   b.ctx->VSSetConstantBuffers(0, 1, &b.blit_cb);
   b.ctx->PSSetShader(b.blit_ps, nullptr, 0);
   b.ctx->PSSetConstantBuffers(0, 1, &b.blit_cb);
   ID3D11SamplerState* s = p.linear ? b.linear_sampler : b.point_sampler;
   b.ctx->PSSetSamplers(0, 1, &s);
   if (p.src) b.ctx->PSSetShaderResources(0, 1, &p.src);
+}
+
+}  // namespace
+
+void Blit(const BlitParams& p) {
+  if (IsD3D9()) return Blit9(p);
+  Backend& b = g_backend;
+  if (!p.dst || !p.dst_w || !p.dst_h) return;
+  SetupBlit(p);
+  b.ctx->IASetInputLayout(nullptr);
+  b.ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+  b.ctx->VSSetShader(b.blit_vs, nullptr, 0);
   b.ctx->Draw(4, 0);
+  ID3D11ShaderResourceView* null_srv[1] = {};
+  if (p.src) b.ctx->PSSetShaderResources(0, 1, null_srv);
+}
+
+void BlitQuads(const BlitParams& p, const BlitQuad* q, size_t n) {
+  if (IsD3D9()) return BlitQuads9(p, q, n);
+  Backend& b = g_backend;
+  if (!p.dst || !p.dst_w || !p.dst_h || !n) return;
+  if (!b.quad_vs || !b.quad_layout || !b.quad_vb) {
+    BlitParams one = p;
+    for (size_t i = 0; i < n; ++i) {
+      one.dst_rect = q[i].dst;
+      one.src_rect = q[i].src;
+      Blit(one);
+    }
+    return;
+  }
+  SetupBlit(p);
+  b.ctx->IASetInputLayout(b.quad_layout);
+  b.ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+  const UINT stride = 16, offset = 0;
+  b.ctx->IASetVertexBuffers(0, 1, &b.quad_vb, &stride, &offset);
+  b.ctx->VSSetShader(b.quad_vs, nullptr, 0);
+  const float kx = 2.0f / p.dst_w, ky = 2.0f / p.dst_h;
+  const float ku = 1.0f / p.src_w, kv = 1.0f / p.src_h;
+  for (size_t done = 0; done < n;) {
+    const size_t m = std::min<size_t>(n - done, kQuadBatch);
+    D3D11_MAPPED_SUBRESOURCE map{};
+    if (FAILED(b.ctx->Map(b.quad_vb, 0, D3D11_MAP_WRITE_DISCARD, 0, &map))) break;
+    float* v = static_cast<float*>(map.pData);
+    for (size_t i = 0; i < m; ++i) {
+      const BlitQuad& e = q[done + i];
+      const float x0 = e.dst.left * kx - 1.0f, x1 = e.dst.right * kx - 1.0f;
+      const float y0 = 1.0f - e.dst.top * ky, y1 = 1.0f - e.dst.bottom * ky;
+      const float u0 = e.src.left * ku, u1 = e.src.right * ku, v0 = e.src.top * kv, v1 = e.src.bottom * kv;
+      const float c[6][4] = {{x0, y0, u0, v0}, {x1, y0, u1, v0}, {x0, y1, u0, v1},
+                             {x0, y1, u0, v1}, {x1, y0, u1, v0}, {x1, y1, u1, v1}};
+      std::memcpy(v, c, sizeof(c));
+      v += 24;
+    }
+    b.ctx->Unmap(b.quad_vb, 0);
+    b.ctx->Draw(static_cast<UINT>(m * 6), 0);
+    done += m;
+  }
+  ID3D11ShaderResourceView* null_srv[1] = {};
   if (p.src) b.ctx->PSSetShaderResources(0, 1, null_srv);
 }
 
@@ -595,9 +697,76 @@ void ReportStats() {
   ++reports;
 }
 
+namespace {
+// GPU time per frame (Profile=1): timestamp queries from the frame's first
+// draw to the end of its Present, read a few frames later.
+struct GpuTimer11 {
+  ID3D11Query* disjoint = nullptr;
+  ID3D11Query* begin = nullptr;
+  ID3D11Query* end = nullptr;
+  bool pending = false;
+};
+GpuTimer11 g_gpu_timers[6];
+unsigned g_gpu_timer_i = 0;
+bool g_gpu_timer_open = false;
+bool g_gpu_timer_begun = false;
+
+void GpuTimerCollect11() {
+  Backend& b = g_backend;
+  for (GpuTimer11& t : g_gpu_timers) {
+    if (!t.pending) continue;
+    D3D11_QUERY_DATA_TIMESTAMP_DISJOINT dj{};
+    UINT64 t0 = 0, t1 = 0;
+    if (b.ctx->GetData(t.disjoint, &dj, sizeof(dj), D3D11_ASYNC_GETDATA_DONOTFLUSH) != S_OK) continue;
+    if (b.ctx->GetData(t.begin, &t0, sizeof(t0), D3D11_ASYNC_GETDATA_DONOTFLUSH) != S_OK) continue;
+    if (b.ctx->GetData(t.end, &t1, sizeof(t1), D3D11_ASYNC_GETDATA_DONOTFLUSH) != S_OK) continue;
+    t.pending = false;
+    if (!dj.Disjoint && dj.Frequency && t1 >= t0)
+      prof::GpuFrameTime(static_cast<double>(t1 - t0) * 1000.0 / static_cast<double>(dj.Frequency));
+  }
+}
+
+// Called right after Present: close this frame's timer, open the next.
+void GpuTimerFrame11() {
+  if (!prof::On()) return;
+  Backend& b = g_backend;
+  if (g_gpu_timer_open) {
+    GpuTimer11& t = g_gpu_timers[g_gpu_timer_i % 6];
+    if (!g_gpu_timer_begun) b.ctx->End(t.begin);
+    b.ctx->End(t.end);
+    b.ctx->End(t.disjoint);
+    t.pending = true;
+    g_gpu_timer_open = false;
+    ++g_gpu_timer_i;
+  }
+  GpuTimerCollect11();
+  GpuTimer11& n = g_gpu_timers[g_gpu_timer_i % 6];
+  if (n.pending) return;  // GPU far behind: skip a frame
+  if (!n.disjoint) {
+    D3D11_QUERY_DESC qd{D3D11_QUERY_TIMESTAMP_DISJOINT, 0};
+    b.device->CreateQuery(&qd, &n.disjoint);
+    qd.Query = D3D11_QUERY_TIMESTAMP;
+    b.device->CreateQuery(&qd, &n.begin);
+    b.device->CreateQuery(&qd, &n.end);
+    if (!n.disjoint || !n.begin || !n.end) return;
+  }
+  b.ctx->Begin(n.disjoint);
+  g_gpu_timer_open = true;
+  g_gpu_timer_begun = false;  // the begin stamp goes in at the frame's first draw
+}
+}  // namespace
+
+void GpuTimerMark() {
+  if (IsD3D9()) return GpuTimerMark9();
+  if (!g_gpu_timer_open || g_gpu_timer_begun) return;
+  g_gpu_timer_begun = true;
+  g_backend.ctx->End(g_gpu_timers[g_gpu_timer_i % 6].begin);
+}
+
 void Present(const GpuTexture& src_tex, UINT src_w, UINT src_h, UINT interval) {
   DD_LOCK;
   if (IsD3D9()) return Present9(src_tex, src_w, src_h, interval);
+  prof::Scope zone(prof::kCompose);
   ID3D11ShaderResourceView* src = src_tex.srv;
   Backend& b = g_backend;
   ++Counters().presents;
@@ -628,8 +797,12 @@ void Present(const GpuTexture& src_tex, UINT src_w, UINT src_h, UINT interval) {
     GpuTextComposite(src_tex, b.swap_rtv, nullptr, b.swap_w, b.swap_h, p.dst_rect);
   }
   DrawRendererLabel(b.swap_rtv, nullptr, b.swap_w, b.swap_h);
+  PerfBeforePresent();
+  zone.Switch(prof::kSwapPresent);
   HRESULT hr = b.swapchain->Present(interval, interval == 0 && g_tearing ? DXGI_PRESENT_ALLOW_TEARING : 0);
   if (FAILED(hr)) LogOnce("Present failed %08lx", hr);
+  zone.Switch(prof::kCompose);
+  GpuTimerFrame11();
 }
 
 void WaitVBlank() {
@@ -836,6 +1009,7 @@ bool GpuGetDC(GpuTexture& g, HDC* out, void** handle) {
   ID3D11ShaderResourceView* null_srv[8] = {};
   g_backend.ctx->PSSetShaderResources(0, 8, null_srv);
   g_backend.ctx->OMSetRenderTargets(0, nullptr, nullptr);
+  ContextTouched();
   HDC dc = nullptr;
   if (FAILED(s->GetDC(FALSE, &dc)) || !dc) {
     LogOnce("IDXGISurface1::GetDC failed; using CPU copies for GDI");

@@ -34,6 +34,7 @@ void LoadConfig() {
   g_config.reg_log = GetPrivateProfileIntA("mcm2fix", "RegLog", 0, ini) != 0;
   g_config.wide_fov = GetPrivateProfileIntA("mcm2fix", "WideFov", 1, ini) != 0;
   g_config.alpha_cut = GetPrivateProfileIntA("mcm2fix", "AlphaCut", 128, ini);
+  g_config.alpha_log = GetPrivateProfileIntA("mcm2fix", "AlphaLog", 0, ini) != 0;
   g_config.vsync = GetPrivateProfileIntA("mcm2fix", "VSync", 1, ini) != 0;
   g_config.frame_cap = GetPrivateProfileIntA("mcm2fix", "FrameCap", 0, ini);
   if (g_config.frame_cap < 0) g_config.frame_cap = 0;
@@ -65,6 +66,11 @@ void LoadConfig() {
   g_config.arrow_tilt = (tilt >= -45.0f && tilt <= 45.0f) ? tilt : 10.0f;
   g_config.restart_fix = GetPrivateProfileIntA("mcm2fix", "RestartFix", 1, ini) != 0;
   g_config.restart_log = GetPrivateProfileIntA("mcm2fix", "RestartLog", 0, ini) != 0;
+  g_config.profile = GetPrivateProfileIntA("mcm2fix", "Profile", 0, ini) != 0;
+  g_config.profile_sample_us = GetPrivateProfileIntA("mcm2fix", "ProfileSampleUs", 1000, ini);
+  g_config.fast_crt = GetPrivateProfileIntA("mcm2fix", "FastCrt", 1, ini) != 0;
+  g_config.async_sound = GetPrivateProfileIntA("mcm2fix", "AsyncSound", 2, ini);
+  g_config.state_cache = GetPrivateProfileIntA("mcm2fix", "StateCache", 1, ini) != 0;
   g_config.dd_stats = GetPrivateProfileIntA("mcm2fix", "DDStats", 0, ini) != 0;
   {
     char r[32] = {};
@@ -88,6 +94,8 @@ void LoadConfig() {
   g_config.hud_digit_font[std::strcspn(g_config.hud_digit_font, "\t;")] = 0;
   for (size_t n = std::strlen(g_config.hud_digit_font); n && g_config.hud_digit_font[n - 1] == ' ';)
     g_config.hud_digit_font[--n] = 0;
+  g_config.hud_stunt_text_size = ReadFloat("HudStuntTextSize", 0.8f, ini);
+  if (!(g_config.hud_stunt_text_size >= 0.5f && g_config.hud_stunt_text_size <= 1.5f)) g_config.hud_stunt_text_size = 0.8f;
   g_config.hud_digit_size = ReadFloat("HudDigitSize", 0.7f, ini);
   if (!(g_config.hud_digit_size >= 0.5f && g_config.hud_digit_size <= 2.0f)) g_config.hud_digit_size = 0.7f;
   g_config.text_log = GetPrivateProfileIntA("mcm2fix", "TextLog", 0, ini) != 0;

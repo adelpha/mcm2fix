@@ -43,6 +43,11 @@ void SS9(DWORD stage, D3DSAMPLERSTATETYPE t, DWORD v);
 void Tex9(DWORD stage, IDirect3DBaseTexture9* t);
 // Forget the cached state (after a device reset).
 void InvalidateState9();
+// Cached SetRenderTarget(0) + SetDepthStencilSurface, SetViewport, SetScissorRect.
+void SetTarget9(IDirect3DSurface9* rt, IDirect3DSurface9* ds);
+void SetDS9(IDirect3DSurface9* ds);
+void SetViewport9(const D3DVIEWPORT9& vp);
+void SetScissor9(const RECT& r);
 // Device resets so far (cached state older than a reset is stale).
 unsigned ResetCount9();
 const D3DCAPS9& Caps9();

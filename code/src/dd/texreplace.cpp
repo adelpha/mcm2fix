@@ -4,6 +4,7 @@
 #include <wincodec.h>
 
 #include <cstdio>
+#include <cstring>
 #include <cwchar>
 #include <map>
 #include <set>
@@ -153,6 +154,26 @@ uint64_t TextureHash(const uint8_t* bgra, UINT w, UINT h) {
   const size_t n = static_cast<size_t>(w) * h * 4;
   for (size_t i = 0; i < n; ++i) mix(bgra[i]);
   return x;
+}
+
+bool ExactTextureHashNeeded() {
+  const Config& cfg = GetConfig();
+  return cfg.texture_dump || (cfg.texture_replace && !Index().empty());
+}
+
+uint64_t FastTextureHash(const uint8_t* bgra, UINT w, UINT h) {
+  // 8 bytes a step, multiply and fold (not the same values as TextureHash).
+  uint64_t x = 0x9E3779B97F4A7C15ull ^ (static_cast<uint64_t>(w) << 32 | h);
+  const size_t n = static_cast<size_t>(w) * h * 4;
+  size_t i = 0;
+  for (; i + 8 <= n; i += 8) {
+    uint64_t v;
+    std::memcpy(&v, bgra + i, 8);
+    x = (x ^ v) * 0xff51afd7ed558ccdull;
+    x ^= x >> 29;
+  }
+  for (; i < n; ++i) x = (x ^ bgra[i]) * 1099511628211ull;
+  return x ^ (x >> 31);
 }
 
 namespace {
