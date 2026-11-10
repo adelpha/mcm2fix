@@ -509,6 +509,8 @@ namespace {
 // each transparent texel the average colour of its visible neighbours
 // (a few passes, so the colour spreads a little way in); alpha is unchanged.
 void BleedIntoTransparent(uint8_t* px, UINT w, UINT h) {
+  // Only texels next to visible ones are visited (a frontier that grows by
+  // one ring a pass), not the whole picture four times over.
   const size_t n = static_cast<size_t>(w) * h;
   std::vector<uint8_t> known(n);
   size_t unknown = 0;
@@ -517,31 +519,57 @@ void BleedIntoTransparent(uint8_t* px, UINT w, UINT h) {
     if (!known[i]) ++unknown;
   }
   if (!unknown || unknown == n) return;
-  std::vector<uint8_t> next;
-  for (int pass = 0; pass < 4 && unknown; ++pass) {
-    next = known;
-    for (UINT y = 0; y < h; ++y) {
-      for (UINT x = 0; x < w; ++x) {
-        size_t i = static_cast<size_t>(y) * w + x;
-        if (known[i]) continue;
-        unsigned sum[3] = {}, count = 0;
-        for (int dy = -1; dy <= 1; ++dy) {
-          for (int dx = -1; dx <= 1; ++dx) {
-            int nx = static_cast<int>(x) + dx, ny = static_cast<int>(y) + dy;
-            if (nx < 0 || ny < 0 || nx >= static_cast<int>(w) || ny >= static_cast<int>(h)) continue;
-            size_t j = static_cast<size_t>(ny) * w + nx;
-            if (!known[j]) continue;
-            for (int c = 0; c < 3; ++c) sum[c] += px[j * 4 + c];
-            ++count;
-          }
+  const int W = static_cast<int>(w), H = static_cast<int>(h);
+  std::vector<uint32_t> frontier, next, added;
+  std::vector<uint8_t> queued(n);
+  auto queue_neighbours = [&](size_t i, std::vector<uint32_t>& out) {
+    const int x = static_cast<int>(i % w), y = static_cast<int>(i / w);
+    for (int dy = -1; dy <= 1; ++dy)
+      for (int dx = -1; dx <= 1; ++dx) {
+        const int nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const size_t j = static_cast<size_t>(ny) * w + nx;
+        if (!known[j] && !queued[j]) {
+          queued[j] = 1;
+          out.push_back(static_cast<uint32_t>(j));
         }
-        if (!count) continue;
-        for (int c = 0; c < 3; ++c) px[i * 4 + c] = static_cast<uint8_t>(sum[c] / count);
-        next[i] = 1;
-        --unknown;
       }
+  };
+  for (size_t i = 0; i < n; ++i)
+    if (known[i]) {
+      // Visible texel with a hidden neighbour: its neighbours start the frontier.
+      const int x = static_cast<int>(i % w), y = static_cast<int>(i / w);
+      bool edge = false;
+      for (int dy = -1; dy <= 1 && !edge; ++dy)
+        for (int dx = -1; dx <= 1 && !edge; ++dx) {
+          const int nx = x + dx, ny = y + dy;
+          if (nx >= 0 && ny >= 0 && nx < W && ny < H && !known[static_cast<size_t>(ny) * w + nx]) edge = true;
+        }
+      if (edge) queue_neighbours(i, frontier);
     }
-    known.swap(next);
+  for (int pass = 0; pass < 4 && !frontier.empty(); ++pass) {
+    added.clear();
+    for (uint32_t i : frontier) {
+      const int x = static_cast<int>(i % w), y = static_cast<int>(i / w);
+      unsigned sum[3] = {}, count = 0;
+      for (int dy = -1; dy <= 1; ++dy)
+        for (int dx = -1; dx <= 1; ++dx) {
+          const int nx = x + dx, ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+          const size_t j = static_cast<size_t>(ny) * w + nx;
+          if (!known[j]) continue;
+          for (int c = 0; c < 3; ++c) sum[c] += px[j * 4 + c];
+          ++count;
+        }
+      if (!count) continue;
+      for (int c = 0; c < 3; ++c) px[static_cast<size_t>(i) * 4 + c] = static_cast<uint8_t>(sum[c] / count);
+      added.push_back(i);
+    }
+    // Texels coloured in this pass count as visible from the next pass on.
+    for (uint32_t i : added) known[i] = 1;
+    next.clear();
+    for (uint32_t i : added) queue_neighbours(i, next);
+    frontier.swap(next);
   }
 }
 }  // namespace
@@ -691,7 +719,8 @@ void Surface::MatchReplacement(const uint8_t* bgra, UINT w, UINT h) {
     tex_hash_ = 0;
     return;
   }
-  const uint64_t hash = TextureHash(bgra, w, h);
+  const bool exact = ExactTextureHashNeeded();
+  const uint64_t hash = exact ? TextureHash(bgra, w, h) : FastTextureHash(bgra, w, h);
   if (hash == tex_hash_) return;  // same picture as last time
   const bool first = tex_hash_ == 0;
   tex_hash_ = hash;
@@ -707,10 +736,10 @@ void Surface::MatchReplacement(const uint8_t* bgra, UINT w, UINT h) {
     // streamed it in. Falls back to the hash below.
     DumpNamedTexture(tex_name_, bgra, w, h);
     if (LoadReplacementByName(tex_name_, replaced_)) return;
-  } else {
+  } else if (exact) {
     DumpTexture(hash, bgra, w, h);
   }
-  LoadReplacement(hash, replaced_);
+  if (exact) LoadReplacement(hash, replaced_);
 }
 
 const GpuTexture* Surface::SampleTex() {

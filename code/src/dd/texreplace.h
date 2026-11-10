@@ -22,6 +22,11 @@
 namespace dd {
 
 uint64_t TextureHash(const uint8_t* bgra, UINT w, UINT h);
+// True when the exact TextureHash is needed (TextureDump, or pictures in the
+// textures folder named by hash). Otherwise any hash that tells pictures
+// apart will do, and FastTextureHash is much quicker.
+bool ExactTextureHashNeeded();
+uint64_t FastTextureHash(const uint8_t* bgra, UINT w, UINT h);
 
 // True (and `out` filled) if a replacement picture exists for `hash`.
 bool LoadReplacement(uint64_t hash, GpuTexture& out);
