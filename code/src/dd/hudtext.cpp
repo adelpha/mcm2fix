@@ -716,9 +716,11 @@ void DrawItemsNow(Surface* rt, uintptr_t self, const Panel& p, const RECT& regio
     LONG left = it.draw_text ? X(it.rect.left) : X(it.x);
     if (it.live && ts != 1.0f) {
       auto le = line_end.find(it.box.top);
-      if (le != line_end.end()) left = le->second + static_cast<LONG>(std::lround(4 * kx));
+      if (le != line_end.end()) left = le->second + static_cast<LONG>(std::lround(3 * kx));
     }
-    const LONG top = (it.draw_text ? Y(it.rect.top) : Y(it.y)) + lift;
+    // The clock's digits sat a little high against the label's letters.
+    const LONG drop = it.live && ts != 1.0f ? static_cast<LONG>(std::lround(py)) : 0;
+    const LONG top = (it.draw_text ? Y(it.rect.top) : Y(it.y)) + lift + drop;
     LONG end = 0;
     if (DrawMixed(dc, it, left, top, kx, ky, static_cast<LONG>(std::lround((it.box.right - it.box.left) * kx)), &end)) {
       if (!it.live) line_end[it.box.top] = end;
@@ -771,7 +773,7 @@ void DrawItemsNow(Surface* rt, uintptr_t self, const Panel& p, const RECT& regio
     if (GpuTextRun(call)) ++g_st.drawn;
     if (!it.live && (it.draw_text ? !(it.fmt & (DT_CENTER | DT_RIGHT)) : !(it.align & (TA_CENTER | TA_RIGHT))))
       line_end[it.box.top] = (it.draw_text ? r.left : call.x) +
-                             GpuTextExtent(dc, it.s.c_str(), static_cast<int>(it.s.size())).cx;
+                             GpuTextExtent(dc, it.s.c_str(), static_cast<int>(it.s.find_last_not_of(' ') + 1)).cx;
     ++n;
   }
   SelectObject(dc, GetStockObject(SYSTEM_FONT));
