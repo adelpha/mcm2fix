@@ -1471,7 +1471,10 @@ void Device::ApplyState(bool tl, bool depth_clip, bool has_depth) {
       // The game marks its cut-outs with alpha test GREATER 0, which lets
       // every filtered edge pixel through; soft layers (terrain detail,
       // shadows) have alpha test off and are left alone.
-      rs_[RS_ALPHATESTENABLE] && (rs_[RS_ALPHAFUNC] == 5 || rs_[RS_ALPHAFUNC] == 7))
+      rs_[RS_ALPHATESTENABLE] && (rs_[RS_ALPHAFUNC] == 5 || rs_[RS_ALPHAFUNC] == 7) &&
+      // ...except soft layers that are drawn the same way (supercross ground
+      // noise: mostly half-transparent texels).
+      !(tex_[0] && tex_[0]->SoftAlpha()))
     pc.cut[0] = static_cast<float>(GetConfig().alpha_cut) / 255.0f;
   // Which blended / alpha-tested / two-texture draws get the AlphaCut, once
   // per combination (ini AlphaLog=1): to tell a cut-out from a soft layer

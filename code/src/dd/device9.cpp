@@ -259,7 +259,8 @@ void Device::ApplyState9(int mode, bool has_depth) {
   DWORD aref = rs_[d3d7::RS_ALPHAREF] & 0xff;
   if (blend && rs_[d3d7::RS_ZWRITEENABLE] && rs_[d3d7::RS_ZENABLE] &&
       (rs_[d3d7::RS_SRCBLEND] == 5 || rs_[d3d7::RS_SRCBLEND] == 12) && atest &&
-      (afunc == D3DCMP_GREATER || afunc == D3DCMP_GREATEREQUAL) && cfg.alpha_cut > 0) {
+      (afunc == D3DCMP_GREATER || afunc == D3DCMP_GREATEREQUAL) && cfg.alpha_cut > 0 &&
+      !(tex_[0] && tex_[0]->SoftAlpha())) {
     DWORD lo = afunc == D3DCMP_GREATER ? aref + 1 : aref;
     DWORD cut = static_cast<DWORD>(std::min(cfg.alpha_cut, 255));
     aref = std::max(lo, cut);

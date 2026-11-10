@@ -692,6 +692,20 @@ void Surface::Upload() {
     UINT w = 0, h = 0;
     if (!LevelBGRA(level, bgra, w, h)) break;
     if (level == 0) MatchReplacement(bgra.data(), w, h);
+    if (level == 0 && layout_.mask[3] && uploads_ < 4) {
+      // Share of texels that are neither (nearly) clear nor (nearly) solid.
+      size_t soft = 0, n = static_cast<size_t>(w) * h;
+      for (size_t i = 0; i < n; ++i) {
+        uint8_t a = bgra[i * 4 + 3];
+        soft += a > 8 && a < 247;
+      }
+      bool was = soft_alpha_;
+      soft_alpha_ = n && soft * 4 > n;
+      if (soft_alpha_ != was)
+        Log("texture %ux%u \"%s\": %u%% partly transparent texels, %s AlphaCut", w, h,
+            tex_name_.empty() ? "?" : tex_name_.c_str(), static_cast<unsigned>(soft * 100 / n),
+            soft_alpha_ ? "kept out of" : "back under");
+    }
     if (layout_.mask[3] && uploads_ < 4) BleedIntoTransparent(bgra.data(), w, h);
     UploadLevel(gpu_, level, bgra.data(), w, h);
     prof::Count(prof::cUploadKB, (w * h * 4 + 1023) / 1024);

@@ -95,6 +95,10 @@ unsigned g_shadow_blends = 0;  // shadows rebuilt from blended riders
 unsigned g_shadow_why[6] = {};  // calls, no meshes, no prev, moved too far, off, ok
 unsigned g_total = 0, g_blended = 0;
 unsigned g_race_frames = 0;  // frames drawn while smoothing could run
+// SmoothLog=4: every camera set for the first frames after a race starts
+// (the supercross start-gate jitter). Counts down per frame.
+unsigned g_cam_trace = 0;
+bool g_was_racing = false;
 bool g_trace = false;          // SmoothLog: tracing this frame
 float g_arrow_pos[3] = {};
 unsigned g_arrow_frames = 0;  // ArrowLog: frames left to trace
@@ -510,13 +514,25 @@ void SmoothTransform(uint32_t type, const float* in, const void* src, float* out
   }
   std::memcpy(r.cur, in, sizeof(r.cur));
   ++g_total;
-  if (!r.has_prev || r.prev_tick + 1 != tick) return;
+  const bool have_prev = r.has_prev && r.prev_tick + 1 == tick;
+  if (!have_prev && !(g_cam_trace && type == 2)) return;
   float blended[16];
-  const bool ok = type == 2 ? BlendView(r.prev, r.cur, alpha, blended)
-                            : Blend(r.prev, r.cur, alpha, blended);
+  const bool ok = have_prev && (type == 2 ? BlendView(r.prev, r.cur, alpha, blended)
+                                          : Blend(r.prev, r.cur, alpha, blended));
   if (ok) {
     std::memcpy(out, blended, sizeof(blended));
     ++g_blended;
+  }
+  if (g_cam_trace && type == 2) {
+    float ei[3], ep[3], eo[3];
+    ViewEye(in, ei);
+    ViewEye(r.prev, ep);
+    ViewEye(out, eo);
+    patch::Log("cam: f=%u tick=%u a=%.3f use=%u src=%p eye cur (%.3f %.3f %.3f) prev (%.3f %.3f %.3f) tick %u "
+               "drawn (%.3f %.3f %.3f) fwd (%.3f %.3f %.3f)%s",
+               g_race_frames, tick, alpha, use, src, ei[0], ei[1], ei[2], ep[0], ep[1], ep[2], r.prev_tick, eo[0],
+               eo[1], eo[2], out[2], out[6], out[10],
+               !have_prev ? " NO PREV" : ok ? "" : " NOT blended");
   }
   if (g_trace_view && type == 2 && g_arrow_frames) {
     float ei[3], eo[3];
@@ -557,6 +573,12 @@ void SmoothFrameEnd() {
     float alpha;
     if (SimDrawPoint(&tick, &alpha)) {
       ++g_race_frames;
+      if (g_cam_trace) --g_cam_trace;
+      if (!g_was_racing && GetConfig().smooth_log == 4) {
+        g_cam_trace = 3000;
+        patch::Log("cam: tracing the camera for the next 3000 frames (SmoothLog=4)");
+      }
+      g_was_racing = true;
       // Trace 6 frames, 5 seconds or so into the race.
       const int mode = GetConfig().smooth_log;
       g_trace = mode == 1 && g_race_frames >= 600 && g_race_frames < 606;
@@ -568,6 +590,8 @@ void SmoothFrameEnd() {
       if (g_trace) patch::Log("trace: ---- frame %u, tick %u, a=%.3f", g_race_frames, tick, alpha);
     } else {
       g_trace = g_trace_view = false;
+      g_was_racing = false;
+      g_cam_trace = 0;
     }
   }
   if (++g_frames % 600 == 0) {

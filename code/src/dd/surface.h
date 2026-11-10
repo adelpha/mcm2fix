@@ -114,6 +114,9 @@ class Surface : public IDirectDrawSurface7 {
     return TextDC(&why);
   }
   bool HasColorKey() const { return has_key_; }
+  // Texture with many partly transparent texels (a soft layer such as the
+  // supercross ground noise), which AlphaCut must leave alone.
+  bool SoftAlpha() { return SyncOwner()->soft_alpha_; }
   void KeyColor(float out[3]) const;
   Surface* ZBuffer() const { return zbuffer_; }
 
@@ -204,6 +207,7 @@ class Surface : public IDirectDrawSurface7 {
   HBITMAP dib_ = nullptr;
   HGDIOBJ old_bitmap_ = nullptr;
   void* dib_bits_ = nullptr;
+  bool soft_alpha_ = false;
   unsigned uploads_ = 0;  // texture uploads so far (edge fix-up is skipped for streaming textures)
   bool gpu_dc_ = false;            // set while GDI draws on the GPU copy
   bool text_dc_ = false;           // set while the game's GDI calls are drawn as GPU text
