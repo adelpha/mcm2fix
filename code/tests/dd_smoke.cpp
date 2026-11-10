@@ -12,9 +12,11 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include "../src/config.h"
+#include "../src/prof.h"
 #include "../src/dd/d3d7.h"
 #include "../src/dd/directdraw.h"
 #include "../src/dd/gdihook.h"
@@ -89,16 +91,23 @@ int main(int argc, char** argv) {
   const char* api = argc > 1 ? argv[1] : "d3d9";
   // "gputext" anywhere after the api: GDI drawn as GPU text (not in the back
   // buffer, so the GDI pixel checks are skipped; look at the window instead).
-  bool gputext = false;
+  bool gputext = false, profile = false;
   for (int i = 2; i < argc; ++i) gputext |= std::strcmp(argv[i], "gputext") == 0;
+  int sample_us = 1000;
+  for (int i = 2; i < argc; ++i) profile |= std::strcmp(argv[i], "profile") == 0;
+  for (int i = 2; i < argc; ++i)
+    if (std::strcmp(argv[i], "nosample") == 0) sample_us = 0;
+  for (int i = 2; i < argc; ++i)
+    if (std::strncmp(argv[i], "us=", 3) == 0) sample_us = std::atoi(argv[i] + 3);
   char ini[MAX_PATH];
   GetModuleFileNameA(nullptr, ini, MAX_PATH);
   std::strcpy(std::strrchr(ini, '\\') + 1, "mcm2fix.ini");
   FILE* f = std::fopen(ini, "w");
-  std::fprintf(f, "[mcm2fix]\nRenderer=%s\nAntialiasing=4\nVSync=0\nD3D9Log=1\nDDStats=1\nGdiLog=1\nTextLog=1\nGpuText=%d\nTextureReplace=0\n", api,
-               gputext ? 1 : 0);
+  std::fprintf(f, "[mcm2fix]\nRenderer=%s\nAntialiasing=4\nVSync=0\nD3D9Log=1\nDDStats=1\nGdiLog=1\nTextLog=1\nGpuText=%d\nTextureReplace=0\nProfile=%d\nProfileSampleUs=%d\n", api,
+               gputext ? 1 : 0, profile ? 1 : 0, sample_us);
   std::fclose(f);
   LoadConfig();
+  prof::Start();
   dd::InstallGdiHooks();
 
   WNDCLASSA wc{};
@@ -445,6 +454,17 @@ int main(int argc, char** argv) {
       primary->Flip(nullptr, DDFLIP_WAIT);
       Sleep(100);
     }
+  }
+  if (profile) {
+    // Frames for the profiler, one of them slow (a hitch), then its files.
+    for (int i = 0; i < 400; i++) {
+      dev->Clear(0, nullptr, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, 0xff202020, 1.0f, 0);
+      if (i == 200) Sleep(40);
+      volatile double x = 0;
+      for (int k = 0; k < 20000; ++k) x += k * 0.5;
+      primary->Flip(nullptr, DDFLIP_WAIT);
+    }
+    prof::Stop();
   }
   dev->Release();
   d3d->Release();

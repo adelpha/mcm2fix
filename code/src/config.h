@@ -9,6 +9,8 @@ struct Config {
   bool files = true;          // Files: send file writes to the per-user folder
   bool activate_log = false;  // ActivateLog: log window activation
   bool reg_log = false;       // RegLog: log every registry call
+  bool profile = false;       // Profile: performance profiling (see prof.cpp)
+  int profile_sample_us = 1000;  // ProfileSampleUs: sampling profiler interval (0 = off)
   bool dd_stats = false;      // DDStats: log renderer activity every 2 seconds
   int renderer = 11;          // Renderer: 11 = Direct3D 11, 9 = Direct3D 9 (also used when D3D11 is missing)
   bool renderer_label = true;  // RendererLabel: name the active renderer in the corner of the menus

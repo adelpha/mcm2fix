@@ -21,6 +21,7 @@
 #include <cstring>
 
 #include "../config.h"
+#include "../prof.h"
 #include "device.h"
 #include "msaa.h"
 #include "surface.h"
@@ -366,7 +367,9 @@ void Device::ApplyState9(int mode, bool has_depth) {
 
 void Device::Submit9(const Draw& d) {
   bool has_depth = false;
+  prof::Scope zone(prof::kStateApply);
   if (!BindTarget9(has_depth, false)) return;
+  prof::NoteTarget(cur_rt9_);
   const FvfLayout& l = d.layout;
   if (!l.stride) return;
   if (d.prim < d3d7::D3DPT_POINTLIST || d.prim > d3d7::D3DPT_TRIANGLEFAN) {
@@ -398,6 +401,7 @@ void Device::Submit9(const Draw& d) {
     }
   }
 
+  zone.Switch(prof::kVertexPrep);
   const int set0 = static_cast<int>(tss_[0][d3d7::TSS_TEXCOORDINDEX] & 0xffff);
   const int set1 = static_cast<int>(tss_[1][d3d7::TSS_TEXCOORDINDEX] & 0xffff);
   scratch_.resize(static_cast<size_t>(d.count) * sizeof(GpuVertex));
@@ -423,6 +427,8 @@ void Device::Submit9(const Draw& d) {
     if (set1 < l.ntex) std::memcpy(v.t1, s + l.tex[set1], l.tex_dim[set1] >= 2 ? 8 : 4);
   }
 
+  zone.Switch(prof::kStateApply);
+  if (prof::On()) prof::NoteDrawState(tex_[0], nullptr, nullptr, nullptr);
   IDirect3DDevice9* dev = B().dev9;
   // Transforms. Fog decides between w and z from the projection matrix, so
   // screen-space draws keep the game's projection set as well.
@@ -464,6 +470,7 @@ void Device::Submit9(const Draw& d) {
 
   dev->SetFVF(mode == 1 ? kFvfScreen : kFvfWorld);
   BeginScene9();
+  zone.Switch(prof::kDriverDraw);
   HRESULT hr;
   if (d.idx) {
     hr = dev->DrawIndexedPrimitiveUP(static_cast<D3DPRIMITIVETYPE>(d.prim), 0, d.count, prims, d.idx,

@@ -5,6 +5,7 @@
 
 #include "config.h"
 #include "patch.h"
+#include "prof.h"
 #include "video/player.h"
 
 void ApplyStep1Fixes();
@@ -69,10 +70,12 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
       ApplyTextureFixes();
       video::ApplyVideoPlayer();
       if (c.activate_log) ApplyDiagnostics();
+      prof::Start();
     } else {
       patch::Log("not the supported Mcm2.exe; no fixes applied");
     }
   } else if (reason == DLL_PROCESS_DETACH) {
+    prof::Stop();
     LogTextureSummary();
   }
   return TRUE;

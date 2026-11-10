@@ -26,6 +26,7 @@ add_library(mcm2fix SHARED
   src/regtrace.cpp
   src/config.cpp
   src/framerate.cpp
+  src/prof.cpp
   src/smooth.cpp
   src/smooth_parts.cpp
   src/dd/backend.cpp

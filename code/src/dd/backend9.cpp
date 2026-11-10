@@ -20,6 +20,7 @@
 
 #include "../config.h"
 #include "../patch.h"
+#include "../prof.h"
 #include "gdihook.h"
 #include "gputext.h"
 #include "msaa.h"
@@ -157,6 +158,8 @@ void ResetState() {
   std::memset(&g_state, 0, sizeof(g_state));
 }
 
+void GpuTimerRelease9();
+
 // Device reset after a loss: drop everything in video memory, reset, and
 // let the next frame recreate it.
 bool TryRecover() {
@@ -179,6 +182,7 @@ bool TryRecover() {
   for (auto& kv : g_depth_clear_rt) SafeRelease(kv.second);
   g_depth_clear_rt.clear();
   Surface::DeviceLost9();
+  GpuTimerRelease9();
   EndScene9();
   hr = b.dev9->Reset(&g_pp);
   if (FAILED(hr)) {
@@ -962,13 +966,82 @@ void Blit9(const BlitParams& p) {
 
 // -------------------------------------------------------------------- present
 
+namespace {
+// GPU time per frame (Profile=1), as in the D3D11 renderer.
+struct GpuTimer9 {
+  IDirect3DQuery9* disjoint = nullptr;
+  IDirect3DQuery9* freq = nullptr;
+  IDirect3DQuery9* begin = nullptr;
+  IDirect3DQuery9* end = nullptr;
+  bool pending = false;
+};
+GpuTimer9 g_gpu9[6];
+unsigned g_gpu9_i = 0;
+bool g_gpu9_open = false;
+bool g_gpu9_broken = false;
+
+void GpuTimerRelease9() {
+  for (GpuTimer9& t : g_gpu9) {
+    SafeRelease(t.disjoint);
+    SafeRelease(t.freq);
+    SafeRelease(t.begin);
+    SafeRelease(t.end);
+    t.pending = false;
+  }
+  g_gpu9_open = false;
+}
+
+void GpuTimerFrame9() {
+  if (!prof::On() || g_gpu9_broken) return;
+  IDirect3DDevice9* dev = B().dev9;
+  if (g_gpu9_open) {
+    GpuTimer9& t = g_gpu9[g_gpu9_i % 6];
+    t.end->Issue(D3DISSUE_END);
+    t.freq->Issue(D3DISSUE_END);
+    t.disjoint->Issue(D3DISSUE_END);
+    t.pending = true;
+    g_gpu9_open = false;
+    ++g_gpu9_i;
+  }
+  for (GpuTimer9& t : g_gpu9) {
+    if (!t.pending) continue;
+    BOOL dj = FALSE;
+    UINT64 f = 0, t0 = 0, t1 = 0;
+    if (t.disjoint->GetData(&dj, sizeof(dj), 0) != S_OK) continue;
+    if (t.freq->GetData(&f, sizeof(f), 0) != S_OK) continue;
+    if (t.begin->GetData(&t0, sizeof(t0), 0) != S_OK) continue;
+    if (t.end->GetData(&t1, sizeof(t1), 0) != S_OK) continue;
+    t.pending = false;
+    if (!dj && f && t1 >= t0) prof::GpuFrameTime(static_cast<double>(t1 - t0) * 1000.0 / static_cast<double>(f));
+  }
+  GpuTimer9& n = g_gpu9[g_gpu9_i % 6];
+  if (n.pending) return;
+  if (!n.disjoint) {
+    if (FAILED(dev->CreateQuery(D3DQUERYTYPE_TIMESTAMPDISJOINT, &n.disjoint)) ||
+        FAILED(dev->CreateQuery(D3DQUERYTYPE_TIMESTAMPFREQ, &n.freq)) ||
+        FAILED(dev->CreateQuery(D3DQUERYTYPE_TIMESTAMP, &n.begin)) ||
+        FAILED(dev->CreateQuery(D3DQUERYTYPE_TIMESTAMP, &n.end))) {
+      Log("perf: Direct3D 9 timestamp queries not available");
+      GpuTimerRelease9();
+      g_gpu9_broken = true;
+      return;
+    }
+  }
+  n.disjoint->Issue(D3DISSUE_BEGIN);
+  n.begin->Issue(D3DISSUE_END);
+  g_gpu9_open = true;
+}
+}  // namespace
+
 void Present9(const GpuTexture& src, UINT src_w, UINT src_h, UINT interval) {
   Backend& b = B();
   ++Counters().presents;
   ++g_stats.presents;
   ReportStats();
   if (!b.dev9 || !b.hwnd || IsIconic(b.hwnd)) return;
+  if (g_lost) GpuTimerRelease9();
   if (g_lost && !TryRecover()) return;
+  prof::Scope zone(prof::kCompose);
   KeepBorderless();
   if (!EnsureChains()) return;
   IDirect3DSwapChain9* sc = interval ? g_sc.vsync : g_sc.now;
@@ -999,7 +1072,10 @@ void Present9(const GpuTexture& src, UINT src_w, UINT src_h, UINT interval) {
   DrawRendererLabel(nullptr, back, g_sc.w, g_sc.h);
   back->Release();
   EndScene9();
+  zone.Switch(prof::kSwapPresent);
   HRESULT hr = sc->Present(nullptr, nullptr, nullptr, nullptr, 0);
+  zone.Switch(prof::kCompose);
+  if (!g_lost && hr != D3DERR_DEVICELOST) GpuTimerFrame9();
   if (hr == D3DERR_DEVICELOST) {
     if (!g_lost) Log("device lost (Present)");
     g_lost = true;

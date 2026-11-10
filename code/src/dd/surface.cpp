@@ -1,5 +1,6 @@
 #include "../smooth.h"
 #include "surface.h"
+#include "../prof.h"
 #include "gdihook.h"
 #include "gputext.h"
 #include "hudtext.h"
@@ -573,6 +574,8 @@ bool Surface::LevelBGRA(UINT level, std::vector<uint8_t>& bgra, UINT& w, UINT& h
 
 void Surface::Upload() {
   if (!gpu_.Valid() || layout_.depth) return;
+  PROF_ZONE(kUpload);
+  prof::Count(prof::cUploads);
   ++uploads_;
   GpuTextOcclude(gpu_.Native(), nullptr, "cpu write");
   std::vector<uint8_t> bgra;
@@ -582,6 +585,7 @@ void Surface::Upload() {
     if (level == 0) MatchReplacement(bgra.data(), w, h);
     if (layout_.mask[3] && uploads_ < 4) BleedIntoTransparent(bgra.data(), w, h);
     UploadLevel(gpu_, level, bgra.data(), w, h);
+    prof::Count(prof::cUploadKB, (w * h * 4 + 1023) / 1024);
   }
 }
 
@@ -596,6 +600,7 @@ const GpuTexture* Surface::KeyedTex(DWORD key) {
   }
   const uint64_t stamp = (static_cast<uint64_t>(cpu_version_) << 32) ^ key ^ 0x8000000000000000ull;
   if (keyed_.Valid() && keyed_stamp_ == stamp) return &keyed_;
+  PROF_ZONE(kKeyed);
   keyed_.Reset();
   const UINT levels = static_cast<UINT>(mips_.size()) + 1;
   if (!CreateGpuTexture(keyed_, Width(), Height(), levels, false, false)) return nullptr;
@@ -685,6 +690,8 @@ const GpuTexture* Surface::SampleTex() {
 void Surface::Download() {
   if (!gpu_.Valid() || layout_.depth) return;
   MsaaRelease(gpu_.Native());
+  PROF_ZONE(kReadback);
+  prof::Count(prof::cReadbacks);
   ++Counters().downloads;
   if (!mips_.empty()) LogOnce("reading back a mipmapped surface (top level only)");
   if (layout_.palette) return;  // cannot map colours back to indices
@@ -999,6 +1006,8 @@ HRESULT Surface::AddOverlayDirtyRect(LPRECT) { return DDERR_UNSUPPORTED; }
 HRESULT Surface::Blt(LPRECT dr_in, LPDIRECTDRAWSURFACE7 src_in, LPRECT sr_in, DWORD flags,
                      LPDDBLTFX fx) {
   DD_LOCK;
+  PROF_ZONE(kBlt);
+  prof::Count(prof::cBlts);
   RECT full{0, 0, static_cast<LONG>(Width()), static_cast<LONG>(Height())};
   RECT dr = dr_in ? *dr_in : full;
   if (flags & DDBLT_COLORFILL) {
@@ -1116,11 +1125,27 @@ HRESULT Surface::EnumOverlayZOrders(DWORD, LPVOID, LPDDENUMSURFACESCALLBACK7) {
   return DDERR_UNSUPPORTED;
 }
 
-HRESULT Surface::Flip(LPDIRECTDRAWSURFACE7, DWORD flags) {
+HRESULT Surface::Flip(LPDIRECTDRAWSURFACE7 s, DWORD flags) {
+  HRESULT hr;
+  {
+    PROF_ZONE(kFlip);
+    hr = FlipImpl(s, flags);
+  }
+  prof::FrameEnd();
+  return hr;
+}
+
+HRESULT Surface::FlipImpl(LPDIRECTDRAWSURFACE7, DWORD flags) {
   if (!back_) return DDERR_NOTFLIPPABLE;
-  WaitForFrameSlot();  // frame cap, outside the lock
+  {
+    PROF_ZONE(kCapWait);
+    WaitForFrameSlot();  // frame cap, outside the lock
+  }
   DD_LOCK;
-  HudTextFlush();  // in case the scene was not ended
+  {
+    PROF_ZONE(kHudFlush);
+    HudTextFlush();  // in case the scene was not ended
+  }
   if (!back_) return DDERR_NOTFLIPPABLE;
   ++Counters().flips;
   Surface* cur = this;
@@ -1179,6 +1204,8 @@ HRESULT Surface::GetColorKey(DWORD flags, LPDDCOLORKEY key) {
 
 HRESULT Surface::GetDC(HDC* out) {
   DD_LOCK;
+  PROF_ZONE(kGetDC);
+  prof::Count(prof::cGetDCs);
   void* caller = CALLER_ADDRESS();
   if (!out) return DDERR_INVALIDPARAMS;
   if (dc_) {
@@ -1248,6 +1275,7 @@ HRESULT Surface::GetDC(HDC* out) {
 
 HRESULT Surface::ReleaseDC(HDC dc) {
   DD_LOCK;
+  PROF_ZONE(kGetDC);
   if (!dc_ || dc != dc_) return DDERR_INVALIDPARAMS;
   GdiUntrack(dc);
   if (text_dc_) {
@@ -1395,6 +1423,8 @@ HRESULT Surface::IsLost() { return DD_OK; }
 
 HRESULT Surface::Lock(LPRECT rect, LPDDSURFACEDESC2 desc, DWORD flags, HANDLE) {
   DD_LOCK;
+  PROF_ZONE(kLock);
+  prof::Count(prof::cLocks);
   if (!desc) return DDERR_INVALIDPARAMS;
   if (layout_.depth) LogOnce("Lock of a Z-buffer (contents not kept)");
   ++Counters().locks;

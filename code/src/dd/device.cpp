@@ -1,3 +1,4 @@
+#include "../prof.h"
 #include "../smooth.h"
 #include "device.h"
 #include "gputext.h"
@@ -727,6 +728,8 @@ HRESULT Device::GetRenderTarget(IDirectDrawSurface7** s) {
 
 HRESULT Device::Clear(DWORD count, D3DRECT* rects, DWORD flags, D3DCOLOR color, float z, DWORD) {
   DD_LOCK;
+  PROF_ZONE(kClear);
+  prof::Count(prof::cClears);
   if (rt_ && (flags & D3DCLEAR_TARGET)) {
     const void* n = rt_->GpuKey();
     if (GpuTextHasText(n)) {
@@ -944,7 +947,10 @@ HRESULT Device::DrawPrimitive(DWORD prim, DWORD fvf, void* v, DWORD n, DWORD) {
   d.layout = FvfLayout::From(fvf);
   d.count = n;
   SmoothNoteDraw("draw", d.layout.tl, n);
-  if (!d.layout.tl) d.verts = SmoothVertices(d.verts, d.layout.stride, n, nullptr);
+  if (!d.layout.tl) {
+    PROF_ZONE(kSmoothVerts);
+    d.verts = SmoothVertices(d.verts, d.layout.stride, n, nullptr);
+  }
   Submit(d);
   return D3D_OK;
 }
@@ -961,7 +967,10 @@ HRESULT Device::DrawIndexedPrimitive(DWORD prim, DWORD fvf, void* v, DWORD nv, W
   d.idx = idx;
   d.nidx = ni;
   SmoothNoteDraw("drawidx", d.layout.tl, d.count);
-  if (!d.layout.tl) d.verts = SmoothVertices(d.verts, d.layout.stride, nv, idx);
+  if (!d.layout.tl) {
+    PROF_ZONE(kSmoothVerts);
+    d.verts = SmoothVertices(d.verts, d.layout.stride, nv, idx);
+  }
   Submit(d);
   return D3D_OK;
 }
@@ -1207,6 +1216,7 @@ bool Device::BindTarget(bool& has_depth, bool full_clear) {
     cur_dsv_ = dsv;
   }
   B().ctx->OMSetRenderTargets(1, &cur_rtv_, cur_dsv_);
+  prof::NoteTarget(cur_rtv_);
   return true;
 }
 
@@ -1349,6 +1359,7 @@ void Device::ApplyState(bool tl, bool depth_clip, bool has_depth) {
     smp[s] = GetSampler(s);
   }
   smp[2] = g_pipe.key_sampler;
+  if (prof::On()) prof::NoteDrawState(srv[0], GetBlend(), GetDepth(has_depth), GetRaster(depth_clip));
   b.ctx->PSSetShaderResources(0, 2, srv);
   b.ctx->PSSetSamplers(0, 3, smp);
 
@@ -1520,6 +1531,14 @@ bool Device::SubmitWideLine(const Draw& d) {
 }
 
 void Device::Submit(const Draw& d) {
+  PROF_ZONE(kSubmit);
+  prof::Count(prof::cDraws);
+  if (d.layout.tl) prof::Count(prof::cDrawsTL);
+  prof::Count(prof::cVerts, d.count);
+  if (d.idx) {
+    prof::Count(prof::cDrawsIndexed);
+    prof::Count(prof::cIndices, d.nidx);
+  }
   if (!d.layout.tl) return SubmitDraw(d);
   if (SubmitWideLine(d)) return;
   // Race HUD text (hudtext.cpp): the name labels over the riders are drawn
@@ -1555,7 +1574,10 @@ void Device::SubmitDraw(const Draw& d) {
   OccludeText(d);
   if (IsD3D9()) return Submit9(d);
   bool has_depth = false;
-  if (!BindTarget(has_depth)) return;
+  {
+    PROF_ZONE(kStateApply);
+    if (!BindTarget(has_depth)) return;
+  }
   Backend& b = B();
   const FvfLayout& l = d.layout;
   if (!l.stride) return;
@@ -1592,6 +1614,7 @@ void Device::SubmitDraw(const Draw& d) {
   if (l.tl && d.vb && d.vb->HasClipData(d.first, d.count)) mode = 2;
   if (!l.tl && rs_[RS_LIGHTING] && l.normal >= 0) LogOnce("lit vertices drawn unlit (fvf has normals)");
 
+  prof::Scope prep_zone(prof::kVertexPrep);
   int set0 = static_cast<int>(tss_[0][TSS_TEXCOORDINDEX] & 0xffff);
   int set1 = static_cast<int>(tss_[1][TSS_TEXCOORDINDEX] & 0xffff);
   scratch_.resize(static_cast<size_t>(d.count) * sizeof(GpuVertex));
@@ -1646,11 +1669,13 @@ void Device::SubmitDraw(const Draw& d) {
     v.MaxDepth = vp7.dvMaxZ;
   }
   b.ctx->RSSetViewports(1, &v);
+  prep_zone.Switch(prof::kStateApply);
   ApplyState(l.tl, mode != 1, has_depth);
 
   UINT stride = sizeof(GpuVertex);
   b.ctx->IASetVertexBuffers(0, 1, &vbuf_, &stride, &voff);
   b.ctx->IASetPrimitiveTopology(topo);
+  prep_zone.Switch(prof::kDriverDraw);
   if (idx) {
     b.ctx->IASetIndexBuffer(ibuf_, DXGI_FORMAT_R16_UINT, ioff);
     b.ctx->DrawIndexed(nidx, 0, 0);

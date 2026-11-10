@@ -65,6 +65,8 @@ void LoadConfig() {
   g_config.arrow_tilt = (tilt >= -45.0f && tilt <= 45.0f) ? tilt : 10.0f;
   g_config.restart_fix = GetPrivateProfileIntA("mcm2fix", "RestartFix", 1, ini) != 0;
   g_config.restart_log = GetPrivateProfileIntA("mcm2fix", "RestartLog", 0, ini) != 0;
+  g_config.profile = GetPrivateProfileIntA("mcm2fix", "Profile", 0, ini) != 0;
+  g_config.profile_sample_us = GetPrivateProfileIntA("mcm2fix", "ProfileSampleUs", 1000, ini);
   g_config.dd_stats = GetPrivateProfileIntA("mcm2fix", "DDStats", 0, ini) != 0;
   {
     char r[32] = {};

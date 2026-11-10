@@ -15,6 +15,7 @@
 #endif
 
 #include "../config.h"
+#include "../prof.h"
 #include "../patch.h"
 
 namespace dd {
@@ -201,6 +202,7 @@ void LogOtherDc(const char* fn, HDC dc, void* caller, int x, int y, LPCSTR s, in
 bool Divert(const Tracked* t, const GdiCall& c) { return t && t->target && t->target->Draw(c); }
 
 BOOL WINAPI HookTextOut(HDC dc, int x, int y, LPCSTR s, int len) {
+  PROF_ZONE(kGdiText);
   {
     Lock lock;
     const Tracked* t = Find(dc, kTextOut);
@@ -237,6 +239,7 @@ BOOL WINAPI HookTextOut(HDC dc, int x, int y, LPCSTR s, int len) {
 }
 
 int WINAPI HookDrawText(HDC dc, LPCSTR s, int len, LPRECT rect, UINT fmt) {
+  PROF_ZONE(kGdiText);
   {
     Lock lock;
     const Tracked* t = Find(dc, kDrawText);

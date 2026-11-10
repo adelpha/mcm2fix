@@ -155,6 +155,7 @@ class Surface : public IDirectDrawSurface7 {
   void SwapContents(Surface* other);
   void AllocateMemory();
   void Upload();
+  HRESULT FlipImpl(LPDIRECTDRAWSURFACE7 target, DWORD flags);
   void Download();
   void BlendTextIntoCpu();  // GPU text over the surface into its CPU copy (readback)
   // Level `level` (0 = this surface) of the CPU copy as B8G8R8A8.

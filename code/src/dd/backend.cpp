@@ -15,6 +15,7 @@
 
 #include "../config.h"
 #include "../patch.h"
+#include "../prof.h"
 
 namespace dd {
 
@@ -462,6 +463,7 @@ bool CreateGpuTexture9(GpuTexture& t, UINT w, UINT h, UINT levels, bool render_t
 bool CreateGpuTexture(GpuTexture& t, UINT w, UINT h, UINT levels, bool render_target,
                       bool depth, bool alpha) {
   t.Reset();
+  prof::Count(prof::cTexCreates);
   if (IsD3D9()) return CreateGpuTexture9(t, w, h, levels, render_target, depth, alpha);
   Backend& b = g_backend;
   D3D11_TEXTURE2D_DESC td{};
@@ -595,9 +597,67 @@ void ReportStats() {
   ++reports;
 }
 
+namespace {
+// GPU time per frame (Profile=1): timestamp queries from the end of one
+// Present to the end of the next, read a few frames later.
+struct GpuTimer11 {
+  ID3D11Query* disjoint = nullptr;
+  ID3D11Query* begin = nullptr;
+  ID3D11Query* end = nullptr;
+  bool pending = false;
+};
+GpuTimer11 g_gpu_timers[6];
+unsigned g_gpu_timer_i = 0;
+bool g_gpu_timer_open = false;
+
+void GpuTimerCollect11() {
+  Backend& b = g_backend;
+  for (GpuTimer11& t : g_gpu_timers) {
+    if (!t.pending) continue;
+    D3D11_QUERY_DATA_TIMESTAMP_DISJOINT dj{};
+    UINT64 t0 = 0, t1 = 0;
+    if (b.ctx->GetData(t.disjoint, &dj, sizeof(dj), D3D11_ASYNC_GETDATA_DONOTFLUSH) != S_OK) continue;
+    if (b.ctx->GetData(t.begin, &t0, sizeof(t0), D3D11_ASYNC_GETDATA_DONOTFLUSH) != S_OK) continue;
+    if (b.ctx->GetData(t.end, &t1, sizeof(t1), D3D11_ASYNC_GETDATA_DONOTFLUSH) != S_OK) continue;
+    t.pending = false;
+    if (!dj.Disjoint && dj.Frequency && t1 >= t0)
+      prof::GpuFrameTime(static_cast<double>(t1 - t0) * 1000.0 / static_cast<double>(dj.Frequency));
+  }
+}
+
+// Called right after Present: close this frame's timer, open the next.
+void GpuTimerFrame11() {
+  if (!prof::On()) return;
+  Backend& b = g_backend;
+  if (g_gpu_timer_open) {
+    GpuTimer11& t = g_gpu_timers[g_gpu_timer_i % 6];
+    b.ctx->End(t.end);
+    b.ctx->End(t.disjoint);
+    t.pending = true;
+    g_gpu_timer_open = false;
+    ++g_gpu_timer_i;
+  }
+  GpuTimerCollect11();
+  GpuTimer11& n = g_gpu_timers[g_gpu_timer_i % 6];
+  if (n.pending) return;  // GPU far behind: skip a frame
+  if (!n.disjoint) {
+    D3D11_QUERY_DESC qd{D3D11_QUERY_TIMESTAMP_DISJOINT, 0};
+    b.device->CreateQuery(&qd, &n.disjoint);
+    qd.Query = D3D11_QUERY_TIMESTAMP;
+    b.device->CreateQuery(&qd, &n.begin);
+    b.device->CreateQuery(&qd, &n.end);
+    if (!n.disjoint || !n.begin || !n.end) return;
+  }
+  b.ctx->Begin(n.disjoint);
+  b.ctx->End(n.begin);
+  g_gpu_timer_open = true;
+}
+}  // namespace
+
 void Present(const GpuTexture& src_tex, UINT src_w, UINT src_h, UINT interval) {
   DD_LOCK;
   if (IsD3D9()) return Present9(src_tex, src_w, src_h, interval);
+  prof::Scope zone(prof::kCompose);
   ID3D11ShaderResourceView* src = src_tex.srv;
   Backend& b = g_backend;
   ++Counters().presents;
@@ -628,8 +688,11 @@ void Present(const GpuTexture& src_tex, UINT src_w, UINT src_h, UINT interval) {
     GpuTextComposite(src_tex, b.swap_rtv, nullptr, b.swap_w, b.swap_h, p.dst_rect);
   }
   DrawRendererLabel(b.swap_rtv, nullptr, b.swap_w, b.swap_h);
+  zone.Switch(prof::kSwapPresent);
   HRESULT hr = b.swapchain->Present(interval, interval == 0 && g_tearing ? DXGI_PRESENT_ALLOW_TEARING : 0);
   if (FAILED(hr)) LogOnce("Present failed %08lx", hr);
+  zone.Switch(prof::kCompose);
+  GpuTimerFrame11();
 }
 
 void WaitVBlank() {
