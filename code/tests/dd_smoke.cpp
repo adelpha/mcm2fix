@@ -274,6 +274,12 @@ int main(int argc, char** argv) {
                     {0.5f, -0.1f, 2, 0xffffffff, 0, 1}, {0.7f, -0.1f, 2, 0xffffffff, 1, 1}};
     dev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, fvf_3d, near_q, 4, idx, 6, 0);
     dev->SetRenderState(RS_FOGENABLE, 0);
+    // 4b. A screen-space line (like the speedometer needle: colour with alpha
+    //     0, texture still set): drawn LineWidth (3) pixels wide.
+    dev->SetTexture(0, red);
+    TL line[2] = {{450, 460.0f, 0.5f, 1, 0x00ff00ff, 0, 0}, {630, 460.0f, 0.5f, 1, 0x00ff00ff, 0, 0}};
+    dev->DrawPrimitive(D3DPT_LINELIST, fvf_tl, line, 2, 0);
+    dev->SetTexture(0, nullptr);
     dev->EndScene();
 
     // 5. Keyed sprite blit onto the back buffer at (400, 300).
@@ -411,6 +417,15 @@ int main(int argc, char** argv) {
   Check(Near(c, 32, 32, 32), "keyed sprite, key colour skipped");
   ReadRGB(back, 600, 450, c);
   Check(Near(c, 32, 32, 32), "background (clear colour)");
+  ReadRGB(back, 540, 460, c);
+  std::printf("     wide line centre %d %d %d\n", c[0], c[1], c[2]);
+  Check(Near(c, 255, 0, 255), "wide line, centre row (magenta)");
+  ReadRGB(back, 540, 459, c);
+  std::printf("     wide line row above %d %d %d\n", c[0], c[1], c[2]);
+  Check(Near(c, 255, 0, 255, 40), "wide line, row above also drawn");
+  ReadRGB(back, 540, 456, c);
+  std::printf("     4 rows above %d %d %d\n", c[0], c[1], c[2]);
+  Check(Near(c, 32, 32, 32), "wide line, 4 rows above untouched");
   if (!gputext) {
     ReadRGB(back, 580, 415, c);
     std::printf("     GDI fill %d %d %d\n", c[0], c[1], c[2]);

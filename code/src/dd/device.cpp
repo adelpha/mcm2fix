@@ -1422,8 +1422,106 @@ void Device::OccludeText(const Draw& d) {
   GpuTextOcclude(n, &r, "3D draw");
 }
 
+// Screen-space lines (the speedometer needle) are 1 pixel wide in D3D;
+// ini LineWidth draws them as wider antialiased strips instead: a solid core
+// and a 1 pixel edge on each side that fades out, alpha blended.
+bool Device::SubmitWideLine(const Draw& d) {
+  const float width = GetConfig().line_width;
+  if (!(width > 1.0f) || d.idx || d.vb || !d.verts || d.count < 2) return false;
+  if (d.prim != D3DPT_LINELIST && d.prim != D3DPT_LINESTRIP) return false;
+  const FvfLayout& l = d.layout;
+  if (l.diffuse < 0 || l.stride < 16) return false;
+  const size_t stride = l.stride;
+  const DWORD segs = d.prim == D3DPT_LINELIST ? d.count / 2 : d.count - 1;
+  // Per segment: 3 strips (edge, core, edge) of 2 triangles.
+  line_verts_.resize(static_cast<size_t>(segs) * 18 * stride);
+  const float core = std::max(0.0f, width * 0.5f - 0.5f), outer = core + 1.0f;
+  size_t n = 0;
+  for (DWORD sgi = 0; sgi < segs; ++sgi) {
+    const DWORD i0 = d.first + (d.prim == D3DPT_LINELIST ? sgi * 2 : sgi);
+    const uint8_t* a = d.verts + i0 * stride;
+    const uint8_t* b = a + stride;
+    const float* pa = reinterpret_cast<const float*>(a);
+    const float* pb = reinterpret_cast<const float*>(b);
+    float dx = pb[0] - pa[0], dy = pb[1] - pa[1];
+    const float len = std::sqrt(dx * dx + dy * dy);
+    if (!(len > 1e-4f)) continue;
+    dx /= len, dy /= len;
+    const float nx = -dy, ny = dx;
+    // Ends are pushed out by half a pixel so the strip covers the line's length.
+    auto put = [&](const uint8_t* src, float off, float along, DWORD alpha) {
+      uint8_t* o = line_verts_.data() + n++ * stride;
+      std::memcpy(o, src, stride);
+      float* p = reinterpret_cast<float*>(o);
+      p[0] += nx * off + dx * along;
+      p[1] += ny * off + dy * along;
+      DWORD c;
+      std::memcpy(&c, o + l.diffuse, 4);
+      c = (c & 0x00ffffff) | (alpha << 24);
+      std::memcpy(o + l.diffuse, &c, 4);
+    };
+    const float offs[4] = {-outer, -core, core, outer};
+    const DWORD alph[4] = {0, 255, 255, 0};
+    for (int k = 0; k < 3; ++k) {
+      put(a, offs[k], -0.5f, alph[k]);
+      put(b, offs[k], 0.5f, alph[k]);
+      put(b, offs[k + 1], 0.5f, alph[k + 1]);
+      put(a, offs[k], -0.5f, alph[k]);
+      put(b, offs[k + 1], 0.5f, alph[k + 1]);
+      put(a, offs[k + 1], -0.5f, alph[k + 1]);
+    }
+  }
+  if (!n) return true;
+  static unsigned logged = 0;
+  if (logged < 8) {
+    ++logged;
+    const float* p = reinterpret_cast<const float*>(d.verts + d.first * stride);
+    DWORD c;
+    std::memcpy(&c, d.verts + d.first * stride + l.diffuse, 4);
+    Log("wide line: %lu segment(s) %s from (%.1f %.1f) colour %08lx, width %.1f, blend %lu src %lu dst %lu", segs,
+        d.prim == D3DPT_LINELIST ? "list" : "strip", p[0], p[1], c, width, rs_[RS_ALPHABLENDENABLE],
+        rs_[RS_SRCBLEND], rs_[RS_DESTBLEND]);
+  }
+  // Untextured, vertex colour and alpha, blended; put the game's state back after.
+  const DWORD rs_keep[5] = {rs_[RS_ALPHABLENDENABLE], rs_[RS_SRCBLEND], rs_[RS_DESTBLEND], rs_[RS_ALPHATESTENABLE],
+                            rs_[RS_FOGENABLE]};
+  DWORD tss_keep[2][7];
+  for (int st = 0; st < 2; ++st)
+    for (int k = 0; k < 7; ++k) tss_keep[st][k] = tss_[st][TSS_COLOROP + k];
+  Surface* tex_keep[2] = {tex_[0], tex_[1]};
+  rs_[RS_ALPHABLENDENABLE] = 1;
+  rs_[RS_SRCBLEND] = 5;   // SRCALPHA
+  rs_[RS_DESTBLEND] = 6;  // INVSRCALPHA
+  rs_[RS_ALPHATESTENABLE] = 0;
+  rs_[RS_FOGENABLE] = 0;
+  tss_[0][TSS_COLOROP] = 2;  // SELECTARG1
+  tss_[0][TSS_COLORARG1] = 0;  // DIFFUSE
+  tss_[0][TSS_ALPHAOP] = 2;
+  tss_[0][TSS_ALPHAARG1] = 0;
+  tss_[1][TSS_COLOROP] = D3DTOP_DISABLE;
+  tss_[1][TSS_ALPHAOP] = D3DTOP_DISABLE;
+  tex_[0] = tex_[1] = nullptr;
+  Draw w = d;
+  w.prim = D3DPT_TRIANGLELIST;
+  w.verts = line_verts_.data();
+  w.first = 0;
+  w.count = static_cast<DWORD>(n);
+  SubmitDraw(w);
+  rs_[RS_ALPHABLENDENABLE] = rs_keep[0];
+  rs_[RS_SRCBLEND] = rs_keep[1];
+  rs_[RS_DESTBLEND] = rs_keep[2];
+  rs_[RS_ALPHATESTENABLE] = rs_keep[3];
+  rs_[RS_FOGENABLE] = rs_keep[4];
+  for (int st = 0; st < 2; ++st)
+    for (int k = 0; k < 7; ++k) tss_[st][TSS_COLOROP + k] = tss_keep[st][k];
+  tex_[0] = tex_keep[0];
+  tex_[1] = tex_keep[1];
+  return true;
+}
+
 void Device::Submit(const Draw& d) {
   if (!d.layout.tl) return SubmitDraw(d);
+  if (SubmitWideLine(d)) return;
   // Race HUD text (hudtext.cpp): the name labels over the riders are drawn
   // larger, about the middle of their bottom edge (which sits over the head).
   const int uv = d.layout.ntex > 0 ? d.layout.tex[0] : -1;

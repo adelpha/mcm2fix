@@ -169,6 +169,7 @@ class Device : public d3d7::IDirect3DDevice7 {
     const VertexBuffer* vb = nullptr;  // for ProcessVertices clip data
   };
   void Submit(const Draw& d);
+  bool SubmitWideLine(const Draw& d);
   void SubmitDraw(const Draw& d);
   void OccludeText(const Draw& d);
   // Direct3D 9 (device9.cpp): the fixed-function pipeline does the work.
@@ -199,6 +200,7 @@ class Device : public d3d7::IDirect3DDevice7 {
   DWORD rs_[256] = {};
   DWORD tss_[8][32] = {};
   Surface* tex_[8] = {};
+  std::vector<uint8_t> line_verts_;   // screen-space lines drawn wide (LineWidth)
   std::vector<uint8_t> label_verts_;  // HUD name labels drawn larger (hudtext.cpp)
   d3d7::D3DMATRIX world_{}, view_{}, proj_{};
   d3d7::D3DMATRIX world_set_{}, view_set_{}, proj_set_{};  // as the game set them (world_/view_ may be smoothed)

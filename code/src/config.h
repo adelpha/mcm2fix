@@ -14,6 +14,7 @@ struct Config {
   bool renderer_label = true;  // RendererLabel: name the active renderer in the corner of the menus
   bool gpu_text = true;       // GpuText: draw the game's GDI text on the GPU at screen resolution
   float hud_scale = 2.0f;     // HudScale: race HUD text panels drawn this many times larger (1..4)
+  float line_width = 3.0f;    // LineWidth: screen-space lines (speedometer needle) in pixels, antialiased (1 = original)
   float label_scale = 1.5f;   // LabelScale: name labels over the riders drawn this many times larger (1..4)
   char hud_font[260] = {};    // HudFont: .ttf file (relative to the game folder) for HUD panel and label text
   bool hud_text = true;       // HudText: race HUD panel text (GDI turned into textures) drawn sharp too
