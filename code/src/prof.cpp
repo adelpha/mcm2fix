@@ -15,6 +15,7 @@
 #include "prof.h"
 
 #include <windows.h>
+#include <tlhelp32.h>
 #include <intrin.h>
 
 #include <algorithm>
@@ -22,6 +23,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <map>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -239,7 +241,105 @@ std::string Describe(uint32_t a) {
   return buf;
 }
 
-uint32_t g_stack_copy[1024];
+// Every loaded module's executable sections plus its exports, so samples taken
+// while the game thread is inside Windows or a driver can name the chain of
+// calls that led there (e.g. ntdll!NtWaitForAlertByThreadId < DSOUND+1234 <
+// exe:4c1234). Only touched by the sampler thread.
+struct ModRange {
+  uintptr_t lo, hi, base;
+  int mod;
+};
+struct ModInfo {
+  std::string name;
+  std::vector<std::pair<uint32_t, std::string>> exports;  // rva -> name, sorted
+};
+std::vector<ModRange> g_mod_ranges;  // sorted by lo
+std::vector<ModInfo> g_mods;
+std::map<uintptr_t, int> g_mod_by_base;
+
+void LoadExports(uintptr_t base, ModInfo& mi) {
+  auto dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+  auto nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+  const IMAGE_DATA_DIRECTORY& dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
+  if (!dir.VirtualAddress || !dir.Size) return;
+  auto ex = reinterpret_cast<const IMAGE_EXPORT_DIRECTORY*>(base + dir.VirtualAddress);
+  auto names = reinterpret_cast<const DWORD*>(base + ex->AddressOfNames);
+  auto ords = reinterpret_cast<const WORD*>(base + ex->AddressOfNameOrdinals);
+  auto funcs = reinterpret_cast<const DWORD*>(base + ex->AddressOfFunctions);
+  for (DWORD i = 0; i < ex->NumberOfNames; ++i) {
+    if (ords[i] >= ex->NumberOfFunctions) continue;
+    const DWORD rva = funcs[ords[i]];
+    if (rva >= dir.VirtualAddress && rva < dir.VirtualAddress + dir.Size) continue;  // forwarder
+    mi.exports.emplace_back(rva, reinterpret_cast<const char*>(base + names[i]));
+  }
+  std::sort(mi.exports.begin(), mi.exports.end());
+}
+
+void RefreshModules() {
+  HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, 0);
+  if (snap == INVALID_HANDLE_VALUE) return;
+  MODULEENTRY32 me{};
+  me.dwSize = sizeof(me);
+  std::vector<ModRange> ranges;
+  for (BOOL ok = Module32First(snap, &me); ok; ok = Module32Next(snap, &me)) {
+    const uintptr_t base = reinterpret_cast<uintptr_t>(me.modBaseAddr);
+    int idx;
+    auto it = g_mod_by_base.find(base);
+    if (it != g_mod_by_base.end() && g_mods[it->second].name == me.szModule) {
+      idx = it->second;
+    } else {
+      ModInfo mi;
+      mi.name = me.szModule;
+      LoadExports(base, mi);
+      idx = static_cast<int>(g_mods.size());
+      g_mods.push_back(std::move(mi));
+      g_mod_by_base[base] = idx;
+    }
+    auto dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+    auto nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+    auto sec = IMAGE_FIRST_SECTION(nt);
+    for (WORD i = 0; i < nt->FileHeader.NumberOfSections; ++i) {
+      if (!(sec[i].Characteristics & IMAGE_SCN_MEM_EXECUTE)) continue;
+      const uintptr_t lo = base + sec[i].VirtualAddress;
+      ranges.push_back({lo, lo + std::max(sec[i].Misc.VirtualSize, 1ul), base, idx});
+    }
+  }
+  CloseHandle(snap);
+  std::sort(ranges.begin(), ranges.end(), [](const ModRange& a, const ModRange& b) { return a.lo < b.lo; });
+  g_mod_ranges.swap(ranges);
+}
+
+const ModRange* FindCode(uintptr_t a) {
+  auto it = std::upper_bound(g_mod_ranges.begin(), g_mod_ranges.end(), a,
+                             [](uintptr_t v, const ModRange& r) { return v < r.lo; });
+  if (it == g_mod_ranges.begin()) return nullptr;
+  --it;
+  return a < it->hi ? &*it : nullptr;
+}
+
+// "ntdll!RtlEnterCriticalSection+1a", or "DSOUND+1f2a0" when no export is near.
+std::string NameAddr(uintptr_t a, const ModRange& r) {
+  const ModInfo& mi = g_mods[r.mod];
+  const uint32_t rva = static_cast<uint32_t>(a - r.base);
+  char buf[160];
+  auto it = std::upper_bound(mi.exports.begin(), mi.exports.end(), std::make_pair(rva, std::string("\x7f")));
+  if (it != mi.exports.begin()) {
+    --it;
+    if (rva - it->first < 0x800) {
+      std::snprintf(buf, sizeof(buf), "%s!%s+%x", mi.name.c_str(), it->second.c_str(), rva - it->first);
+      return buf;
+    }
+  }
+  std::snprintf(buf, sizeof(buf), "%s+%x", mi.name.c_str(), rva);
+  return buf;
+}
+
+std::unordered_map<std::string, uint32_t> g_via;  // "<zone> <chain>" -> samples
+
+constexpr size_t kStackWords = 16384;  // 64 KB: Windows audio and driver stacks run deep
+uint32_t g_stack_copy[kStackWords];
+
+const char* ZoneName(int z) { return z < 0 ? "none" : kZoneNames[z]; }
 
 void TakeSample() {
   CONTEXT ctx{};
@@ -251,7 +351,7 @@ void TakeSample() {
   const int zone = static_cast<int>(g_zone);
   size_t words = 0;
   if (ok && ctx.Esp && ctx.Esp < g_stack_hi) {
-    words = std::min<size_t>((g_stack_hi - ctx.Esp) / 4, 1024);
+    words = std::min<size_t>((g_stack_hi - ctx.Esp) / 4, kStackWords);
     std::memcpy(g_stack_copy, reinterpret_cast<const void*>(ctx.Esp), words * 4);
   }
   ResumeThread(g_thread);
@@ -276,6 +376,39 @@ void TakeSample() {
   }
   g_ring[g_ring_n++ & (kRing - 1)] = s;
 
+  // Outside game code and our DLL: name the chain of calls from the game into it.
+  std::string via;
+  if (!InExe(ctx.Eip) && !InDll(ctx.Eip)) {
+    const ModRange* r = FindCode(ctx.Eip);
+    via = r ? NameAddr(ctx.Eip, *r) : "?";
+    int parts = 1;
+    std::string last_mod = r ? g_mods[r->mod].name : "";
+    for (size_t i = 0; i < words && parts < 8; ++i) {
+      const uintptr_t v = g_stack_copy[i];
+      if (InExe(v) && AfterCall(v)) {
+        char b[24];
+        std::snprintf(b, sizeof(b), "<exe:%06x", static_cast<unsigned>(v));
+        via += b;
+        break;
+      }
+      if (InDll(v) && AfterCall(v)) {
+        char b[32];
+        std::snprintf(b, sizeof(b), "<mcm2fix+%05x", static_cast<unsigned>(v - g_dll_base));
+        via += b;
+        ++parts;
+        continue;
+      }
+      const ModRange* m = FindCode(v);
+      if (!m || v < m->lo + 8 || !AfterCall(v)) continue;
+      // Within one module keep only the outermost-but-first frames: the first
+      // return address per module run is enough to see who called whom.
+      if (g_mods[m->mod].name == last_mod) continue;
+      last_mod = g_mods[m->mod].name;
+      via += "<" + NameAddr(v, *m);
+      ++parts;
+    }
+  }
+
   EnterCriticalSection(&g_map_cs);
   ++g_total_samples;
   ++g_zone_samples[zone + 1];
@@ -284,12 +417,12 @@ void TakeSample() {
     if (s.exe_ret) ++g_exe_call[Key(zone, s.exe_ret)];
     if (!InDll(ctx.Eip) && s.dll_ret) ++g_dll_call[Key(zone, s.dll_ret)];
   }
+  if (!via.empty()) ++g_via[std::string(ZoneName(zone)) + " " + via];
   for (int k = 0; k < nchain; ++k) ++g_incl[Key(-1, chain[k])];
   if (InExe(ctx.Eip)) ++g_incl[Key(-1, s.eip)];  // the function itself
   LeaveCriticalSection(&g_map_cs);
 }
 
-const char* ZoneName(int z) { return z < 0 ? "none" : kZoneNames[z]; }
 
 void WriteTop(std::string& out, const char* tag, const Map& m, size_t top) {
   std::vector<std::pair<uint64_t, uint32_t>> v(m.begin(), m.end());
@@ -315,7 +448,8 @@ void DumpSamples() {
                   "# self <zone> <where> <n>: where the game thread was\n"
                   "# execall <zone> <game return address> <n>: game code that called into a DLL (ours, Windows, driver)\n"
                   "# dllcall <zone> <mcm2fix return address> <n>: our code that called into Windows/driver\n"
-                  "# incl - <game return address or address> <n>: game call sites on the stack (inclusive)\n",
+                  "# incl - <game return address or address> <n>: game call sites on the stack (inclusive)\n"
+                  "# via <zone> <where<caller<...<game return address> <n>: call chain into Windows/driver code\n",
                   g_total_samples, GetConfig().profile_sample_us, g_failed_samples, static_cast<unsigned>(g_dll_base),
                   static_cast<unsigned>(g_dll_hi - g_dll_base));
     out += line;
@@ -328,6 +462,12 @@ void DumpSamples() {
     WriteTop(out, "execall", g_exe_call, 600);
     WriteTop(out, "dllcall", g_dll_call, 400);
     WriteTop(out, "incl", g_incl, 2500);
+    {
+      std::vector<std::pair<std::string, uint32_t>> v(g_via.begin(), g_via.end());
+      std::sort(v.begin(), v.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+      if (v.size() > 800) v.resize(800);
+      for (const auto& kv : v) out += "via " + kv.first + " " + std::to_string(kv.second) + "\n";
+    }
     LeaveCriticalSection(&g_map_cs);
   }
   char path[MAX_PATH];
@@ -378,7 +518,8 @@ DWORD WINAPI SamplerMain(void*) {
   if (!timer) timer = CreateWaitableTimerExW(nullptr, nullptr, 0, TIMER_ALL_ACCESS);
   const int us = GetConfig().profile_sample_us;
   unsigned hitch_r = 0;
-  DWORD last_dump = GetTickCount(), last_flush = GetTickCount();
+  DWORD last_dump = GetTickCount(), last_flush = GetTickCount(), last_mods = GetTickCount();
+  if (us > 0) RefreshModules();
   while (!g_stop) {
     if (us > 0 && g_thread) {
       LARGE_INTEGER due;
@@ -402,6 +543,10 @@ DWORD WINAPI SamplerMain(void*) {
     if (now - last_flush > 1000) {
       FlushCsv();
       last_flush = now;
+    }
+    if (us > 0 && now - last_mods > 5000) {
+      RefreshModules();
+      last_mods = now;
     }
     if (us > 0 && now - last_dump > 15000) {
       DumpSamples();

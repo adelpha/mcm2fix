@@ -183,6 +183,21 @@ def report_samples(path, exe, dll):
         agg[(zone, label(where))] += n
     for (z, k), n in sorted(agg.items(), key=lambda kv: -kv[1])[:40]:
         print(f"   {100 * n / total:5.1f}% {z:14s} {k}")
+    if rows["via"]:
+        print("\n== call chains into Windows / drivers (via), top per zone")
+        byzone = defaultdict(list)
+        for zone, where, n in rows["via"]:
+            byzone[zone].append((n, where))
+        for z in sorted(byzone, key=lambda z: -sum(n for n, _ in byzone[z])):
+            items = sorted(byzone[z], reverse=True)
+            tot = sum(n for n, _ in items)
+            print(f"   -- {z}: {tot} samples outside game/mcm2fix code")
+            for n, where in items[:15]:
+                chain = where.split("<")
+                if chain[-1].startswith("exe:"):
+                    a = int(chain[-1][4:], 16)
+                    chain[-1] = f"exe:{a:06x} (fn {em.func(a):06x})" if em.starts else chain[-1]
+                print(f"   {100 * n / total:5.1f}% {n:6d}  " + " < ".join(chain))
     print("\n== inclusive: game functions on the stack (call site -> calling function)")
     agg = defaultdict(int)
     for zone, where, n in rows["incl"]:
