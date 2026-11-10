@@ -18,8 +18,9 @@ What it does:
   mcm2fix's own DirectDraw 7 / Direct3D 7 implementation on Direct3D 11. The
   game keeps its 640x480 / 1280x1024 (etc.) modes virtually; the real window
   stays borderless at desktop resolution and the picture is scaled with the
-  aspect ratio kept. No display mode change, no exclusive fullscreen, no
-  d3drm.dll, no Windows DirectDraw for drawing. See `docs/step3-renderer.md`.
+  aspect ratio kept. No display mode change and no exclusive fullscreen
+  unless `Fullscreen=Exclusive` asks for it (the picture is still scaled into
+  that mode); no d3drm.dll, no Windows DirectDraw for drawing. See `docs/step3-renderer.md`.
 - Frame pacing (`src/framerate.cpp`): VSync and frame-cap settings, a precise
   frame timer, and frame-rate independence for the few simulation, rider
   animation and camera steps that the game applied once per frame.
@@ -80,6 +81,8 @@ AlphaCut=128   ; trees and flags: drop pixels less opaque than this (0-255), whi
                ; removes the fringe where trees hide flags behind them (0 = original look)
 WideFov=1      ; widescreen modes show more to the sides (0 = crop top and bottom like the original)
 VSync=1        ; wait for the monitor's refresh (0 = no wait; tears if the system allows it)
+Fullscreen=Borderless ; Borderless (default: a window covering the screen) or Exclusive (owns the screen; Alt+Tab leaves it)
+FullscreenMode=Desktop ; Exclusive only: Desktop (keep the current mode) or <width>x<height>[@<Hz>], e.g. 1024x768@85
 FrameCap=0     ; most frames per second (0 = no cap beyond VSync)
 PreciseTimer=1 ; the game's frame time from QueryPerformanceCounter instead of whole milliseconds
 FrameFix=1     ; steps the game applies once per frame scale with frame time (0 = original)

@@ -37,6 +37,11 @@ it on every MinGW build.
 - Registry: HKCU works the same. XP has no UAC virtualisation, so the HKLM
   import on first run finds only what an XP install wrote there.
 
+- **VSync**: without a desktop compositor, a windowed Direct3D 9 present is a
+  plain blit and XP drivers often ignore its interval. With VSync=1 the D3D9
+  renderer waits for the vertical blank itself (log line `vsync:`).
+  `Fullscreen=Exclusive` avoids the issue altogether: the driver flips.
+
 ## The log
 
 Each run starts with lines like

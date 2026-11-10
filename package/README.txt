@@ -7,6 +7,8 @@ wrappers.
 
 - Draws with Direct3D 11 in a borderless window at your desktop
   resolution. The display mode never changes and there is no adapter picker.
+  Fullscreen=Exclusive in mcm2fix.ini gives true exclusive fullscreen
+  instead, optionally in another mode (FullscreenMode).
 - Supports widescreen resolutions, with a wider field of view to match.
 - Plays the intro, credits and menu videos itself, so the Indeo codec and
   DirectShow are not needed.

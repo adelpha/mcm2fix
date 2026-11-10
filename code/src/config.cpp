@@ -2,6 +2,7 @@
 #include "xp_compat.h"
 
 #include <windows.h>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
@@ -80,6 +81,22 @@ void LoadConfig() {
     // word counts. Accepts D3D9 / DX9 / 9 and D3D11 / DX11 / 11.
     r[std::strcspn(r, " \t;")] = 0;
     g_config.renderer = (std::strstr(r, "9") && !std::strstr(r, "11")) ? 9 : 11;
+  }
+  {
+    char r[32] = {};
+    GetPrivateProfileStringA("mcm2fix", "Fullscreen", "Borderless", r, sizeof(r), ini);
+    r[std::strcspn(r, " \t;")] = 0;
+    g_config.exclusive = _strnicmp(r, "Excl", 4) == 0;
+    // FullscreenMode=Desktop or <width>x<height>[@<hz>], e.g. 1024x768@85.
+    char m[48] = {};
+    GetPrivateProfileStringA("mcm2fix", "FullscreenMode", "Desktop", m, sizeof(m), ini);
+    m[std::strcspn(m, " \t;")] = 0;
+    int w = 0, h = 0, hz = 0;
+    if (std::sscanf(m, "%dx%d@%d", &w, &h, &hz) >= 2 && w >= 320 && h >= 200 && w <= 16384 && h <= 16384) {
+      g_config.fs_width = w;
+      g_config.fs_height = h;
+      g_config.fs_hz = hz > 0 && hz <= 1000 ? hz : 0;
+    }
   }
   g_config.renderer_label = GetPrivateProfileIntA("mcm2fix", "RendererLabel", 1, ini) != 0;
   g_config.gpu_text = GetPrivateProfileIntA("mcm2fix", "GpuText", 1, ini) != 0;

@@ -13,6 +13,7 @@
 #include "backend9.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -55,6 +56,10 @@ struct Chains {
   bool failed = false;
 } g_sc;
 IDirect3DQuery9* g_vsync_done = nullptr;  // event query for manual VSync (Present9)
+// Exclusive fullscreen (ini Fullscreen=Exclusive): the device is recreated on
+// the game window and presents through its own (implicit) swap chain.
+bool g_exclusive = false;
+bool g_exclusive_tried = false;
 
 // Cached device state.
 struct StateCache {
@@ -153,13 +158,15 @@ void LogCaps(const D3DCAPS9& c) {
       (c.PixelShaderVersion >> 8) & 0xff, c.PixelShaderVersion & 0xff);
 }
 
-bool CreateDevice9(DWORD vp) {
+bool CreateDevice9(DWORD vp, HWND focus = nullptr) {
   Backend& b = B();
   g_behavior = vp | D3DCREATE_FPU_PRESERVE | D3DCREATE_MULTITHREADED;
-  HRESULT hr = b.d3d9->CreateDevice(b.adapter9, D3DDEVTYPE_HAL, DummyWindow(), g_behavior, &g_pp, &b.dev9);
+  HRESULT hr = b.d3d9->CreateDevice(b.adapter9, D3DDEVTYPE_HAL, focus ? focus : DummyWindow(), g_behavior, &g_pp,
+                                    &b.dev9);
   if (FAILED(hr)) {
-    Log("CreateDevice (%s vertex processing) failed %08lx",
-        vp == D3DCREATE_HARDWARE_VERTEXPROCESSING ? "hardware" : "software", hr);
+    Log("CreateDevice (%s vertex processing, %s) failed %08lx",
+        vp == D3DCREATE_HARDWARE_VERTEXPROCESSING ? "hardware" : "software",
+        g_pp.Windowed ? "windowed" : "exclusive fullscreen", hr);
     b.dev9 = nullptr;
     return false;
   }
@@ -213,6 +220,21 @@ bool TryRecover() {
 bool EnsureChains() {
   Backend& b = B();
   if (!b.hwnd) return false;
+  if (g_exclusive) {
+    if (g_sc.vsync) return true;
+    if (FAILED(b.dev9->GetSwapChain(0, &g_sc.vsync)) || !g_sc.vsync) {
+      LogOnce("exclusive: GetSwapChain failed");
+      return false;
+    }
+    g_sc.now = g_sc.vsync;
+    g_sc.now->AddRef();
+    g_sc.hwnd = b.hwnd;
+    g_sc.w = g_pp.BackBufferWidth;
+    g_sc.h = g_pp.BackBufferHeight;
+    Log("exclusive: presenting on the device's own swap chain %ux%u, interval %s", g_sc.w, g_sc.h,
+        g_pp.PresentationInterval == D3DPRESENT_INTERVAL_ONE ? "ONE (VSync)" : "IMMEDIATE");
+    return true;
+  }
   RECT rc{};
   GetClientRect(b.hwnd, &rc);
   UINT w = rc.right > 0 ? rc.right : 1, h = rc.bottom > 0 ? rc.bottom : 1;
@@ -433,6 +455,101 @@ bool InitDevice9() {
   return true;
 }
 
+namespace {
+
+// Picks the fullscreen mode: FullscreenMode if the card has it (closest
+// refresh rate), else the desktop's.
+D3DDISPLAYMODE PickMode9() {
+  Backend& b = B();
+  const Config& c = GetConfig();
+  D3DDISPLAYMODE desk{};
+  b.d3d9->GetAdapterDisplayMode(b.adapter9, &desk);
+  D3DDISPLAYMODE pick = desk;
+  pick.Format = D3DFMT_X8R8G8B8;
+  if (c.fs_width) {
+    const UINT n = b.d3d9->GetAdapterModeCount(b.adapter9, D3DFMT_X8R8G8B8);
+    bool found = false;
+    for (UINT i = 0; i < n; ++i) {
+      D3DDISPLAYMODE m{};
+      if (FAILED(b.d3d9->EnumAdapterModes(b.adapter9, D3DFMT_X8R8G8B8, i, &m))) continue;
+      if (m.Width != static_cast<UINT>(c.fs_width) || m.Height != static_cast<UINT>(c.fs_height)) continue;
+      // Wanted refresh rate, or else the highest.
+      const int want = c.fs_hz ? c.fs_hz : 100000;
+      if (!found || std::abs(static_cast<int>(m.RefreshRate) - want) <
+                        std::abs(static_cast<int>(pick.RefreshRate) - want)) {
+        pick = m;
+        found = true;
+      }
+    }
+    Log("exclusive: FullscreenMode %dx%d@%d -> %s %ux%u@%u", c.fs_width, c.fs_height, c.fs_hz,
+        found ? "mode" : "not available, desktop", pick.Width, pick.Height, pick.RefreshRate);
+  }
+  return pick;
+}
+
+D3DPRESENT_PARAMETERS FullscreenParams9(HWND hwnd, const D3DDISPLAYMODE& m) {
+  D3DPRESENT_PARAMETERS pp{};
+  pp.BackBufferWidth = m.Width;
+  pp.BackBufferHeight = m.Height;
+  pp.BackBufferFormat = D3DFMT_X8R8G8B8;
+  pp.BackBufferCount = 1;
+  pp.SwapEffect = D3DSWAPEFFECT_DISCARD;
+  pp.hDeviceWindow = hwnd;
+  pp.Windowed = FALSE;
+  pp.FullScreen_RefreshRateInHz = m.RefreshRate;
+  pp.PresentationInterval = GetConfig().vsync ? D3DPRESENT_INTERVAL_ONE : D3DPRESENT_INTERVAL_IMMEDIATE;
+  return pp;
+}
+
+// A Direct3D 9 device can only go fullscreen on the window it was created
+// for (its focus window), and the device is made before the game has a
+// window. So, the first time the game window is attached and before the
+// game has made any textures, the device is made again on that window.
+void SwitchToExclusive9(HWND hwnd) {
+  Backend& b = B();
+  if (g_exclusive || g_exclusive_tried) return;
+  g_exclusive_tried = true;
+  if (g_stats.tex_managed || g_stats.tex_rt || g_stats.depth) {
+    Log("exclusive: textures already exist (%u managed, %u render targets, %u depth); staying borderless",
+        g_stats.tex_managed, g_stats.tex_rt, g_stats.depth);
+    return;
+  }
+  const D3DDISPLAYMODE mode = PickMode9();
+  Log("exclusive: recreating the device on the game window %p, %ux%u@%u Hz, VSync %d", static_cast<void*>(hwnd),
+      mode.Width, mode.Height, mode.RefreshRate, GetConfig().vsync ? 1 : 0);
+  ReleaseChains();
+  MsaaDeviceLost();
+  ReleaseGdi9();
+  GpuTextDeviceLost();
+  GpuTimerRelease9();
+  EndScene9();
+  for (auto& kv : g_depth_clear_rt) SafeRelease(kv.second);
+  g_depth_clear_rt.clear();
+  for (auto& kv : g_upload_tex) SafeRelease(kv.second);
+  g_upload_tex.clear();
+  for (auto& kv : g_staging) SafeRelease(kv.second);
+  g_staging.clear();
+  SafeRelease(g_white);
+  const D3DPRESENT_PARAMETERS windowed = g_pp;
+  const DWORD vp = g_behavior & (D3DCREATE_HARDWARE_VERTEXPROCESSING | D3DCREATE_SOFTWARE_VERTEXPROCESSING);
+  ULONG left = b.dev9->Release();
+  b.dev9 = nullptr;
+  if (left) Log("exclusive: old device still has %lu references", left);
+  g_pp = FullscreenParams9(hwnd, mode);
+  if (CreateDevice9(vp, hwnd)) {
+    g_exclusive = true;
+    ResetState();
+    Log("exclusive: fullscreen device made (behaviour %08lx)", g_behavior);
+    return;
+  }
+  g_pp = windowed;
+  if (!CreateDevice9(vp)) Log("exclusive: could not make the windowed device again either");
+  else Log("exclusive: fullscreen failed; back to borderless");
+  ResetState();
+}
+
+}  // namespace
+
 bool AttachWindow9(HWND hwnd) {
   Backend& b = B();
   if (b.hwnd != hwnd) {
@@ -440,6 +557,8 @@ bool AttachWindow9(HWND hwnd) {
     b.hwnd = hwnd;
   }
   ApplyBorderless(hwnd);
+  if (GetConfig().exclusive) SwitchToExclusive9(hwnd);
+  if (!b.dev9) return false;
   if (g_lost && !TryRecover()) return true;
   return EnsureChains();
 }
@@ -1183,9 +1302,10 @@ void DecideVsync(IDirect3DSwapChain9* sc) {
   const bool scanline = (g_caps.Caps & D3DCAPS_READ_SCANLINE) != 0;
   D3DRASTER_STATUS rs{};
   const bool raster_ok = scanline && sc && SUCCEEDED(sc->GetRasterStatus(&rs));
-  if (comp) g_mv.mode = VsyncMode::kSwapChain;
+  if (comp || g_exclusive) g_mv.mode = VsyncMode::kSwapChain;
   else if (raster_ok) g_mv.mode = VsyncMode::kRasterPoll;
   else g_mv.mode = VsyncMode::kTimer;
+  if (g_exclusive) Log("vsync: exclusive fullscreen, the swap chain waits for the refresh itself");
   Log("vsync: compositor %s, refresh %lu Hz, READ_SCANLINE cap %d, GetRasterStatus %s (line %u) -> %s",
       comp ? "on" : "off", hz, scanline ? 1 : 0, raster_ok ? "ok" : "failed", rs.ScanLine,
       g_mv.mode == VsyncMode::kSwapChain ? "swap chain interval ONE"
