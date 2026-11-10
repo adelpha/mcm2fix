@@ -34,6 +34,7 @@ void LoadConfig() {
   g_config.reg_log = GetPrivateProfileIntA("mcm2fix", "RegLog", 0, ini) != 0;
   g_config.wide_fov = GetPrivateProfileIntA("mcm2fix", "WideFov", 1, ini) != 0;
   g_config.alpha_cut = GetPrivateProfileIntA("mcm2fix", "AlphaCut", 128, ini);
+  g_config.alpha_log = GetPrivateProfileIntA("mcm2fix", "AlphaLog", 0, ini) != 0;
   g_config.vsync = GetPrivateProfileIntA("mcm2fix", "VSync", 1, ini) != 0;
   g_config.frame_cap = GetPrivateProfileIntA("mcm2fix", "FrameCap", 0, ini);
   if (g_config.frame_cap < 0) g_config.frame_cap = 0;

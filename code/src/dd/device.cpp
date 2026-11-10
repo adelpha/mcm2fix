@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <set>
 #include <string>
 
 #include "../config.h"
@@ -1472,6 +1473,29 @@ void Device::ApplyState(bool tl, bool depth_clip, bool has_depth) {
       // shadows) have alpha test off and are left alone.
       rs_[RS_ALPHATESTENABLE] && (rs_[RS_ALPHAFUNC] == 5 || rs_[RS_ALPHAFUNC] == 7))
     pc.cut[0] = static_cast<float>(GetConfig().alpha_cut) / 255.0f;
+  // Which blended / alpha-tested / two-texture draws get the AlphaCut, once
+  // per combination (ini AlphaLog=1): to tell a cut-out from a soft layer
+  // such as the terrain detail texture when one goes wrong.
+  if (GetConfig().alpha_log && (rs_[RS_ALPHABLENDENABLE] || rs_[RS_ALPHATESTENABLE] || srv[1])) {
+    static std::set<std::string> seen;
+    if (seen.size() < 400) {
+      char key[400];
+      auto name = [](Surface* t) -> std::string {
+        if (!t) return "-";
+        char b[64];
+        std::snprintf(b, sizeof(b), "%lux%lu", static_cast<unsigned long>(t->Width()), static_cast<unsigned long>(t->Height()));
+        return t->TextureName().empty() ? std::string(b) : t->TextureName() + " " + b;
+      };
+      std::snprintf(key, sizeof(key),
+                    "tex0 %s | tex1 %s | blend %lu src %lu dst %lu | zwrite %lu zenable %lu | atest %lu func %lu ref "
+                    "%lu | op0 %lu/%lu op1 %lu/%lu | cut %s",
+                    name(tex_[0]).c_str(), name(srv[1] ? tex_[1] : nullptr).c_str(), rs_[RS_ALPHABLENDENABLE],
+                    rs_[RS_SRCBLEND], rs_[RS_DESTBLEND], rs_[RS_ZWRITEENABLE], rs_[RS_ZENABLE],
+                    rs_[RS_ALPHATESTENABLE], rs_[RS_ALPHAFUNC], rs_[RS_ALPHAREF] & 0xff, tss_[0][TSS_COLOROP],
+                    tss_[0][TSS_ALPHAOP], tss_[1][TSS_COLOROP], tss_[1][TSS_ALPHAOP], pc.cut[0] > 0 ? "yes" : "no");
+      if (seen.insert(key).second) Log("alpha draw: %s", key);
+    }
+  }
   if (!bd.pc_ok || std::memcmp(&bd.pc, &pc, sizeof(pc)) != 0) {
     b.ctx->UpdateSubresource(ps_cb_, 0, nullptr, &pc, 0, 0);
     bd.pc = pc;

@@ -37,6 +37,7 @@ DDPIXELFORMAT MakeRGBFormat(UINT bpp, DWORD r, DWORD g, DWORD b, DWORD a);
 
 class Surface : public IDirectDrawSurface7 {
  public:
+  const std::string& TextureName() const { return tex_name_; }
   Surface(DirectDraw* dd, const DDSURFACEDESC2& desc, Surface* root);
   virtual ~Surface();
 

@@ -46,6 +46,7 @@ struct Config {
   float arrow_scale = 2.0f;   // ArrowScale: size of the race direction arrow (1 = original)
   bool restart_fix = true;   // RestartFix: Restart Race turns the bikes to face the course again
   bool restart_log = false;  // RestartLog: log the start grid at race load and Restart Race
+  bool alpha_log = false;    // AlphaLog: log each blended/alpha-tested draw combination and whether AlphaCut applied
   int alpha_cut = 128;        // AlphaCut: alpha-tested blended pixels below this (0-255) are dropped
   // Graphics options.
   float fov = 0.0f;           // Fov: camera field of view in degrees at 4:3 (0 = game's own, 77)
