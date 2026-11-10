@@ -8,6 +8,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "../config.h"
@@ -35,8 +36,23 @@ void TLog(const char* fmt, ...) {
 
 struct TextStats {
   unsigned dcs = 0, calls = 0, glyphs = 0, fills = 0, new_glyphs = 0, uploads = 0, occlusions = 0, composites = 0,
-           fallbacks = 0, copies = 0;
+           fallbacks = 0, copies = 0, batches = 0;
 } g_ts;
+
+struct HiFont;
+
+struct KnownFont {
+  LOGFONTA lf{};
+  TEXTMETRICA tm{};
+  bool tm_ok = false;
+  std::unordered_map<std::string, SIZE> ext;  // string + char extra -> extent
+  std::map<int, HiFont*> hi;                  // scale x100 -> glyph font
+};
+
+std::unordered_map<HGDIOBJ, KnownFont> g_known;
+struct CacheStats {
+  unsigned ext_hits = 0, ext_misses = 0, tm_hits = 0, tm_misses = 0, clip_known = 0, clip_read = 0;
+} g_cs;
 
 void Report() {
   static DWORD last = GetTickCount();
@@ -45,9 +61,15 @@ void Report() {
   last = now;
   if ((GetConfig().text_log || GetConfig().dd_stats) && (g_ts.dcs || g_ts.composites))
     Log("gpu text 5s: %u DCs, %u calls, %u glyphs, %u fills, %u new glyphs, %u atlas uploads, %u erased, "
-        "%u composites, %u copies, %u not drawn",
+        "%u composites, %u copies, %u not drawn, %u glyph batches",
         g_ts.dcs, g_ts.calls, g_ts.glyphs, g_ts.fills, g_ts.new_glyphs, g_ts.uploads, g_ts.occlusions,
-        g_ts.composites, g_ts.copies, g_ts.fallbacks);
+        g_ts.composites, g_ts.copies, g_ts.fallbacks, g_ts.batches);
+  if ((GetConfig().text_log || GetConfig().dd_stats || GetConfig().profile) && (g_cs.ext_hits || g_cs.ext_misses))
+    Log("gpu text 5s: extents %u cached / %u asked, metrics %u / %u, clip %u known / %u read, %u glyph batches "
+        "(%u glyphs), %u fonts kept",
+        g_cs.ext_hits, g_cs.ext_misses, g_cs.tm_hits, g_cs.tm_misses, g_cs.clip_known, g_cs.clip_read, g_ts.batches,
+        g_ts.glyphs, static_cast<unsigned>(g_known.size()));
+  g_cs = CacheStats{};
   g_ts = TextStats{};
 }
 
@@ -80,9 +102,20 @@ void MarkEmpty(Overlay& o) {
 // The size the surface is shown at: fitted into the window, keeping its
 // aspect ratio, never smaller than the surface.
 void FitSize(UINT bw, UINT bh, UINT* ow, UINT* oh) {
-  RECT rc{};
+  // The window size, asked at most every 100 ms (this runs for every text call).
+  static RECT rc{};
+  static bool rc_ok = false;
+  static DWORD rc_at = 0;
+  static HWND rc_wnd = nullptr;
+  const DWORD now = GetTickCount();
+  if (rc_wnd != B().hwnd || now - rc_at >= 100) {
+    rc_wnd = B().hwnd;
+    rc_at = now;
+    rc = RECT{};
+    rc_ok = rc_wnd && GetClientRect(rc_wnd, &rc);
+  }
   double s = 1.0;
-  if (B().hwnd && GetClientRect(B().hwnd, &rc) && rc.right > 0 && rc.bottom > 0) {
+  if (rc_ok && rc.right > 0 && rc.bottom > 0) {
     s = std::min(static_cast<double>(rc.right) / bw, static_cast<double>(rc.bottom) / bh);
   }
   s = std::max(1.0, std::min(s, 4.0));
@@ -140,6 +173,61 @@ Overlay* EnsureOverlay(const void* native, UINT bw, UINT bh) {
   return &o;
 }
 
+// ------------------------------------------------- measuring (GDI call cache)
+//
+// Every text call used to ask GDI for the text's extent, the font's metrics
+// and the font's LOGFONT, several times over (system calls, per text, per
+// frame). Fonts that live for the whole run (the HUD's scaled fonts, see
+// GpuTextKeepFont) have their metrics and the extents of the strings drawn
+// with them cached here.
+
+
+KnownFont* Known(HDC dc) {
+  if (g_known.empty()) return nullptr;
+  auto it = g_known.find(GetCurrentObject(dc, OBJ_FONT));
+  return it == g_known.end() ? nullptr : &it->second;
+}
+
+void Metrics(HDC dc, TEXTMETRICA* tm) {
+  KnownFont* k = Known(dc);
+  if (k && k->tm_ok) {
+    *tm = k->tm;
+    ++g_cs.tm_hits;
+    return;
+  }
+  ++g_cs.tm_misses;
+  *tm = TEXTMETRICA{};
+  GetTextMetricsA(dc, tm);
+  if (k) {
+    k->tm = *tm;
+    k->tm_ok = true;
+  }
+}
+
+SIZE Extent(HDC dc, const char* s, int n) {
+  SIZE sz{};
+  if (!s || n <= 0) return sz;
+  KnownFont* k = Known(dc);
+  if (!k) {
+    ++g_cs.ext_misses;
+    GetTextExtentPoint32A(dc, s, n, &sz);
+    return sz;
+  }
+  const int extra = GetTextCharacterExtra(dc);
+  std::string key(s, static_cast<size_t>(n));
+  key.append(reinterpret_cast<const char*>(&extra), sizeof(extra));
+  auto it = k->ext.find(key);
+  if (it != k->ext.end()) {
+    ++g_cs.ext_hits;
+    return it->second;
+  }
+  ++g_cs.ext_misses;
+  GetTextExtentPoint32A(dc, s, n, &sz);
+  if (k->ext.size() >= 4096) k->ext.clear();  // the clock makes new strings all the time
+  k->ext.emplace(std::move(key), sz);
+  return sz;
+}
+
 // -------------------------------------------------------------- glyph atlas
 
 constexpr UINT kAtlas = 1024;
@@ -174,7 +262,17 @@ void ResetAtlas() {
   if (++g_atlas_resets <= 5) Log("glyph atlas full; started again (%u)", g_atlas_resets);
 }
 
+HiFont* GetFontSlow(HDC dc, float scale);
+
 HiFont* GetFont(HDC dc, float scale) {
+  KnownFont* k = Known(dc);
+  if (!k) return GetFontSlow(dc, scale);
+  HiFont*& hi = k->hi[static_cast<int>(scale * 100 + 0.5f)];
+  if (!hi) hi = GetFontSlow(dc, scale);
+  return hi;
+}
+
+HiFont* GetFontSlow(HDC dc, float scale) {
   LOGFONTA lf{};
   HGDIOBJ cur = GetCurrentObject(dc, OBJ_FONT);
   if (!cur || !GetObjectA(cur, sizeof(lf), &lf)) return nullptr;
@@ -291,6 +389,9 @@ bool UploadAtlas() {
 struct Ctx {
   Overlay* o;
   std::vector<RECT> clips;  // overlay pixels
+  bool clip_known = false;  // the DC's clip is `clip` (surface pixels), or none
+  bool clip_none = false;
+  RECT clip{};
 };
 
 RECT ScaleRect(const Overlay& o, const RECT& r) {
@@ -299,10 +400,22 @@ RECT ScaleRect(const Overlay& o, const RECT& r) {
 }
 
 // The DC's clip region (surface pixels), as overlay rectangles.
+// known: the clip as mcm2fix set it (no GDI calls); null: ask GDI.
 void ReadClip(HDC dc, Ctx& c, const RECT* extra) {
   const Overlay& o = *c.o;
   RECT full{0, 0, static_cast<LONG>(o.base_w), static_cast<LONG>(o.base_h)};
   if (extra) IntersectRect(&full, &full, extra);
+  c.clips.clear();
+  if (c.clip_known) {
+    ++g_cs.clip_known;
+    RECT r;
+    if (c.clip_none) r = full;
+    else if (!IntersectRect(&r, &c.clip, &full)) return;
+    RECT sr = ScaleRect(o, r);
+    if (sr.left < sr.right && sr.top < sr.bottom) c.clips.push_back(sr);
+    return;
+  }
+  ++g_cs.clip_read;
   std::vector<RECT> base;
   HRGN rgn = CreateRectRgn(0, 0, 0, 0);
   if (GetClipRgn(dc, rgn) == 1) {
@@ -320,7 +433,6 @@ void ReadClip(HDC dc, Ctx& c, const RECT* extra) {
     base.push_back(full);
   }
   DeleteObject(rgn);
-  c.clips.clear();
   for (const RECT& r : base) {
     RECT s = ScaleRect(o, r);
     if (s.left < s.right && s.top < s.bottom) c.clips.push_back(s);
@@ -346,25 +458,14 @@ void Fill(Ctx& c, const RECT& base, COLORREF col) {
   MarkUsed(*c.o);
 }
 
-void DrawGlyph(Ctx& c, const Glyph& g, int x, int y, COLORREF col) {
+// A glyph's quads (one per clip rectangle it touches), drawn by DrawLine in one batch.
+void AddGlyph(Ctx& c, const Glyph& g, int x, int y, std::vector<BlitQuad>& out) {
   const RECT q{x, y, x + g.bw, y + g.bh};
   for (const RECT& clip : c.clips) {
     RECT r;
     if (!IntersectRect(&r, &q, &clip)) continue;
-    BlitParams p;
-    p.SetDst(c.o->tex);
-    p.dst_rect = r;
-    p.SetSrc(g_atlas);
-    p.src_rect = {g.ax + (r.left - q.left), g.ay + (r.top - q.top), g.ax + (r.right - q.left),
-                  g.ay + (r.bottom - q.top)};
-    p.fill[0] = GetRValue(col) / 255.0f;
-    p.fill[1] = GetGValue(col) / 255.0f;
-    p.fill[2] = GetBValue(col) / 255.0f;
-    p.fill[3] = 1.0f;
-    p.tint = true;
-    p.premul = true;
-    p.opaque = false;
-    Blit(p);
+    out.push_back(BlitQuad{r, RECT{g.ax + (r.left - q.left), g.ay + (r.top - q.top), g.ax + (r.right - q.left),
+                                   g.ay + (r.bottom - q.top)}});
     ++g_ts.glyphs;
   }
 }
@@ -372,10 +473,9 @@ void DrawGlyph(Ctx& c, const Glyph& g, int x, int y, COLORREF col) {
 // One line of text with its top-left corner at (left, top), surface pixels.
 void DrawLine(Ctx& c, HDC dc, int left, int top, const char* s, int n) {
   if (n <= 0) return;
-  SIZE ext{};
-  GetTextExtentPoint32A(dc, s, n, &ext);
-  TEXTMETRICA tm{};
-  GetTextMetricsA(dc, &tm);
+  const SIZE ext = Extent(dc, s, n);
+  TEXTMETRICA tm;
+  Metrics(dc, &tm);
   if (GetBkMode(dc) == OPAQUE) Fill(c, RECT{left, top, left + ext.cx, top + ext.cy}, GetBkColor(dc));
   Overlay& o = *c.o;
   HiFont* f = GetFont(dc, o.sy);
@@ -398,11 +498,27 @@ void DrawLine(Ctx& c, HDC dc, int left, int top, const char* s, int n) {
   const COLORREF col = GetTextColor(dc);
   float pen = left * o.sx;
   const float baseline = (top + tm.tmAscent) * o.sy;
+  static std::vector<BlitQuad> quads;
+  quads.clear();
   for (const Glyph* g : gl) {
     if (g->bw > 0)
-      DrawGlyph(c, *g, static_cast<int>(std::lround(pen + g->ox)), static_cast<int>(std::lround(baseline - g->oy)),
-                col);
+      AddGlyph(c, *g, static_cast<int>(std::lround(pen + g->ox)), static_cast<int>(std::lround(baseline - g->oy)),
+               quads);
     pen += (g->adv + extra) * k;
+  }
+  if (!quads.empty()) {
+    BlitParams p;
+    p.SetDst(o.tex);
+    p.SetSrc(g_atlas);
+    p.fill[0] = GetRValue(col) / 255.0f;
+    p.fill[1] = GetGValue(col) / 255.0f;
+    p.fill[2] = GetBValue(col) / 255.0f;
+    p.fill[3] = 1.0f;
+    p.tint = true;
+    p.premul = true;
+    p.opaque = false;
+    BlitQuads(p, quads.data(), quads.size());
+    ++g_ts.batches;
   }
   MarkUsed(o);
 }
@@ -419,9 +535,7 @@ COLORREF BrushColor(HBRUSH br) {
 }
 
 int TextWidth(HDC dc, const std::string& s) {
-  SIZE sz{};
-  if (!s.empty()) GetTextExtentPoint32A(dc, s.data(), static_cast<int>(s.size()), &sz);
-  return sz.cx;
+  return Extent(dc, s.data(), static_cast<int>(s.size())).cx;
 }
 
 void DoDrawText(Ctx& c, HDC dc, LPCSTR str, int len, const RECT& rc, UINT fmt) {
@@ -485,8 +599,8 @@ void DoDrawText(Ctx& c, HDC dc, LPCSTR str, int len, const RECT& rc, UINT fmt) {
       l += "...";
     }
   }
-  TEXTMETRICA tm{};
-  GetTextMetricsA(dc, &tm);
+  TEXTMETRICA tm;
+  Metrics(dc, &tm);
   const int lh = tm.tmHeight + ((fmt & DT_EXTERNALLEADING) ? tm.tmExternalLeading : 0);
   int y = rc.top;
   if (fmt & DT_SINGLELINE) {
@@ -513,6 +627,10 @@ class Recorder : public GdiTarget {
   UINT w = 0, h = 0;
   bool busy = false;
   const void* native = nullptr;
+  bool clip_known = false, clip_none = false;  // see Ctx
+  RECT clip{};
+
+  void ClipChanged() override { clip_known = false; }
 
   bool Draw(const GdiCall& call) override {
     ++g_ts.calls;
@@ -522,13 +640,15 @@ class Recorder : public GdiTarget {
       return false;
     }
     Ctx c{o, {}};
+    c.clip_known = clip_known;
+    c.clip_none = clip_none;
+    c.clip = clip;
     switch (call.fn) {
       case GdiFn::kTextOut: {
         if (!call.s || call.len <= 0) return true;
-        SIZE ext{};
-        GetTextExtentPoint32A(dc, call.s, call.len, &ext);
-        TEXTMETRICA tm{};
-        GetTextMetricsA(dc, &tm);
+        const SIZE ext = Extent(dc, call.s, call.len);
+        TEXTMETRICA tm;
+        Metrics(dc, &tm);
         const UINT align = GetTextAlign(dc);
         int x = call.x, y = call.y;
         if (align & TA_UPDATECP) {
@@ -659,6 +779,8 @@ HDC GpuTextBeginDC(const GpuTexture& base, UINT w, UINT h) {
   SelectObject(dc, GetStockObject(BLACK_PEN));
   SelectObject(dc, GetStockObject(WHITE_BRUSH));
   MoveToEx(dc, 0, 0, nullptr);
+  r->clip_known = true;  // SelectClipRgn(dc, nullptr) above
+  r->clip_none = true;
   r->busy = true;
   r->native = base.Native();
   GdiTrack(dc, r, w, h, "gpu text");
@@ -672,6 +794,26 @@ void GpuTextEndDC(HDC dc) {
   for (auto& rec : g_recorders)
     if (rec->dc == dc) rec->busy = false;
 }
+
+void GpuTextKeepFont(HFONT f) {
+  if (!f || g_known.count(f)) return;
+  KnownFont k;
+  if (!GetObjectA(f, sizeof(k.lf), &k.lf)) return;
+  g_known.emplace(f, std::move(k));
+}
+
+void GpuTextSetClip(HDC dc, const RECT* r) {
+  for (auto& rec : g_recorders)
+    if (rec->busy && rec->dc == dc) {
+      rec->clip_known = true;
+      rec->clip_none = !r;
+      if (r) rec->clip = *r;
+    }
+}
+
+SIZE GpuTextExtent(HDC dc, const char* s, int n) { return Extent(dc, s, n); }
+
+void GpuTextMetrics(HDC dc, TEXTMETRICA* tm) { Metrics(dc, tm); }
 
 bool GpuTextRun(const GdiCall& call) {
   for (auto& rec : g_recorders)

@@ -88,36 +88,57 @@ class ExeMap:
 
 
 class DllMap:
+    """mcm2fix offsets to function names from the (unstripped) DLL's symbol table."""
+
     def __init__(self, dll):
-        self.dll = dll
-        self.base = 0
-        self.cache = {}
+        self.syms = []
         if dll:
             out = subprocess.run(["objdump", "-p", dll], capture_output=True, text=True).stdout
             m = re.search(r"ImageBase\s+([0-9a-f]+)", out)
-            self.base = int(m.group(1), 16) if m else 0x10000000
+            base = int(m.group(1), 16) if m else 0x10000000
+            out = subprocess.run(["i686-w64-mingw32-nm", "-C", "--defined-only", dll], capture_output=True,
+                                 text=True).stdout
+            for line in out.splitlines():
+                p = line.split(None, 2)
+                if len(p) == 3 and p[1] in "tT":
+                    self.syms.append((int(p[0], 16) - base, p[2]))
+            self.syms.sort()
+            self.offs = [a for a, _ in self.syms]
 
     def name(self, off):
-        if not self.dll:
-            return f"mcm2fix+{off:x}"
-        if off not in self.cache:
-            out = subprocess.run(["i686-w64-mingw32-addr2line", "-f", "-C", "-e", self.dll, hex(self.base + off)],
-                                 capture_output=True, text=True).stdout.split("\n")
-            fn = out[0] if out else "?"
-            fn = re.sub(r"\(.*", "", fn)
-            self.cache[off] = fn
-        return self.cache[off]
+        if not self.syms:
+            return f"+{off:x}"
+        i = bisect.bisect_right(self.offs, off) - 1
+        return self.syms[i][1] if i >= 0 else f"+{off:x}"
 
 
 def report_samples(path, exe, dll):
     em, dm = ExeMap(exe), DllMap(dll)
     zones = {}
     rows = defaultdict(list)
+    dll_base, dll_end = 0, 0
+
+    def fix(where):
+        # Exact addresses that happen to be odd were written as "anon@<addr>".
+        if where.startswith("anon@"):
+            a = int(where[5:], 16)
+            if 0x401000 <= a < 0x556000:
+                return f"exe:{a:06x}"
+            if dll_base <= a < dll_end:
+                return f"mcm2fix+{a - dll_base:05x}"
+        return where
+
     for line in open(path):
         if line.startswith("#"):
+            m = re.search(r"dll base ([0-9a-f]+) code end \+([0-9a-f]+)", line)
+            if m:
+                dll_base = int(m.group(1), 16)
+                dll_end = dll_base + int(m.group(2), 16)
             print(line.rstrip())
             continue
         p = line.split()
+        if len(p) == 4:
+            p[2] = fix(p[2])
         if p[0] == "zone":
             zones[p[1]] = int(p[2])
         else:
@@ -150,6 +171,8 @@ def report_samples(path, exe, dll):
     print("\n== game call sites that called into DLLs (execall), by calling function")
     agg = defaultdict(int)
     for zone, where, n in rows["execall"]:
+        if not where.startswith("exe:"):
+            continue
         a = int(where[4:], 16)
         agg[(zone, f"{em.func(a):06x} (ret {a:06x})")] += n
     for (z, k), n in sorted(agg.items(), key=lambda kv: -kv[1])[:50]:
@@ -163,6 +186,8 @@ def report_samples(path, exe, dll):
     print("\n== inclusive: game functions on the stack (call site -> calling function)")
     agg = defaultdict(int)
     for zone, where, n in rows["incl"]:
+        if not where.startswith("exe:"):
+            continue
         a = int(where[4:], 16)
         agg[em.func(a)] = max(agg[em.func(a)], n)  # a function's sites overlap; keep the largest
     for f, n in sorted(agg.items(), key=lambda kv: -kv[1])[:70]:

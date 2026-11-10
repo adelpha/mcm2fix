@@ -546,6 +546,31 @@ void BleedIntoTransparent(uint8_t* px, UINT w, UINT h) {
 }
 }  // namespace
 
+// 16-bit pixels to BGRA through a table per pixel format (65536 entries):
+// the game's textures are mostly 16-bit, and some are uploaded every frame.
+static const uint32_t* Lut16(const PixelLayout& l) {
+  struct Entry {
+    DWORD mask[4];
+    std::vector<uint32_t> lut;
+  };
+  static std::vector<Entry> cache;
+  for (const Entry& e : cache)
+    if (std::memcmp(e.mask, l.mask, sizeof(e.mask)) == 0) return e.lut.data();
+  if (cache.size() >= 8) return nullptr;
+  Entry e;
+  std::memcpy(e.mask, l.mask, sizeof(e.mask));
+  e.lut.resize(65536);
+  for (DWORD px = 0; px < 65536; ++px) {
+    uint8_t c[4];
+    l.ToBGRA(px, c);
+    std::memcpy(&e.lut[px], c, 4);
+  }
+  cache.push_back(std::move(e));
+  Log("16-bit texture format %04lx/%04lx/%04lx/%04lx: conversion table made", l.mask[0], l.mask[1], l.mask[2],
+      l.mask[3]);
+  return cache.back().lut.data();
+}
+
 bool Surface::LevelBGRA(UINT level, std::vector<uint8_t>& bgra, UINT& w, UINT& h) {
   Surface* s = level == 0 ? this : (level - 1 < mips_.size() ? mips_[level - 1] : nullptr);
   if (!s) return false;
@@ -555,11 +580,18 @@ bool Surface::LevelBGRA(UINT level, std::vector<uint8_t>& bgra, UINT& w, UINT& h
   h = s->Height();
   const UINT bytes = layout_.bpp / 8;
   bgra.resize(static_cast<size_t>(w) * h * 4);
+  const uint32_t* lut = !layout_.palette && layout_.bpp == 16 ? Lut16(layout_) : nullptr;
   for (UINT y = 0; y < h; ++y) {
     const uint8_t* src = s->mem_.data() + static_cast<size_t>(y) * s->Pitch();
     uint8_t* dst = bgra.data() + static_cast<size_t>(y) * w * 4;
     if (layout_.palette) {
       for (UINT x = 0; x < w; ++x) std::memcpy(dst + x * 4, pal[src[x]], 4);
+    } else if (lut) {
+      for (UINT x = 0; x < w; ++x) {
+        uint16_t px;
+        std::memcpy(&px, src + x * 2, 2);
+        std::memcpy(dst + x * 4, &lut[px], 4);
+      }
     } else if (layout_.bpp == 32 && layout_.mask[0] == 0xff0000 && layout_.mask[2] == 0xff) {
       for (UINT x = 0; x < w; ++x) {
         std::memcpy(dst + x * 4, src + x * 4, 4);

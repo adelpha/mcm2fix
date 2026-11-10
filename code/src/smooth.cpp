@@ -40,7 +40,55 @@ struct Rec {
 constexpr float kMaxStepMove = 30.0f;
 
 std::unordered_map<uint64_t, Rec> g_recs;
-std::unordered_map<uint64_t, uint32_t> g_uses;  // draws so far this frame per source
+// How many times each key was seen this frame: an open-addressing table that
+// is emptied by a generation number (no allocations per draw or per frame,
+// unlike an unordered_map cleared every frame).
+class UseCounter {
+ public:
+  uint32_t Next(uint64_t key) {
+    if ((used_ + 1) * 2 > slots_.size()) Grow();
+    size_t i = Hash(key) & (slots_.size() - 1);
+    for (;;) {
+      Slot& s = slots_[i];
+      if (s.gen != gen_) {
+        s = Slot{key, gen_, 1};
+        ++used_;
+        return 0;
+      }
+      if (s.key == key) return s.n++;
+      i = (i + 1) & (slots_.size() - 1);
+    }
+  }
+  void clear() {
+    ++gen_;
+    used_ = 0;
+  }
+
+ private:
+  struct Slot {
+    uint64_t key;
+    uint32_t gen, n;
+  };
+  static size_t Hash(uint64_t k) { return static_cast<size_t>((k * 0x9E3779B97F4A7C15ull) >> 32); }
+  void Grow() {
+    std::vector<Slot> old;
+    old.swap(slots_);
+    slots_.assign(old.empty() ? 1024 : old.size() * 2, Slot{0, 0, 0});
+    used_ = 0;
+    for (const Slot& s : old) {
+      if (s.gen != gen_) continue;
+      size_t i = Hash(s.key) & (slots_.size() - 1);
+      while (slots_[i].gen == gen_) i = (i + 1) & (slots_.size() - 1);
+      slots_[i] = s;
+      ++used_;
+    }
+  }
+  std::vector<Slot> slots_;
+  uint32_t gen_ = 1;
+  size_t used_ = 0;
+};
+
+UseCounter g_uses;  // draws so far this frame per source
 unsigned g_frames = 0;
 bool g_bypass = false;  // drawing something already placed between steps (shadow camera)
 unsigned g_shadow_blends = 0;  // shadows rebuilt from blended riders
@@ -152,7 +200,7 @@ struct TextRec {
   unsigned prev_tick = 0, tick = 0;
 };
 std::unordered_map<uint64_t, TextRec> g_trecs;
-std::unordered_map<uint64_t, uint32_t> g_tuses;
+UseCounter g_tuses;
 using TextOutFn = BOOL(WINAPI*)(HDC, int, int, LPCSTR, int);
 TextOutFn g_text_out = nullptr;
 
@@ -165,7 +213,7 @@ BOOL WINAPI SmoothTextOut(HDC dc, int x, int y, LPCSTR text, int len) {
   if (text && len > 0 && SimDrawPoint(&tick, &alpha)) {
     uint64_t h = 1469598103934665603ull;
     for (int i = 0; i < len; ++i) h = (h ^ static_cast<uint8_t>(text[i])) * 1099511628211ull;
-    const uint32_t use = g_tuses[h]++;
+    const uint32_t use = g_tuses.Next(h);
     TextRec& r = g_trecs[h * 0x9E3779B97F4A7C15ull ^ use];
     if (r.tick != tick) {
       r.prev[0] = r.cur[0];
@@ -189,7 +237,7 @@ struct CentreRec {
   unsigned prev_tick = 0, tick = 0;
 };
 std::unordered_map<uint64_t, CentreRec> g_crecs;
-std::unordered_map<uint64_t, uint32_t> g_luses;
+UseCounter g_luses;
 
 // Rotation (unit quaternion w,x,y,z) that best turns the points `a` onto
 // `b` about their centres (Horn's method: the top eigenvector of a 4x4
@@ -260,7 +308,7 @@ void Rotate(const float* q, const float* v, float* o) {
   o[1] = v[1] + w * ty + (uz * tx - ux * tz);
   o[2] = v[2] + w * tz + (ux * ty - uy * tx);
 }
-std::unordered_map<uint64_t, uint32_t> g_vuses;
+UseCounter g_vuses;
 std::vector<uint8_t> g_vout;
 unsigned g_vtotal = 0, g_vblended = 0;
 
@@ -283,7 +331,7 @@ const uint8_t* SmoothVertices(const uint8_t* verts, uint32_t stride, uint32_t co
   uint64_t source = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(verts));
   source = source * 0x9E3779B97F4A7C15ull ^ static_cast<uint64_t>(reinterpret_cast<uintptr_t>(idx));
   source = source * 0x9E3779B97F4A7C15ull ^ count;
-  const uint32_t use = g_vuses[source]++;
+  const uint32_t use = g_vuses.Next(source);
   const uint64_t key = source * 0x9E3779B97F4A7C15ull ^ use;
   VertRec& r = g_vrecs[key];
   if (r.tick != tick) {
@@ -308,7 +356,7 @@ const uint8_t* SmoothVertices(const uint8_t* verts, uint32_t stride, uint32_t co
   for (double& c : centre) c /= count;
   uint64_t loose = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(verts));
   loose = loose * 0x9E3779B97F4A7C15ull ^ static_cast<uint64_t>(reinterpret_cast<uintptr_t>(idx));
-  const uint32_t loose_use = g_luses[loose]++;
+  const uint32_t loose_use = g_luses.Next(loose);
   CentreRec& cr = g_crecs[loose * 0x9E3779B97F4A7C15ull ^ loose_use];
   if (cr.tick != tick) {
     std::memcpy(cr.prev, cr.cur, sizeof(cr.prev));
@@ -449,7 +497,7 @@ void SmoothTransform(uint32_t type, const float* in, const void* src, float* out
   float alpha;
   if (g_bypass || !SimDrawPoint(&tick, &alpha)) return;
   const uint64_t source = (static_cast<uint64_t>(reinterpret_cast<uintptr_t>(src)) << 8) | (type & 0xff);
-  const uint32_t use = g_uses[source]++;
+  const uint32_t use = g_uses.Next(source);
   const uint64_t key = source ^ (static_cast<uint64_t>(use) << 40);
   Rec& r = g_recs[key];
   if (r.tick != tick) {

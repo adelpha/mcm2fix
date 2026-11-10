@@ -137,8 +137,7 @@ bool Device::BindTarget9(bool& has_depth, bool full_clear) {
     MsaaRelease(rt->Native());
   }
   IDirect3DDevice9* dev = B().dev9;
-  dev->SetRenderTarget(0, target);
-  dev->SetDepthStencilSurface(ds);
+  SetTarget9(target, ds);
   cur_rt9_ = target;
   cur_ds9_ = ds;
   cur_rt9_w_ = rt->width;
@@ -172,8 +171,7 @@ HRESULT Device::Clear9(DWORD count, d3d7::D3DRECT* rects, DWORD flags, d3d7::D3D
   }
   if (list.empty()) return d3d7::D3D_OK;
   IDirect3DDevice9* dev = B().dev9;
-  D3DVIEWPORT9 v{0, 0, cur_rt9_w_, cur_rt9_h_, 0.0f, 1.0f};
-  dev->SetViewport(&v);
+  SetViewport9(D3DVIEWPORT9{0, 0, cur_rt9_w_, cur_rt9_h_, 0.0f, 1.0f});
   RS9(D3DRS_SCISSORTESTENABLE, FALSE);
   RS9(D3DRS_COLORWRITEENABLE, 0xf);
   DWORD f = (clear_color ? kClear9Target : 0) | (clear_depth ? kClear9ZBuffer | kClear9Stencil : 0);
@@ -406,6 +404,8 @@ void Device::Submit9(const Draw& d) {
   const int set1 = static_cast<int>(tss_[1][d3d7::TSS_TEXCOORDINDEX] & 0xffff);
   scratch_.resize(static_cast<size_t>(d.count) * sizeof(GpuVertex));
   auto* out = reinterpret_cast<GpuVertex*>(scratch_.data());
+  const int t0 = set0 < l.ntex ? l.tex[set0] : -1, t1 = set1 < l.ntex ? l.tex[set1] : -1;
+  const bool t0_uv = t0 >= 0 && l.tex_dim[set0] >= 2, t1_uv = t1 >= 0 && l.tex_dim[set1] >= 2;
   for (DWORD i = 0; i < d.count; ++i) {
     const uint8_t* s = d.verts + static_cast<size_t>(d.first + i) * l.stride;
     GpuVertex& v = out[i];
@@ -423,8 +423,10 @@ void Device::Submit9(const Draw& d) {
     if (l.diffuse >= 0) std::memcpy(&v.diffuse, s + l.diffuse, 4);
     if (l.specular >= 0) std::memcpy(&v.specular, s + l.specular, 4);
     v.t0[0] = v.t0[1] = v.t1[0] = v.t1[1] = 0;
-    if (set0 < l.ntex) std::memcpy(v.t0, s + l.tex[set0], l.tex_dim[set0] >= 2 ? 8 : 4);
-    if (set1 < l.ntex) std::memcpy(v.t1, s + l.tex[set1], l.tex_dim[set1] >= 2 ? 8 : 4);
+    if (t0_uv) std::memcpy(v.t0, s + t0, 8);  // fixed sizes: no memcpy call per field
+    else if (t0 >= 0) std::memcpy(v.t0, s + t0, 4);
+    if (t1_uv) std::memcpy(v.t1, s + t1, 8);
+    else if (t1 >= 0) std::memcpy(v.t1, s + t1, 4);
   }
 
   zone.Switch(prof::kStateApply);
@@ -454,10 +456,10 @@ void Device::Submit9(const Draw& d) {
   vp.Height = std::max<DWORD>(1, std::min<DWORD>(vp7.dwHeight ? vp7.dwHeight : 1, cur_rt9_h_ - vp.Y));
   vp.MinZ = vp7.dvMinZ;
   vp.MaxZ = vp7.dvMaxZ > vp7.dvMinZ ? vp7.dvMaxZ : vp7.dvMinZ + 1e-6f;
-  dev->SetViewport(&vp);
+  SetViewport9(vp);
   RECT sc{static_cast<LONG>(vp.X), static_cast<LONG>(vp.Y), static_cast<LONG>(vp.X + vp.Width),
           static_cast<LONG>(vp.Y + vp.Height)};
-  dev->SetScissorRect(&sc);
+  SetScissor9(sc);
 
   const bool log = GetConfig().d3d9_log && draws9_ < 40;
   if (log)

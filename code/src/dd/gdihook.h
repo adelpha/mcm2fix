@@ -32,6 +32,8 @@ class GdiTarget {
   virtual void Touch(const RECT&) {}
   // Draw the call some other way. true: GDI does not run it.
   virtual bool Draw(const GdiCall&) { return false; }
+  // The game called SelectClipRgn on the DC.
+  virtual void ClipChanged() {}
 };
 
 void InstallGdiHooks();

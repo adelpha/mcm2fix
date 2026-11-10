@@ -443,6 +443,25 @@ HFONT ScaledFont(const LOGFONTA& lf, float kx, float ky, bool digits = false) {
   if (it != g_fonts.end()) return it->second;
   HFONT f = CreateFontIndirectA(&key.lf);
   g_fonts[key] = f;
+  GpuTextKeepFont(f);  // never deleted: GPU text may cache its measurements
+  return f;
+}
+
+// ScaledFont is asked for the same few fonts over and over every frame.
+HFONT ScaledFontCached(const LOGFONTA& lf, float kx, float ky, bool digits = false) {
+  struct Last {
+    LOGFONTA lf;
+    float kx, ky;
+    bool digits;
+    HFONT f;
+  };
+  static Last last[8];
+  static unsigned next = 0;
+  for (const Last& e : last)
+    if (e.f && e.kx == kx && e.ky == ky && e.digits == digits && std::memcmp(&e.lf, &lf, sizeof(lf)) == 0)
+      return e.f;
+  HFONT f = ScaledFont(lf, kx, ky, digits);
+  last[next++ % 8] = Last{lf, kx, ky, digits, f};
   return f;
 }
 
@@ -487,7 +506,24 @@ std::vector<Run> SplitNumbers(const std::string& s) {
 }
 
 // Characters of a digits run that the digit font lacks go back to the text font.
+std::vector<Run> CheckGlyphsNow(HDC dc, HFONT digit_font, const std::vector<Run>& in);
+
 std::vector<Run> CheckGlyphs(HDC dc, HFONT digit_font, const std::vector<Run>& in) {
+  static std::map<std::pair<HFONT, std::string>, std::vector<Run>> cache;
+  std::string key;
+  for (const Run& r : in) {
+    key += r.digits ? '\1' : '\2';
+    key += r.s;
+  }
+  auto it = cache.find({digit_font, key});
+  if (it != cache.end()) return it->second;
+  if (cache.size() >= 4096) cache.clear();
+  std::vector<Run> out = CheckGlyphsNow(dc, digit_font, in);
+  cache[{digit_font, key}] = out;
+  return out;
+}
+
+std::vector<Run> CheckGlyphsNow(HDC dc, HFONT digit_font, const std::vector<Run>& in) {
   std::vector<Run> out;
   HGDIOBJ old = SelectObject(dc, digit_font);
   for (const Run& r : in) {
@@ -520,7 +556,7 @@ bool DrawMixed(HDC dc, const Item& it, LONG x0, LONG top, float kx, float ky, LO
   for (const Run& r : runs) any = any || r.digits;
   if (!any) return false;
   const float dk = GetConfig().hud_digit_size;
-  runs = CheckGlyphs(dc, ScaledFont(it.font, kx * dk, ky * dk, true), runs);
+  runs = CheckGlyphs(dc, ScaledFontCached(it.font, kx * dk, ky * dk, true), runs);
   SetTextCharacterExtra(dc, static_cast<int>(std::lround(it.extra * kx)));
   // No shrinking to the game's width here: the clock changes every frame,
   // so the fit (and with it the font size) would change with it, making
@@ -535,9 +571,8 @@ bool DrawMixed(HDC dc, const Item& it, LONG x0, LONG top, float kx, float ky, LO
   LONG x = x0;
   for (const Run& r : runs) {
     const float k = fit * (r.digits ? dk : 1.0f);
-    SelectObject(dc, ScaledFont(it.font, kx * k, ky * k, r.digits));
-    SIZE ext{};
-    GetTextExtentPoint32A(dc, r.s.c_str(), static_cast<int>(r.s.size()), &ext);
+    SelectObject(dc, ScaledFontCached(it.font, kx * k, ky * k, r.digits));
+    const SIZE ext = GpuTextExtent(dc, r.s.c_str(), static_cast<int>(r.s.size()));
     GdiCall call{};
     call.dc = dc;
     call.fn = GdiFn::kTextOut;
@@ -576,9 +611,7 @@ void DrawItemsNow(Surface* rt, uintptr_t self, const Panel& p, const RECT& regio
     ++g_st.no_dc;
     return;
   }
-  HRGN clip = CreateRectRgn(clip_rect.left, clip_rect.top, clip_rect.right, clip_rect.bottom);
-  SelectClipRgn(dc, clip);
-  DeleteObject(clip);
+  GpuTextSetClip(dc, &clip_rect);  // only GPU text reads it: no GDI clip region needed
   SetBkMode(dc, TRANSPARENT);
   unsigned n = 0;
   for (const Item& it : p.items) {
@@ -588,18 +621,17 @@ void DrawItemsNow(Surface* rt, uintptr_t self, const Panel& p, const RECT& regio
       ++n;
       continue;
     }
-    SelectObject(dc, ScaledFont(it.font, kx, ky));
+    SelectObject(dc, ScaledFontCached(it.font, kx, ky));
     // The scaled font can come out wider than the game's (a different face
     // stands in for a bitmap font): make it smaller until it fits the width
     // the game's text took, scaled.
     float fit = 1.0f;
     const float want = (it.box.right - it.box.left) * kx;
     for (int tries = 0; tries < 4 && want > 0; ++tries) {
-      SIZE ext{};
-      GetTextExtentPoint32A(dc, it.s.c_str(), static_cast<int>(it.s.size()), &ext);
+      const SIZE ext = GpuTextExtent(dc, it.s.c_str(), static_cast<int>(it.s.size()));
       if (ext.cx <= want + 0.5f) break;
       fit *= std::max(0.5f, want / ext.cx);
-      SelectObject(dc, ScaledFont(it.font, kx * fit, ky * fit));
+      SelectObject(dc, ScaledFontCached(it.font, kx * fit, ky * fit));
     }
     if (fit < 1.0f) {
       static unsigned logged = 0;
@@ -612,8 +644,8 @@ void DrawItemsNow(Surface* rt, uintptr_t self, const Panel& p, const RECT& regio
     SetTextCharacterExtra(dc, static_cast<int>(std::lround(it.extra * kx)));
     // The scaled font can have a different share of space above its letters:
     // put its baseline where the game's font had it, scaled.
-    TEXTMETRICA tm{};
-    GetTextMetricsA(dc, &tm);
+    TEXTMETRICA tm;
+    GpuTextMetrics(dc, &tm);
     const bool top_aligned = it.draw_text ? !(it.fmt & (DT_VCENTER | DT_BOTTOM))
                                           : (it.align & (TA_BASELINE | TA_BOTTOM)) == TA_TOP;
     const LONG dy = top_aligned ? static_cast<LONG>(std::lround(it.ascent * ky)) - tm.tmAscent : 0;
@@ -636,7 +668,7 @@ void DrawItemsNow(Surface* rt, uintptr_t self, const Panel& p, const RECT& regio
     ++n;
   }
   SelectObject(dc, GetStockObject(SYSTEM_FONT));
-  SelectClipRgn(dc, nullptr);
+  GpuTextSetClip(dc, nullptr);
   GpuTextEndDC(dc);
   static unsigned logged = 0;
   if (++logged <= 12)

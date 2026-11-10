@@ -343,6 +343,7 @@ int WINAPI HookClip(HDC dc, HRGN rgn) {
   {
     Lock lock;
     const Tracked* t = Find(dc, kClipRgn);
+    if (t && t->target) t->target->ClipChanged();
     if (t && Detail()) {
       RECT b{};
       if (rgn) GetRgnBox(rgn, &b);

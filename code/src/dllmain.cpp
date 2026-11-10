@@ -22,6 +22,7 @@ void ApplyArrowFix();
 void ApplyRestartFixes();
 void ApplyHelpFix();
 void ApplyTextureFixes();
+void ApplyPerfFixes();
 void LogTextureSummary();
 
 namespace {
@@ -68,6 +69,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
       ApplyRestartFixes();
       ApplyHelpFix();
       ApplyTextureFixes();
+      ApplyPerfFixes();
       video::ApplyVideoPlayer();
       if (c.activate_log) ApplyDiagnostics();
       prof::Start();

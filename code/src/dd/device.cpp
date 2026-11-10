@@ -188,6 +188,59 @@ struct PSConstants {
   float cut[4];
 };
 
+// What the Device last bound on the D3D11 context (ini StateCache=1), so
+// unchanged state is not sent again for every draw. Anything else that
+// changes bindings calls ContextTouched (backend.h), which makes it stale.
+struct Bound {
+  const void* owner = nullptr;
+  unsigned epoch = 0;
+  ID3D11RenderTargetView* rtv = nullptr;
+  ID3D11DepthStencilView* dsv = nullptr;
+  ID3D11BlendState* blend = nullptr;
+  ID3D11DepthStencilState* depth = nullptr;
+  ID3D11RasterizerState* raster = nullptr;
+  ID3D11ShaderResourceView* srv[2] = {};
+  ID3D11SamplerState* smp[3] = {};
+  ID3D11VertexShader* vs = nullptr;
+  ID3D11PixelShader* ps = nullptr;
+  bool pipe = false;  // layout, constant buffers, vertex and index buffers
+  D3D11_PRIMITIVE_TOPOLOGY topo = D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
+  D3D11_VIEWPORT vp{};
+  bool vp_ok = false;
+  VSConstants vc{};
+  bool vc_ok = false;
+  PSConstants pc{};
+  bool pc_ok = false;
+};
+Bound g_bound;
+struct CacheStats {
+  unsigned draws = 0, resets = 0, targets = 0, states = 0, textures = 0, vs_consts = 0, ps_consts = 0;
+} g_cstat;
+
+// The cache for this device, emptied if anything else used the context.
+Bound& Cache(const void* dev) {
+  if (!GetConfig().state_cache || g_bound.owner != dev || g_bound.epoch != ContextEpoch()) {
+    g_bound = Bound{};
+    g_bound.owner = dev;
+    g_bound.epoch = ContextEpoch();
+    ++g_cstat.resets;
+  }
+  return g_bound;
+}
+
+void ReportCache() {
+  static DWORD last = GetTickCount();
+  const DWORD now = GetTickCount();
+  if (now - last < 5000) return;
+  last = now;
+  if ((GetConfig().profile || GetConfig().dd_stats) && g_cstat.draws)
+    Log("state cache 5s (StateCache=%d): %u draws, %u full rebinds, set: %u targets, %u blend/depth/raster, "
+        "%u texture/sampler, %u vs constants, %u ps constants",
+        GetConfig().state_cache ? 1 : 0, g_cstat.draws, g_cstat.resets, g_cstat.targets, g_cstat.states,
+        g_cstat.textures, g_cstat.vs_consts, g_cstat.ps_consts);
+  g_cstat = CacheStats{};
+}
+
 struct ClearConstants {
   float rect[4];
   float color[4];
@@ -579,11 +632,13 @@ Device::~Device() {
   SafeRelease(ibuf_);
   SafeRelease(vs_cb_);
   SafeRelease(ps_cb_);
+  if (g_bound.owner == this) g_bound = Bound{};
   dd_->Release();
 }
 
 bool Device::Init() {
   if (IsD3D9()) return Init9();
+  g_bound = Bound{};
   if (!InitPipeline()) return false;
   Backend& b = B();
   D3D11_BUFFER_DESC bd{};
@@ -800,6 +855,7 @@ HRESULT Device::Clear(DWORD count, D3DRECT* rects, DWORD flags, D3DCOLOR color, 
     b.ctx->VSSetConstantBuffers(0, 1, &g_pipe.clear_cb);
     b.ctx->PSSetShader(g_pipe.clear_ps, nullptr, 0);
     b.ctx->Draw(4, 0);
+    ContextTouched();
   }
   if (clear_color) {
     if (cur_msaa_) MsaaMarkDrawn();
@@ -1201,9 +1257,6 @@ bool Device::BindTarget(bool& has_depth, bool full_clear) {
     if (zt->dsv && zt->width == rt->width && zt->height == rt->height) dsv = zt->dsv;
   }
   has_depth = dsv != nullptr;
-  // Never sample from the texture being drawn into.
-  ID3D11ShaderResourceView* none[2] = {};
-  B().ctx->PSSetShaderResources(0, 2, none);
   // 3D scenes (targets with a depth buffer) are drawn multisampled.
   MsaaViews mv;
   cur_msaa_ = has_depth && MsaaAcquire(rt, mv, full_clear);
@@ -1215,7 +1268,17 @@ bool Device::BindTarget(bool& has_depth, bool full_clear) {
     cur_rtv_ = rt->rtv;
     cur_dsv_ = dsv;
   }
-  B().ctx->OMSetRenderTargets(1, &cur_rtv_, cur_dsv_);
+  Bound& bd = Cache(this);
+  if (bd.rtv != cur_rtv_ || bd.dsv != cur_dsv_) {
+    // Never sample from the texture being drawn into.
+    ID3D11ShaderResourceView* none[2] = {};
+    B().ctx->PSSetShaderResources(0, 2, none);
+    B().ctx->OMSetRenderTargets(1, &cur_rtv_, cur_dsv_);
+    bd.srv[0] = bd.srv[1] = nullptr;
+    bd.rtv = cur_rtv_;
+    bd.dsv = cur_dsv_;
+    ++g_cstat.targets;
+  }
   prof::NoteTarget(cur_rtv_);
   return true;
 }
@@ -1331,9 +1394,13 @@ ID3D11SamplerState* Device::GetSampler(int stage) {
 
 void Device::ApplyState(bool tl, bool depth_clip, bool has_depth) {
   Backend& b = B();
-  b.ctx->OMSetBlendState(GetBlend(), nullptr, 0xffffffff);
-  b.ctx->OMSetDepthStencilState(GetDepth(has_depth), 0);
-  b.ctx->RSSetState(GetRaster(depth_clip));
+  Bound& bd = Cache(this);
+  ID3D11BlendState* blend = GetBlend();
+  ID3D11DepthStencilState* depth = GetDepth(has_depth);
+  ID3D11RasterizerState* raster = GetRaster(depth_clip);
+  if (bd.blend != blend) b.ctx->OMSetBlendState(bd.blend = blend, nullptr, 0xffffffff), ++g_cstat.states;
+  if (bd.depth != depth) b.ctx->OMSetDepthStencilState(bd.depth = depth, 0), ++g_cstat.states;
+  if (bd.raster != raster) b.ctx->RSSetState(bd.raster = raster), ++g_cstat.states;
 
   // Textures and samplers.
   ID3D11ShaderResourceView* srv[2] = {};
@@ -1359,9 +1426,18 @@ void Device::ApplyState(bool tl, bool depth_clip, bool has_depth) {
     smp[s] = GetSampler(s);
   }
   smp[2] = g_pipe.key_sampler;
-  if (prof::On()) prof::NoteDrawState(srv[0], GetBlend(), GetDepth(has_depth), GetRaster(depth_clip));
-  b.ctx->PSSetShaderResources(0, 2, srv);
-  b.ctx->PSSetSamplers(0, 3, smp);
+  if (prof::On()) prof::NoteDrawState(srv[0], blend, depth, raster);
+  if (bd.srv[0] != srv[0] || bd.srv[1] != srv[1]) {
+    b.ctx->PSSetShaderResources(0, 2, srv);
+    bd.srv[0] = srv[0];
+    bd.srv[1] = srv[1];
+    ++g_cstat.textures;
+  }
+  if (std::memcmp(bd.smp, smp, sizeof(smp)) != 0) {
+    b.ctx->PSSetSamplers(0, 3, smp);
+    std::memcpy(bd.smp, smp, sizeof(smp));
+    ++g_cstat.textures;
+  }
 
   ColorToFloat(rs_[RS_TEXTUREFACTOR], pc.tfactor);
   ColorToFloat(rs_[RS_FOGCOLOR], pc.fogcolor);
@@ -1396,14 +1472,25 @@ void Device::ApplyState(bool tl, bool depth_clip, bool has_depth) {
       // shadows) have alpha test off and are left alone.
       rs_[RS_ALPHATESTENABLE] && (rs_[RS_ALPHAFUNC] == 5 || rs_[RS_ALPHAFUNC] == 7))
     pc.cut[0] = static_cast<float>(GetConfig().alpha_cut) / 255.0f;
-  b.ctx->UpdateSubresource(ps_cb_, 0, nullptr, &pc, 0, 0);
+  if (!bd.pc_ok || std::memcmp(&bd.pc, &pc, sizeof(pc)) != 0) {
+    b.ctx->UpdateSubresource(ps_cb_, 0, nullptr, &pc, 0, 0);
+    bd.pc = pc;
+    bd.pc_ok = true;
+    ++g_cstat.ps_consts;
+  }
 
   bool flat = rs_[RS_SHADEMODE] == 1;
-  b.ctx->IASetInputLayout(g_pipe.layout);
-  b.ctx->VSSetShader(g_pipe.vs[flat], nullptr, 0);
-  b.ctx->PSSetShader(g_pipe.ps[flat], nullptr, 0);
-  b.ctx->VSSetConstantBuffers(0, 1, &vs_cb_);
-  b.ctx->PSSetConstantBuffers(1, 1, &ps_cb_);
+  if (!bd.pipe) {
+    b.ctx->IASetInputLayout(g_pipe.layout);
+    b.ctx->VSSetConstantBuffers(0, 1, &vs_cb_);
+    b.ctx->PSSetConstantBuffers(1, 1, &ps_cb_);
+    const UINT stride = sizeof(GpuVertex), zero = 0;
+    b.ctx->IASetVertexBuffers(0, 1, &vbuf_, &stride, &zero);
+    b.ctx->IASetIndexBuffer(ibuf_, DXGI_FORMAT_R16_UINT, 0);
+    bd.pipe = true;
+  }
+  if (bd.vs != g_pipe.vs[flat]) b.ctx->VSSetShader(bd.vs = g_pipe.vs[flat], nullptr, 0);
+  if (bd.ps != g_pipe.ps[flat]) b.ctx->PSSetShader(bd.ps = g_pipe.ps[flat], nullptr, 0);
   (void)tl;
 }
 
@@ -1572,6 +1659,7 @@ void Device::Submit(const Draw& d) {
 
 void Device::SubmitDraw(const Draw& d) {
   OccludeText(d);
+  if (prof::On()) GpuTimerMark();
   if (IsD3D9()) return Submit9(d);
   bool has_depth = false;
   {
@@ -1620,8 +1708,12 @@ void Device::SubmitDraw(const Draw& d) {
   scratch_.resize(static_cast<size_t>(d.count) * sizeof(GpuVertex));
   auto* out = reinterpret_cast<GpuVertex*>(scratch_.data());
   const VertexBuffer::Processed* clip = mode == 2 ? d.vb->ClipData() : nullptr;
-  for (DWORD i = 0; i < d.count; ++i) {
-    const uint8_t* s = d.verts + static_cast<size_t>(d.first + i) * l.stride;
+  // Fixed-size copies only (a variable size became a memcpy call per field).
+  const int t0 = set0 < l.ntex ? l.tex[set0] : -1, t1 = set1 < l.ntex ? l.tex[set1] : -1;
+  const bool t0_uv = t0 >= 0 && l.tex_dim[set0] >= 2, t1_uv = t1 >= 0 && l.tex_dim[set1] >= 2;
+  const uint8_t* src = d.verts + static_cast<size_t>(d.first) * l.stride;
+  for (DWORD i = 0; i < d.count; ++i, src += l.stride) {
+    const uint8_t* s = src;
     GpuVertex& v = out[i];
     if (clip) {
       std::memcpy(v.pos, clip[d.first + i].clip, 16);
@@ -1636,8 +1728,10 @@ void Device::SubmitDraw(const Draw& d) {
     if (l.diffuse >= 0) std::memcpy(&v.diffuse, s + l.diffuse, 4);
     if (l.specular >= 0) std::memcpy(&v.specular, s + l.specular, 4);
     v.t0[0] = v.t0[1] = v.t1[0] = v.t1[1] = 0;
-    if (set0 < l.ntex) std::memcpy(v.t0, s + l.tex[set0], l.tex_dim[set0] >= 2 ? 8 : 4);
-    if (set1 < l.ntex) std::memcpy(v.t1, s + l.tex[set1], l.tex_dim[set1] >= 2 ? 8 : 4);
+    if (t0_uv) std::memcpy(v.t0, s + t0, 8);
+    else if (t0 >= 0) std::memcpy(v.t0, s + t0, 4);
+    if (t1_uv) std::memcpy(v.t1, s + t1, 8);
+    else if (t1 >= 0) std::memcpy(v.t1, s + t1, 4);
   }
   UINT vbytes = d.count * sizeof(GpuVertex);
   if (vbytes > vbuf_size_) {
@@ -1662,25 +1756,37 @@ void Device::SubmitDraw(const Draw& d) {
   vc.vp[2] = static_cast<float>(vp7.dwWidth ? vp7.dwWidth : 1);
   vc.vp[3] = static_cast<float>(vp7.dwHeight ? vp7.dwHeight : 1);
   vc.mode[0] = static_cast<float>(mode);
-  b.ctx->UpdateSubresource(vs_cb_, 0, nullptr, &vc, 0, 0);
+  prep_zone.Switch(prof::kStateApply);
+  Bound& bd = Cache(this);
+  ++g_cstat.draws;
+  ReportCache();
+  if (!bd.vc_ok || std::memcmp(&bd.vc, &vc, sizeof(vc)) != 0) {
+    b.ctx->UpdateSubresource(vs_cb_, 0, nullptr, &vc, 0, 0);
+    bd.vc = vc;
+    bd.vc_ok = true;
+    ++g_cstat.vs_consts;
+  }
   D3D11_VIEWPORT v{vc.vp[0], vc.vp[1], vc.vp[2], vc.vp[3], 0.0f, 1.0f};
   if (mode != 1) {
     v.MinDepth = vp7.dvMinZ;
     v.MaxDepth = vp7.dvMaxZ;
   }
-  b.ctx->RSSetViewports(1, &v);
-  prep_zone.Switch(prof::kStateApply);
+  if (!bd.vp_ok || std::memcmp(&bd.vp, &v, sizeof(v)) != 0) {
+    b.ctx->RSSetViewports(1, &v);
+    bd.vp = v;
+    bd.vp_ok = true;
+  }
   ApplyState(l.tl, mode != 1, has_depth);
 
-  UINT stride = sizeof(GpuVertex);
-  b.ctx->IASetVertexBuffers(0, 1, &vbuf_, &stride, &voff);
-  b.ctx->IASetPrimitiveTopology(topo);
+  // The vertex and index buffers stay bound at offset 0 (ApplyState); each
+  // draw starts at its own place in them.
+  if (bd.topo != topo) b.ctx->IASetPrimitiveTopology(bd.topo = topo);
   prep_zone.Switch(prof::kDriverDraw);
+  const INT base_vertex = static_cast<INT>(voff / sizeof(GpuVertex));
   if (idx) {
-    b.ctx->IASetIndexBuffer(ibuf_, DXGI_FORMAT_R16_UINT, ioff);
-    b.ctx->DrawIndexed(nidx, 0, 0);
+    b.ctx->DrawIndexed(nidx, ioff / 2, base_vertex);
   } else {
-    b.ctx->Draw(d.count, 0);
+    b.ctx->Draw(d.count, static_cast<UINT>(base_vertex));
   }
   if (cur_msaa_) MsaaMarkDrawn();
   if (has_depth) Note3DDraw();

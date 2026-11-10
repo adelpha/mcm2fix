@@ -117,6 +117,9 @@ DDStats=0      ; debugging: log renderer activity every 2 seconds
 Profile=0      ; debugging: performance profile - frame times, timed sections, GPU time and a sampling
                ; profile of the game thread in logs\perf-*.csv / perf-samples-*.txt (tools/perf_report.py)
 ProfileSampleUs=1000 ; how often (microseconds) Profile samples the game thread (0 = no sampling)
+FastCrt=1      ; the game's millisecond clock reads QueryPerformanceCounter (no timer-period change per
+               ; call) and its case-insensitive name compares use a table (0 = the game's own code)
+StateCache=1   ; Direct3D 11: state the renderer already has bound is not sent again for every draw
 D3D9Log=1      ; debugging: extra Direct3D 9 renderer logging (device caps, first frames, fallbacks)
 GpuText=1      ; draw the game's menu and HUD text (GDI) on the GPU, antialiased, at screen resolution
 HudText=1      ; with GpuText: the race HUD panels' text is drawn by mcm2fix on screen, sharp
