@@ -177,6 +177,48 @@ DWORD PixelLayout::FromBGRA(const uint8_t in[4]) const {
   return px;
 }
 
+namespace {
+double MsSince(const LARGE_INTEGER& a) {
+  LARGE_INTEGER b, f;
+  QueryPerformanceCounter(&b);
+  QueryPerformanceFrequency(&f);
+  return (b.QuadPart - a.QuadPart) * 1000.0 / f.QuadPart;
+}
+
+bool Is8888(const PixelLayout& l) {
+  return l.bpp == 32 && l.mask[0] == 0xFF0000 && l.mask[1] == 0xFF00 && l.mask[2] == 0xFF &&
+         (l.mask[3] == 0 || l.mask[3] == 0xFF000000u);
+}
+bool Is565(const PixelLayout& l) {
+  return l.bpp == 16 && l.mask[0] == 0xF800 && l.mask[1] == 0x7E0 && l.mask[2] == 0x1F && l.mask[3] == 0;
+}
+
+// n pixels of B8G8R8A8 into the surface format: whole rows at a time, with
+// straight paths for X8R8G8B8/A8R8G8B8 and R5G6B5 (the pause menu reads
+// back a full-screen frame, 2 million pixels).
+void RowFromBGRA(const PixelLayout& l, uint8_t* dst, const uint8_t* src, UINT n) {
+  if (Is8888(l)) {
+    if (l.mask[3]) {
+      std::memcpy(dst, src, static_cast<size_t>(n) * 4);
+    } else {
+      const uint32_t* s = reinterpret_cast<const uint32_t*>(src);
+      uint32_t* d = reinterpret_cast<uint32_t*>(dst);
+      for (UINT x = 0; x < n; ++x) d[x] = s[x] & 0x00FFFFFFu;
+    }
+    return;
+  }
+  if (Is565(l)) {
+    const ChannelTables& t = Tables();
+    uint16_t* d = reinterpret_cast<uint16_t*>(dst);
+    for (UINT x = 0; x < n; ++x, src += 4)
+      d[x] = static_cast<uint16_t>((t.compress[5][src[2]] << 11) | (t.compress[6][src[1]] << 5) | t.compress[5][src[0]]);
+    return;
+  }
+  const UINT bytes = l.bpp / 8;
+  for (UINT x = 0; x < n; ++x) WritePx(dst + x * bytes, l.bpp, l.FromBGRA(src + x * 4));
+}
+}  // namespace
+
 DDPIXELFORMAT MakeRGBFormat(UINT bpp, DWORD r, DWORD g, DWORD b, DWORD a) {
   DDPIXELFORMAT pf{};
   pf.dwSize = sizeof(pf);
@@ -472,18 +514,24 @@ void Surface::SyncToCpu(const char* why) {
 }
 
 void Surface::BlendTextIntoCpu() {
+  LARGE_INTEGER t0;
+  QueryPerformanceCounter(&t0);
   std::vector<uint8_t> ov;
   UINT ow = 0, oh = 0;
   if (!gpu_.Valid() || layout_.palette || layout_.depth || !GpuTextReadOverlay(gpu_.Native(), ov, ow, oh)) return;
   const UINT w = Width(), h = Height(), bytes = layout_.bpp / 8;
   unsigned touched = 0;
+  // Overlay column for each surface column, worked out once (not a 64-bit
+  // divide per pixel).
+  std::vector<UINT> oxs(w);
+  for (UINT x = 0; x < w; ++x) oxs[x] = static_cast<UINT>(static_cast<uint64_t>(x) * ow / w);
   for (UINT y = 0; y < h; ++y) {
     const UINT oy = static_cast<UINT>(static_cast<uint64_t>(y) * oh / h);
+    const uint32_t* orow = reinterpret_cast<const uint32_t*>(ov.data() + static_cast<size_t>(oy) * ow * 4);
     uint8_t* row = mem_.data() + static_cast<size_t>(y) * Pitch();
     for (UINT x = 0; x < w; ++x) {
-      const UINT ox = static_cast<UINT>(static_cast<uint64_t>(x) * ow / w);
-      const uint8_t* t = ov.data() + (static_cast<size_t>(oy) * ow + ox) * 4;
-      if (!t[3] && !t[0] && !t[1] && !t[2]) continue;
+      if (!orow[oxs[x]]) continue;  // nothing drawn there
+      const uint8_t* t = reinterpret_cast<const uint8_t*>(orow + oxs[x]);
       uint8_t px[4];
       layout_.ToBGRA(ReadPx(row + x * bytes, layout_.bpp), px);
       const unsigned inv = 255 - t[3];
@@ -492,7 +540,8 @@ void Surface::BlendTextIntoCpu() {
       ++touched;
     }
   }
-  Log("readback of %ux%u: blended %u pixels of GPU text (overlay %ux%u)", w, h, touched, ow, oh);
+  Log("readback of %ux%u: blended %u pixels of GPU text (overlay %ux%u) in %.2f ms (with overlay readback)", w, h,
+      touched, ow, oh, MsSince(t0));
 }
 
 void Surface::MarkCpuWritten() {
@@ -759,18 +808,23 @@ void Surface::Download() {
   struct Ctx {
     Surface* s;
   } ctx{this};
+  LARGE_INTEGER t0;
+  QueryPerformanceCounter(&t0);
   const bool ok = DownloadTop(
       gpu_,
       [](void* c, UINT y, const uint8_t* src) {
         Surface* s = static_cast<Ctx*>(c)->s;
         if (y >= s->Height()) return;
-        const UINT bytes = s->layout_.bpp / 8;
-        uint8_t* dst = s->mem_.data() + static_cast<size_t>(y) * s->Pitch();
-        for (UINT x = 0; x < s->Width(); ++x)
-          WritePx(dst + x * bytes, s->layout_.bpp, s->layout_.FromBGRA(src + x * 4));
+        RowFromBGRA(s->layout_, s->mem_.data() + static_cast<size_t>(y) * s->Pitch(), src, s->Width());
       },
       &ctx);
   if (!ok) LogOnce("reading back a %ux%u surface failed", Width(), Height());
+  if (Width() * Height() >= 256 * 256) {
+    static unsigned logged = 0;
+    if (++logged <= 40)
+      Log("readback %ux%u %ubpp%s: %.2f ms (GPU wait + copy + convert)", Width(), Height(), layout_.bpp,
+          Is8888(layout_) ? " 8888" : Is565(layout_) ? " 565" : "", MsSince(t0));
+  }
 }
 
 void Surface::InheritName(Surface* src) {
