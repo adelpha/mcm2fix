@@ -373,6 +373,24 @@ void DrawItems(Surface* rt, uintptr_t self, const Panel& p, const RECT& region, 
   for (const Item& it : p.items) {
     if (!Intersects(it.box, region)) continue;
     SelectObject(dc, ScaledFont(it.font, kx, ky));
+    // The scaled font can come out wider than the game's (a different face
+    // stands in for a bitmap font): make it smaller until it fits the width
+    // the game's text took, scaled.
+    float fit = 1.0f;
+    const float want = (it.box.right - it.box.left) * kx;
+    for (int tries = 0; tries < 4 && want > 0; ++tries) {
+      SIZE ext{};
+      GetTextExtentPoint32A(dc, it.s.c_str(), static_cast<int>(it.s.size()), &ext);
+      if (ext.cx <= want + 0.5f) break;
+      fit *= std::max(0.5f, want / ext.cx);
+      SelectObject(dc, ScaledFont(it.font, kx * fit, ky * fit));
+    }
+    if (fit < 1.0f) {
+      static unsigned logged = 0;
+      if (++logged <= 10)
+        Log("hud text: \"%s\" (%s %ld) was wider than the game's text; font made x%.2f smaller", it.s.c_str(),
+            it.font.lfFaceName, it.font.lfHeight, fit);
+    }
     SetTextColor(dc, it.colour);
     SetTextAlign(dc, it.align);
     SetTextCharacterExtra(dc, static_cast<int>(std::lround(it.extra * kx)));
@@ -556,7 +574,7 @@ float HudTextLabelScale(Surface* tex, const uint8_t* verts, DWORD first, DWORD c
   }
   // A panel's own quad is laid out larger already.
   if (QuadOf(x0, y0, x1, y1)) return 1.0f;
-  return Scale();
+  return std::max(1.0f, std::min(4.0f, GetConfig().label_scale));
 }
 
 void HudTextBlt(Surface* src, const RECT& sr, Surface* dst, const RECT& dr) {
