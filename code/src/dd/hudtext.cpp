@@ -522,20 +522,12 @@ bool DrawMixed(HDC dc, const Item& it, LONG x0, LONG top, float kx, float ky, LO
   const float dk = GetConfig().hud_digit_size;
   runs = CheckGlyphs(dc, ScaledFont(it.font, kx * dk, ky * dk, true), runs);
   SetTextCharacterExtra(dc, static_cast<int>(std::lround(it.extra * kx)));
-  float fit = 1.0f;
+  // No shrinking to the game's width here: the clock changes every frame,
+  // so the fit (and with it the font size) would change with it, making
+  // lines of the same font different sizes and a new font and new glyphs
+  // nearly every frame. The panel is laid out larger, so there is room.
+  const float fit = 1.0f;
   LONG total = 0;
-  for (int tries = 0; tries < 5; ++tries) {
-    total = 0;
-    for (const Run& r : runs) {
-      SelectObject(dc, ScaledFont(it.font, kx * fit * (r.digits ? dk : 1.0f), ky * fit * (r.digits ? dk : 1.0f),
-                                  r.digits));
-      SIZE ext{};
-      GetTextExtentPoint32A(dc, r.s.c_str(), static_cast<int>(r.s.size()), &ext);
-      total += ext.cx;
-    }
-    if (want <= 0 || total <= want) break;
-    fit *= std::max(0.5f, static_cast<float>(want) / total);
-  }
   // The game's baseline: its font's ascent below the top, scaled.
   const LONG base = top + static_cast<LONG>(std::lround(it.ascent * ky));
   SetTextColor(dc, it.colour);
@@ -555,6 +547,7 @@ bool DrawMixed(HDC dc, const Item& it, LONG x0, LONG top, float kx, float ky, LO
     call.y = base;
     if (GpuTextRun(call)) ++g_st.drawn;
     x += ext.cx;
+    total += ext.cx;
   }
   static unsigned logged = 0;
   if (++logged <= 12) {
