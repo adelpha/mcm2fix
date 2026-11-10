@@ -54,6 +54,7 @@ struct Item {
   LOGFONTA font{};
   RECT box{};  // where its pixels are
   COLORREF colour = RGB(255, 255, 255);
+  bool live = false;  // redrawn by the game every frame with its bitmap font (race clock)
 };
 
 struct Panel {
@@ -78,7 +79,7 @@ std::map<const Surface*, std::vector<Copy>> g_copies;
 
 struct Stats {
   unsigned captured = 0, converted = 0, moved = 0, wipes = 0, wiped = 0, draws = 0, drawn = 0, no_dc = 0;
-  unsigned labels = 0, label_skips = 0, copies = 0;
+  unsigned labels = 0, label_skips = 0, copies = 0, live = 0, live_missed = 0;
 } g_st;
 DWORD g_last_report = 0;
 
@@ -94,9 +95,9 @@ void Report() {
     for (auto& p : g_panels) items += p.second.items.size();
     Log("hud text 5s: %u text calls captured, %u conversions (%u texts to panels), %u wipes (%u texts removed), "
         "%u panel draws, %u label draws (%u without text there), %u texts drawn, %u without a GPU text DC, "
-        "%u panel copies; %u panels hold %u texts",
+        "%u panel copies, %u live clock texts (%u left to the game); %u panels hold %u texts",
         g_st.captured, g_st.converted, g_st.moved, g_st.wipes, g_st.wiped, g_st.draws, g_st.labels, g_st.label_skips,
-        g_st.drawn, g_st.no_dc, g_st.copies,
+        g_st.drawn, g_st.no_dc, g_st.copies, g_st.live, g_st.live_missed,
         static_cast<unsigned>(g_panels.size()), static_cast<unsigned>(items));
   }
   // A panel with text whose quad was never seen drawn: say where it is.
@@ -319,6 +320,65 @@ void __fastcall RestoreHook(uintptr_t self, void* edx, const RECT* rect) {
                                [&](const Item& o) { return Intersects(o.box, *rect); }),
                 p.items.end());
   g_st.wiped += static_cast<unsigned>(before - p.items.size());
+}
+
+// The race clock after "TRT:" (National / Supercross) and another panel's
+// timer are not drawn on the scratch texture: every frame the game lays out
+// the string with its bitmap font (arialsm, 0x511170) at the line's place in
+// PANEL pixels, used as screen pixels. With the panel scaled that put tiny
+// digits in the wrong place. The string becomes a text of the panel instead
+// (in the line's font, scaled with the panel) and the game's quads are left
+// empty.
+constexpr uintptr_t kBitmapText = 0x511170;  // thiscall font (rect*, const char*, colour, int* count); ret 0x10
+constexpr uintptr_t kBitmapTextCalls[] = {0x51f519, 0x51fb81};
+constexpr uintptr_t kPanelFont = 0x38;
+using BitmapTextFn = void*(__fastcall*)(uintptr_t font, void* edx, const RECT* r, const char* s, DWORD colour,
+                                        int* count);
+
+void* __fastcall BitmapTextHook(uintptr_t font, void* edx, const RECT* r, const char* s, DWORD colour, int* count) {
+  const auto original = reinterpret_cast<BitmapTextFn>(kBitmapText);
+  if (!Active() || !r || !s || !font) return original(font, edx, r, s, colour, count);
+  Report();
+  uintptr_t self = 0;
+  for (auto& p : g_panels)
+    if (*reinterpret_cast<const uintptr_t*>(p.first + kPanelFont) == font) self = p.first;
+  Panel* p = self ? &g_panels[self] : nullptr;
+  // The line's own label (e.g. "TRT:") gives the font, colour and baseline.
+  const Item* label = nullptr;
+  if (p)
+    for (const Item& it : p->items) {
+      const LONG mid = (it.box.top + it.box.bottom) / 2;
+      if (!it.live && mid >= r->top && mid < r->bottom && it.box.left < r->left) label = &it;
+    }
+  static unsigned logged = 0;
+  if (!label) {
+    ++g_st.live_missed;
+    if (++logged <= 10)
+      Log("hud text: game clock \"%s\" at panel pixels %ld,%ld-%ld,%ld: %s, the game draws it", s, r->left, r->top,
+          r->right, r->bottom, p ? "no label on that line" : "font of no known panel");
+    return original(font, edx, r, s, colour, count);
+  }
+  Item item;
+  item.live = true;
+  item.s = s;
+  item.x = r->left;
+  item.y = r->top;
+  item.align = TA_LEFT | TA_TOP;
+  item.font = label->font;
+  item.ascent = label->ascent;
+  item.colour = label->colour;
+  const LONG h = label->box.bottom - label->box.top;
+  item.box = {r->left, label->box.top, std::max<LONG>(r->right, r->left + h * 6), label->box.bottom};
+  if (++logged <= 10)
+    Log("hud text: game clock \"%s\" at panel pixels %ld,%ld (after \"%s\" %ld,%ld-%ld,%ld), drawn as panel text",
+        s, r->left, r->top, label->s.c_str(), label->box.left, label->box.top, label->box.right, label->box.bottom);
+  const RECT box = item.box;
+  p->items.erase(std::remove_if(p->items.begin(), p->items.end(),
+                                [&](const Item& o) { return o.live && Intersects(o.box, box); }),
+                 p->items.end());
+  p->items.push_back(std::move(item));
+  ++g_st.live;
+  return original(font, edx, r, "", colour, count);  // no quads
 }
 
 bool PatchCall(uintptr_t site, uintptr_t original, const void* hook) {
@@ -904,6 +964,10 @@ void InstallHudTextHooks() {
   for (uintptr_t site : kRestoreCalls) {
     ++total;
     ok += PatchCall(site, kRestore, reinterpret_cast<const void*>(&RestoreHook));
+  }
+  for (uintptr_t site : kBitmapTextCalls) {
+    ++total;
+    ok += PatchCall(site, kBitmapText, reinterpret_cast<const void*>(&BitmapTextHook));
   }
   Log("hud text: %u of %u HUD panel calls hooked; panels drawn x%.2f", ok, total, Scale());
 }
