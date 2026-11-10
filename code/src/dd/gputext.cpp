@@ -439,6 +439,37 @@ void ReadClip(HDC dc, Ctx& c, const RECT* extra) {
   }
 }
 
+// Italic text sticks out past its advance width on the right. The event
+// menu right-aligns italic names against the edge of a clip box, so the last
+// letter lost its top-right corner (the original game cut it too). A clip
+// edge that ends where the text ends is moved out by the overhang.
+void WidenClipForOverhang(Ctx& c, HDC dc, int text_right, const char* s, int n) {
+  if (!s || n <= 0 || c.clips.empty()) return;
+  ABC abc{};
+  if (!GetCharABCWidthsA(dc, static_cast<unsigned char>(s[n - 1]), static_cast<unsigned char>(s[n - 1]), &abc))
+    return;
+  TEXTMETRICA tm{};
+  GetTextMetricsA(dc, &tm);
+  int over = abc.abcC < 0 ? -abc.abcC : 0;
+  if (tm.tmItalic) over = std::max<int>(over, (tm.tmAscent + 3) / 4);  // slant of a full-height stroke
+  if (over <= 0) return;
+  const Overlay& o = *c.o;
+  const LONG lo = static_cast<LONG>(std::lround((text_right - 2) * o.sx));
+  const LONG hi = static_cast<LONG>(std::lround((text_right + over + 1) * o.sx));
+  unsigned widened = 0;
+  for (RECT& r : c.clips) {
+    if (r.right >= lo && r.right < hi) {
+      r.right = std::min<LONG>(hi, static_cast<LONG>(std::lround(o.base_w * o.sx)));
+      ++widened;
+    }
+  }
+  if (widened) {
+    static unsigned logged = 0;
+    if (++logged <= 8)
+      Log("text: \"%.*s\" overhangs its clip by %d px; clip widened", std::min(n, 40), s, over);
+  }
+}
+
 void Fill(Ctx& c, const RECT& base, COLORREF col) {
   const RECT s = ScaleRect(*c.o, base);
   for (const RECT& clip : c.clips) {
@@ -664,6 +695,7 @@ class Recorder : public GdiTarget {
         else if (align & TA_BOTTOM) top -= ext.cy;
         if (align & TA_UPDATECP) MoveToEx(dc, (align & TA_RIGHT) ? x - ext.cx : x + ext.cx, y, nullptr);
         ReadClip(dc, c, nullptr);
+        WidenClipForOverhang(c, dc, left + ext.cx, call.s, call.len);
         DrawLine(c, dc, left, top, call.s, call.len);
         TLog("TextOut %d,%d \"%.*s\"", left, top, std::min(call.len, 40), call.s);
         return true;
