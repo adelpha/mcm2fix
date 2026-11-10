@@ -54,6 +54,7 @@ struct Chains {
   IDirect3DSwapChain9* now = nullptr;
   bool failed = false;
 } g_sc;
+IDirect3DQuery9* g_vsync_done = nullptr;  // event query for manual VSync (Present9)
 
 // Cached device state.
 struct StateCache {
@@ -106,6 +107,7 @@ IDirect3DSurface9* Staging(UINT w, UINT h, D3DFORMAT fmt) {
 
 void ReleaseChains() {
   SafeRelease(g_sc.vsync);
+  SafeRelease(g_vsync_done);
   SafeRelease(g_sc.now);
   g_sc.w = g_sc.h = 0;
 }
@@ -1122,6 +1124,152 @@ void GpuTimerMark9() {
   g_gpu9[g_gpu9_i % 6].begin->Issue(D3DISSUE_END);
 }
 
+
+namespace {
+
+// ---- VSync without a desktop compositor ------------------------------------
+// With the DWM (Vista/7 Aero, 8+), presenting on the D3DPRESENT_INTERVAL_ONE
+// chain is enough. Without it (Windows XP, Vista/7 basic theme) a windowed
+// Present is a plain blit to the desktop: XP drivers often ignore the
+// interval (the frame rate is not capped) or blit at any scan line (tearing).
+// There mcm2fix waits for the vertical blank itself and presents on the
+// immediate chain right as it starts; if the driver cannot report the scan
+// line, frames are paced to the refresh rate with the precise timer.
+enum class VsyncMode { kSwapChain, kRasterPoll, kTimer };
+
+struct ManualVsync {
+  bool decided = false;
+  VsyncMode mode = VsyncMode::kSwapChain;
+  LARGE_INTEGER freq{}, next{};
+  double period = 0;  // QPC ticks per refresh
+  unsigned waits = 0, timeouts = 0, frames = 0;
+  double wait_ms = 0, flush_ms = 0;
+  DWORD last_log = 0;
+} g_mv;
+
+bool CompositorOn() {
+  OSVERSIONINFOA v{};
+  v.dwOSVersionInfoSize = sizeof(v);
+#if defined(_MSC_VER)
+#pragma warning(suppress : 4996)
+#elif defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+  GetVersionExA(&v);
+#if defined(__GNUC__) && !defined(_MSC_VER)
+#pragma GCC diagnostic pop
+#endif
+  if (v.dwMajorVersion < 6) return false;  // XP / Server 2003: never
+  if (v.dwMajorVersion > 6 || v.dwMinorVersion >= 2) return true;  // 8+: always
+  HMODULE dwm = LoadLibraryA("dwmapi.dll");
+  using Fn = HRESULT(WINAPI*)(BOOL*);
+  auto fn = dwm ? reinterpret_cast<Fn>(reinterpret_cast<void*>(GetProcAddress(dwm, "DwmIsCompositionEnabled")))
+                : nullptr;
+  BOOL on = FALSE;
+  return fn && SUCCEEDED(fn(&on)) && on;
+}
+
+void DecideVsync(IDirect3DSwapChain9* sc) {
+  if (g_mv.decided) return;
+  g_mv.decided = true;
+  QueryPerformanceFrequency(&g_mv.freq);
+  DEVMODEA dm{};
+  dm.dmSize = sizeof(dm);
+  DWORD hz = EnumDisplaySettingsA(nullptr, ENUM_CURRENT_SETTINGS, &dm) ? dm.dmDisplayFrequency : 0;
+  if (hz <= 1 || hz > 500) hz = 60;  // 0/1 = "hardware default"
+  g_mv.period = static_cast<double>(g_mv.freq.QuadPart) / hz;
+  const bool comp = CompositorOn();
+  const bool scanline = (g_caps.Caps & D3DCAPS_READ_SCANLINE) != 0;
+  D3DRASTER_STATUS rs{};
+  const bool raster_ok = scanline && sc && SUCCEEDED(sc->GetRasterStatus(&rs));
+  if (comp) g_mv.mode = VsyncMode::kSwapChain;
+  else if (raster_ok) g_mv.mode = VsyncMode::kRasterPoll;
+  else g_mv.mode = VsyncMode::kTimer;
+  Log("vsync: compositor %s, refresh %lu Hz, READ_SCANLINE cap %d, GetRasterStatus %s (line %u) -> %s",
+      comp ? "on" : "off", hz, scanline ? 1 : 0, raster_ok ? "ok" : "failed", rs.ScanLine,
+      g_mv.mode == VsyncMode::kSwapChain ? "swap chain interval ONE"
+      : g_mv.mode == VsyncMode::kRasterPoll ? "own wait for vertical blank, then immediate present"
+                                            : "paced to the refresh rate by timer, then immediate present");
+}
+
+// Waits until the vertical blank starts (or, by timer, until the next
+// refresh is due). Returns false when it gave up.
+bool WaitForBlank(IDirect3DSwapChain9* sc) {
+  LARGE_INTEGER t0, t;
+  // Let the GPU finish the frame first, so the blit queued by Present runs
+  // straight away instead of whenever the GPU gets to it.
+  QueryPerformanceCounter(&t0);
+  if (!g_vsync_done) B().dev9->CreateQuery(D3DQUERYTYPE_EVENT, &g_vsync_done);
+  if (g_vsync_done && SUCCEEDED(g_vsync_done->Issue(D3DISSUE_END))) {
+    for (int i = 0; i < 100000; ++i) {
+      HRESULT q = g_vsync_done->GetData(nullptr, 0, D3DGETDATA_FLUSH);
+      if (q != S_FALSE) break;
+      QueryPerformanceCounter(&t);
+      if (t.QuadPart - t0.QuadPart > g_mv.freq.QuadPart / 20) break;  // 50 ms
+      YieldProcessor();
+    }
+  }
+  QueryPerformanceCounter(&t);
+  g_mv.flush_ms += static_cast<double>(t.QuadPart - t0.QuadPart) * 1000.0 / static_cast<double>(g_mv.freq.QuadPart);
+  t0 = t;
+  bool ok = true;
+  if (g_mv.mode == VsyncMode::kRasterPoll) {
+    D3DRASTER_STATUS rs{};
+    const LONGLONG limit = static_cast<LONGLONG>(g_mv.period * 2);
+    // If already in the blank, this frame took more than a refresh: go now.
+    if (SUCCEEDED(sc->GetRasterStatus(&rs)) && !rs.InVBlank) {
+      for (;;) {
+        if (FAILED(sc->GetRasterStatus(&rs))) { ok = false; break; }
+        if (rs.InVBlank) break;
+        QueryPerformanceCounter(&t);
+        if (t.QuadPart - t0.QuadPart > limit) { ok = false; break; }
+        // Sleep while the beam is far from the bottom, spin near it.
+        const double left = static_cast<double>(g_mv.period) *
+                            (1.0 - static_cast<double>(rs.ScanLine) / static_cast<double>(g_sc.h ? g_sc.h : 600));
+        if (left > g_mv.freq.QuadPart / 500.0) Sleep(1);
+        else YieldProcessor();
+      }
+    }
+  } else {
+    const LONGLONG period = static_cast<LONGLONG>(g_mv.period);
+    if (g_mv.next.QuadPart == 0 || t0.QuadPart - g_mv.next.QuadPart > period) g_mv.next.QuadPart = t0.QuadPart;
+    for (;;) {
+      QueryPerformanceCounter(&t);
+      const LONGLONG left = g_mv.next.QuadPart - t.QuadPart;
+      if (left <= 0) break;
+      if (left > g_mv.freq.QuadPart / 500) Sleep(1);
+      else YieldProcessor();
+    }
+    g_mv.next.QuadPart += period;
+  }
+  QueryPerformanceCounter(&t);
+  ++g_mv.waits;
+  if (!ok) ++g_mv.timeouts;
+  g_mv.wait_ms += static_cast<double>(t.QuadPart - t0.QuadPart) * 1000.0 / static_cast<double>(g_mv.freq.QuadPart);
+  return ok;
+}
+
+void LogVsync() {
+  ++g_mv.frames;
+  const DWORD now = GetTickCount();
+  if (!g_mv.last_log) g_mv.last_log = now;
+  if (now - g_mv.last_log < 5000) return;
+  const double secs = (now - g_mv.last_log) / 1000.0;
+  // Every 5 s for the first minute, then every minute.
+  static unsigned logs = 0;
+  if (logs >= 12 && now - g_mv.last_log < 60000) return;
+  ++logs;
+  Log("vsync %.0fs: %.1f fps, own waits %u (GPU finish %.2f ms + blank wait %.2f ms avg, %u gave up)", secs,
+      g_mv.frames / secs, g_mv.waits, g_mv.waits ? g_mv.flush_ms / g_mv.waits : 0.0,
+      g_mv.waits ? g_mv.wait_ms / g_mv.waits : 0.0, g_mv.timeouts);
+  g_mv.last_log = now;
+  g_mv.frames = g_mv.waits = g_mv.timeouts = 0;
+  g_mv.wait_ms = g_mv.flush_ms = 0;
+}
+
+}  // namespace
+
 void Present9(const GpuTexture& src, UINT src_w, UINT src_h, UINT interval) {
   Backend& b = B();
   ++Counters().presents;
@@ -1133,7 +1281,9 @@ void Present9(const GpuTexture& src, UINT src_w, UINT src_h, UINT interval) {
   prof::Scope zone(prof::kCompose);
   KeepBorderless();
   if (!EnsureChains()) return;
-  IDirect3DSwapChain9* sc = interval ? g_sc.vsync : g_sc.now;
+  if (interval) DecideVsync(g_sc.vsync);
+  const bool own_wait = interval && g_mv.mode != VsyncMode::kSwapChain;
+  IDirect3DSwapChain9* sc = interval && !own_wait ? g_sc.vsync : g_sc.now;
   IDirect3DSurface9* back = nullptr;
   if (FAILED(sc->GetBackBuffer(0, D3DBACKBUFFER_TYPE_MONO, &back)) || !back) return;
   EndScene9();
@@ -1163,7 +1313,9 @@ void Present9(const GpuTexture& src, UINT src_w, UINT src_h, UINT interval) {
   EndScene9();
   PerfBeforePresent();
   zone.Switch(prof::kSwapPresent);
+  if (own_wait) WaitForBlank(g_sc.vsync);
   HRESULT hr = sc->Present(nullptr, nullptr, nullptr, nullptr, 0);
+  if (interval) LogVsync();
   zone.Switch(prof::kCompose);
   if (!g_lost && hr != D3DERR_DEVICELOST) GpuTimerFrame9();
   if (hr == D3DERR_DEVICELOST) {
