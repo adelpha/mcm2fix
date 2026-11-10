@@ -121,6 +121,8 @@ HudScale=2     ; race HUD text panels (position, lap, times) drawn this many tim
 LabelScale=1.5 ; name labels over the riders drawn this many times larger (1 = original)
 LineWidth=3    ; speedometer needle width in pixels, antialiased (1 = original thin line)
 HudFont=       ; a .ttf for the HUD panel and name label text, e.g. FONTS\ContrailOne-Regular.ttf (empty = the game's fonts)
+HudDigitFont=   ; .ttf for the numbers in the stats panel (times, position, lap); words keep HudFont
+HudDigitSize=1.0 ; size of those numbers relative to the words beside them
 TextLog=0      ; debugging: log GPU text drawing and what erases it
 GdiLog=0       ; debugging: log the GDI calls (text, boxes, lines) the game draws onto the screen with
 RestartLog=0   ; debugging: log the start grid at race load and on Restart Race

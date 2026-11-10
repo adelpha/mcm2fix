@@ -84,6 +84,12 @@ void LoadConfig() {
   GetPrivateProfileStringA("mcm2fix", "HudFont", "", g_config.hud_font, sizeof(g_config.hud_font), ini);
   g_config.hud_font[std::strcspn(g_config.hud_font, "\t;")] = 0;  // drop an inline comment
   for (size_t n = std::strlen(g_config.hud_font); n && g_config.hud_font[n - 1] == ' ';) g_config.hud_font[--n] = 0;
+  GetPrivateProfileStringA("mcm2fix", "HudDigitFont", "", g_config.hud_digit_font, sizeof(g_config.hud_digit_font), ini);
+  g_config.hud_digit_font[std::strcspn(g_config.hud_digit_font, "\t;")] = 0;
+  for (size_t n = std::strlen(g_config.hud_digit_font); n && g_config.hud_digit_font[n - 1] == ' ';)
+    g_config.hud_digit_font[--n] = 0;
+  g_config.hud_digit_size = ReadFloat("HudDigitSize", 1.0f, ini);
+  if (!(g_config.hud_digit_size >= 0.5f && g_config.hud_digit_size <= 2.0f)) g_config.hud_digit_size = 1.0f;
   g_config.text_log = GetPrivateProfileIntA("mcm2fix", "TextLog", 0, ini) != 0;
   g_config.gdi_log = GetPrivateProfileIntA("mcm2fix", "GdiLog", 0, ini) != 0;
   g_config.d3d9_log = GetPrivateProfileIntA("mcm2fix", "D3D9Log", 1, ini) != 0;

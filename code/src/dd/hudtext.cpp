@@ -337,6 +337,7 @@ struct FontKey {
 };
 std::map<FontKey, HFONT> g_fonts;
 char g_face[LF_FACESIZE] = {};  // HudFont's family name, when loaded
+char g_digit_face[LF_FACESIZE] = {};  // HudDigitFont's, for the numbers in the stats panel
 
 // The family name (name ID 1) in a TrueType / OpenType file.
 bool FontFamily(const std::vector<uint8_t>& f, char* out, size_t out_size) {
@@ -373,8 +374,9 @@ bool FontFamily(const std::vector<uint8_t>& f, char* out, size_t out_size) {
 }
 
 // HudFont=<file>: load it for this process only and use its family.
-void LoadHudFont() {
-  const char* file = GetConfig().hud_font;
+// Load a .ttf for this process only and put its family name in `face`.
+void LoadFontFile(const char* file, char* face, size_t face_size, const char* what) {
+  face[0] = 0;
   if (!file[0]) return;
   char path[MAX_PATH] = {};
   if (file[0] == '\\' || std::strchr(file, ':')) {
@@ -392,31 +394,42 @@ void LoadHudFont() {
     std::fclose(fp);
   }
   if (data.empty()) {
-    Log("hud text: HudFont %s could not be read; the game's fonts are used", path);
+    Log("hud text: %s %s could not be read", what, path);
     return;
   }
-  if (!FontFamily(data, g_face, sizeof(g_face))) {
-    Log("hud text: HudFont %s has no family name; the game's fonts are used", path);
+  if (!FontFamily(data, face, face_size)) {
+    Log("hud text: %s %s has no family name", what, path);
+    face[0] = 0;
     return;
   }
   const int added = AddFontResourceExA(path, FR_PRIVATE, nullptr);
   if (!added) {
-    Log("hud text: HudFont %s could not be loaded (error %lu); the game's fonts are used", path, GetLastError());
-    g_face[0] = 0;
+    Log("hud text: %s %s could not be loaded (error %lu)", what, path, GetLastError());
+    face[0] = 0;
     return;
   }
-  Log("hud text: HudFont %s loaded (%d font%s, family \"%s\")", path, added, added == 1 ? "" : "s", g_face);
+  Log("hud text: %s %s loaded (%d font%s, family \"%s\")", what, path, added, added == 1 ? "" : "s", face);
 }
 
-HFONT ScaledFont(const LOGFONTA& lf, float kx, float ky) {
+void LoadHudFont() {
+  LoadFontFile(GetConfig().hud_font, g_face, sizeof(g_face), "HudFont");
+  LoadFontFile(GetConfig().hud_digit_font, g_digit_face, sizeof(g_digit_face), "HudDigitFont");
+}
+
+void EnsureFonts() {
   static bool loaded = false;  // not at DLL load: GDI is called from the game's thread
   if (!loaded) {
     loaded = true;
     LoadHudFont();
   }
+}
+
+HFONT ScaledFont(const LOGFONTA& lf, float kx, float ky, bool digits = false) {
+  EnsureFonts();
   FontKey key{lf};
-  if (g_face[0]) {  // HudFont: same size, its own face, regular weight
-    strncpy_s(key.lf.lfFaceName, g_face, _TRUNCATE);
+  const char* face = digits && g_digit_face[0] ? g_digit_face : g_face;
+  if (face[0]) {  // HudFont: same size, its own face, regular weight
+    strncpy_s(key.lf.lfFaceName, face, _TRUNCATE);
     key.lf.lfCharSet = DEFAULT_CHARSET;
     key.lf.lfWeight = FW_NORMAL;
     key.lf.lfItalic = 0;
@@ -431,6 +444,126 @@ HFONT ScaledFont(const LOGFONTA& lf, float kx, float ky) {
   HFONT f = CreateFontIndirectA(&key.lf);
   g_fonts[key] = f;
   return f;
+}
+
+// HudDigitFont: the numbers in a left-aligned line ("Lap Time: 1:23.45",
+// "Position: 3 / 11") are drawn in the digit font, the words in the text
+// font, all on the game's baseline. A number starts at a digit or '-' and
+// runs through digits, spaces and / - : . , ' (trailing spaces left out).
+// Characters the digit font has no glyph for stay in the text font.
+struct Run {
+  std::string s;
+  bool digits;
+};
+
+bool NumberStart(char c) { return (c >= '0' && c <= '9') || c == '-'; }
+bool NumberPart(char c) { return (c >= '0' && c <= '9') || std::strchr(" /-:.,'\"", c) != nullptr; }
+
+std::vector<Run> SplitNumbers(const std::string& s) {
+  std::vector<Run> runs;
+  auto add = [&](const std::string& t, bool d) {
+    if (t.empty()) return;
+    if (!runs.empty() && runs.back().digits == d) runs.back().s += t;
+    else runs.push_back({t, d});
+  };
+  size_t i = 0;
+  while (i < s.size()) {
+    if (NumberStart(s[i])) {
+      size_t j = i;
+      while (j < s.size() && NumberPart(s[j])) ++j;
+      size_t k = j;
+      while (k > i && s[k - 1] == ' ') --k;
+      add(s.substr(i, k - i), true);
+      add(s.substr(k, j - k), false);
+      i = j;
+    } else {
+      size_t j = i;
+      while (j < s.size() && !NumberStart(s[j])) ++j;
+      add(s.substr(i, j - i), false);
+      i = j;
+    }
+  }
+  return runs;
+}
+
+// Characters of a digits run that the digit font lacks go back to the text font.
+std::vector<Run> CheckGlyphs(HDC dc, HFONT digit_font, const std::vector<Run>& in) {
+  std::vector<Run> out;
+  HGDIOBJ old = SelectObject(dc, digit_font);
+  for (const Run& r : in) {
+    if (!r.digits) {
+      if (!out.empty() && !out.back().digits) out.back().s += r.s;
+      else out.push_back(r);
+      continue;
+    }
+    std::vector<WORD> idx(r.s.size());
+    GetGlyphIndicesA(dc, r.s.c_str(), static_cast<int>(r.s.size()), idx.data(), GGI_MARK_NONEXISTING_GLYPHS);
+    for (size_t i = 0; i < r.s.size(); ++i) {
+      const bool have = idx[i] != 0xffff;
+      if (!out.empty() && out.back().digits == have) out.back().s += r.s[i];
+      else out.push_back({std::string(1, r.s[i]), have});
+    }
+  }
+  SelectObject(dc, old);
+  return out;
+}
+
+// Draws `it` in mixed fonts; false (nothing drawn) when that does not apply.
+bool DrawMixed(HDC dc, const Item& it, LONG x0, LONG top, float kx, float ky, LONG want) {
+  EnsureFonts();
+  if (!g_digit_face[0]) return false;
+  const bool left_top = it.draw_text ? !(it.fmt & (DT_CENTER | DT_RIGHT | DT_VCENTER | DT_BOTTOM))
+                                     : (it.align & (TA_CENTER | TA_RIGHT | TA_BASELINE | TA_BOTTOM)) == 0;
+  if (!left_top) return false;
+  std::vector<Run> runs = SplitNumbers(it.s);
+  bool any = false;
+  for (const Run& r : runs) any = any || r.digits;
+  if (!any) return false;
+  const float dk = GetConfig().hud_digit_size;
+  runs = CheckGlyphs(dc, ScaledFont(it.font, kx * dk, ky * dk, true), runs);
+  SetTextCharacterExtra(dc, static_cast<int>(std::lround(it.extra * kx)));
+  float fit = 1.0f;
+  LONG total = 0;
+  for (int tries = 0; tries < 5; ++tries) {
+    total = 0;
+    for (const Run& r : runs) {
+      SelectObject(dc, ScaledFont(it.font, kx * fit * (r.digits ? dk : 1.0f), ky * fit * (r.digits ? dk : 1.0f),
+                                  r.digits));
+      SIZE ext{};
+      GetTextExtentPoint32A(dc, r.s.c_str(), static_cast<int>(r.s.size()), &ext);
+      total += ext.cx;
+    }
+    if (want <= 0 || total <= want) break;
+    fit *= std::max(0.5f, static_cast<float>(want) / total);
+  }
+  // The game's baseline: its font's ascent below the top, scaled.
+  const LONG base = top + static_cast<LONG>(std::lround(it.ascent * ky));
+  SetTextColor(dc, it.colour);
+  SetTextAlign(dc, TA_LEFT | TA_BASELINE | TA_NOUPDATECP);
+  LONG x = x0;
+  for (const Run& r : runs) {
+    const float k = fit * (r.digits ? dk : 1.0f);
+    SelectObject(dc, ScaledFont(it.font, kx * k, ky * k, r.digits));
+    SIZE ext{};
+    GetTextExtentPoint32A(dc, r.s.c_str(), static_cast<int>(r.s.size()), &ext);
+    GdiCall call{};
+    call.dc = dc;
+    call.fn = GdiFn::kTextOut;
+    call.s = r.s.c_str();
+    call.len = static_cast<int>(r.s.size());
+    call.x = x;
+    call.y = base;
+    if (GpuTextRun(call)) ++g_st.drawn;
+    x += ext.cx;
+  }
+  static unsigned logged = 0;
+  if (++logged <= 12) {
+    std::string desc;
+    for (const Run& r : runs) desc += (r.digits ? "[" : "<") + r.s + (r.digits ? "]" : ">");
+    Log("hud text: mixed fonts \"%s\" as %s, width %ld of %ld, fit x%.2f", it.s.c_str(), desc.c_str(), total, want,
+        fit);
+  }
+  return true;
 }
 
 // Draw the texts of a panel that fall in `region` (panel pixels) at screen
@@ -457,6 +590,11 @@ void DrawItemsNow(Surface* rt, uintptr_t self, const Panel& p, const RECT& regio
   unsigned n = 0;
   for (const Item& it : p.items) {
     if (!Intersects(it.box, region)) continue;
+    if (DrawMixed(dc, it, it.draw_text ? X(it.rect.left) : X(it.x), it.draw_text ? Y(it.rect.top) : Y(it.y), kx, ky,
+                  static_cast<LONG>(std::lround((it.box.right - it.box.left) * kx)))) {
+      ++n;
+      continue;
+    }
     SelectObject(dc, ScaledFont(it.font, kx, ky));
     // The scaled font can come out wider than the game's (a different face
     // stands in for a bitmap font): make it smaller until it fits the width
