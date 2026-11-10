@@ -156,6 +156,7 @@ class Surface : public IDirectDrawSurface7 {
   void AllocateMemory();
   void Upload();
   void Download();
+  void BlendTextIntoCpu();  // GPU text over the surface into its CPU copy (readback)
   // Level `level` (0 = this surface) of the CPU copy as B8G8R8A8.
   bool LevelBGRA(UINT level, std::vector<uint8_t>& out, UINT& w, UINT& h);
   // D3D9 keeps plain textures out of video-memory render targets.

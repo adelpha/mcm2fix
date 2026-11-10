@@ -891,11 +891,43 @@ int __fastcall SmoothPsPreDraw(void* self, void*) {
   // step, every [+0x120] steps) sets +0x11c; otherwise the old texture from
   // the last step is drawn. Ask for a fresh render every frame so the shadow
   // shows the riders where they are drawn now.
+  // SmoothLog=3: trace the shadow window and the first caster's mesh.
+  const bool trace = GetConfig().smooth_log == 3 && g_race_frames >= 900 && g_race_frames < 2700;
+  int dirty_before[4] = {};
+  for (int i = 0; i < n && i < 4; ++i)
+    if (casters[i]) dirty_before[i] = *reinterpret_cast<int*>(casters[i] + 0x18c);
   int* want = reinterpret_cast<int*>(obj + 0x11c);
   g_ps_tex[3] = *reinterpret_cast<unsigned*>(obj + 0x120);
   if (*want) ++g_ps_tex[0];
   else { *want = 1; ++g_ps_tex[1]; }
   const int result = kPsPreDraw(self);
+  if (trace) {
+    const float* ctr = reinterpret_cast<const float*>(obj + 0xcc);
+    const float* ext = reinterpret_cast<const float*>(obj + 0xc0);
+    patch::Log("shadow trace: frame %u tick %u a=%.3f window centre (%.3f %.3f %.3f) extent (%.3f %.3f %.3f) k %.5f "
+               "rendered %d",
+               g_race_frames, tick, alpha, ctr[0], ctr[1], ctr[2], ext[0], ext[1], ext[2],
+               *reinterpret_cast<const float*>(obj + 0xbc), *reinterpret_cast<const int*>(obj + 0x130));
+    for (int i = 0; i < n && i < 4; ++i) {
+      const uintptr_t c = casters[i];
+      if (!c) continue;
+      const float* m = reinterpret_cast<const float*>(c + kCasterMatrix);
+      const CasterRec& r = g_casters[c];
+      uintptr_t verts = 0, idx = 0;
+      int count = 0, nidx = 0;
+      const int dirty_now = *reinterpret_cast<int*>(c + 0x18c);
+      float v0[3] = {};
+      if (!dirty_now) {  // reading the mesh would rebuild a dirty object; skip then
+        kGetMesh(reinterpret_cast<void*>(c), 0, &verts, &count, &idx, &nidx, 0, -1);
+        if (verts && count > 0) std::memcpy(v0, reinterpret_cast<const float*>(verts), sizeof(v0));
+      }
+      patch::Log("shadow trace:   caster %d %08x matrix (%.3f %.3f %.3f) step (%.3f %.3f %.3f) prev (%.3f %.3f %.3f)%s "
+                 "dirty %d->%d mesh0 v0 (%.3f %.3f %.3f) v0-matrix (%.3f %.3f %.3f)",
+                 i, static_cast<unsigned>(c), m[12], m[13], m[14], r.cur[12], r.cur[13], r.cur[14], r.prev[12],
+                 r.prev[13], r.prev[14], r.written ? " blended" : " NOT blended", dirty_before[i], dirty_now, v0[0],
+                 v0[1], v0[2], v0[0] - m[12], v0[1] - m[13], v0[2] - m[14]);
+    }
+  }
   MeshRestore();  // the scene draws read these too; give them back the step's values
   if (*reinterpret_cast<int*>(obj + 0x130)) ++g_ps_tex[2];
   return result;

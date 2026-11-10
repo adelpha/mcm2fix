@@ -11,6 +11,9 @@
 #pragma once
 #include <windows.h>
 
+#include <cstdint>
+#include <vector>
+
 #include "backend.h"
 #include "gdihook.h"
 
@@ -28,6 +31,9 @@ bool GpuTextRun(const GdiCall& call);
 // The game drew over r (surface pixels; null = everything) of `native`.
 void GpuTextOcclude(const void* native, const RECT* r, const char* why);
 bool GpuTextHasText(const void* native);
+// The text over a surface as premultiplied BGRA (overlay size), so a CPU
+// readback of the surface can include it.
+bool GpuTextReadOverlay(const void* native, std::vector<uint8_t>& bgra, UINT& w, UINT& h);
 // The game copied sr of `src` to dr of `dst` (dst_w x dst_h): take the text
 // along (after the destination's own text there was erased). `over`: blend
 // it over instead of replacing (colour-keyed copies).

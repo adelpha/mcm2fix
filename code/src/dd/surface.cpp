@@ -461,8 +461,37 @@ void Surface::SyncToCpu(const char* why) {
   if (o->sync_ == kGpuNewer) {
     NoteReadback(why, o->desc_.ddsCaps.dwCaps, o->Width(), o->Height());
     o->Download();
+    // The game reading a frame it drew (the pause menu's dimmed copy of the
+    // race): the GPU text over it is not in the texture, so blend it into
+    // the copy. If the game writes the surface back, the upload erases the
+    // overlay, so the text is not doubled.
+    if (std::strcmp(why, "Lock") == 0) o->BlendTextIntoCpu();
     o->sync_ = kInSync;
   }
+}
+
+void Surface::BlendTextIntoCpu() {
+  std::vector<uint8_t> ov;
+  UINT ow = 0, oh = 0;
+  if (!gpu_.Valid() || layout_.palette || layout_.depth || !GpuTextReadOverlay(gpu_.Native(), ov, ow, oh)) return;
+  const UINT w = Width(), h = Height(), bytes = layout_.bpp / 8;
+  unsigned touched = 0;
+  for (UINT y = 0; y < h; ++y) {
+    const UINT oy = static_cast<UINT>(static_cast<uint64_t>(y) * oh / h);
+    uint8_t* row = mem_.data() + static_cast<size_t>(y) * Pitch();
+    for (UINT x = 0; x < w; ++x) {
+      const UINT ox = static_cast<UINT>(static_cast<uint64_t>(x) * ow / w);
+      const uint8_t* t = ov.data() + (static_cast<size_t>(oy) * ow + ox) * 4;
+      if (!t[3] && !t[0] && !t[1] && !t[2]) continue;
+      uint8_t px[4];
+      layout_.ToBGRA(ReadPx(row + x * bytes, layout_.bpp), px);
+      const unsigned inv = 255 - t[3];
+      for (int c = 0; c < 3; ++c) px[c] = static_cast<uint8_t>(std::min(255u, t[c] + (px[c] * inv + 127) / 255));
+      WritePx(row + x * bytes, layout_.bpp, layout_.FromBGRA(px));
+      ++touched;
+    }
+  }
+  Log("readback of %ux%u: blended %u pixels of GPU text (overlay %ux%u)", w, h, touched, ow, oh);
 }
 
 void Surface::MarkCpuWritten() {

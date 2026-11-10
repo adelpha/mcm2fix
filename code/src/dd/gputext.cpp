@@ -762,6 +762,28 @@ bool GpuTextHasText(const void* native) {
   return it != g_overlays.end() && !it->second.empty;
 }
 
+bool GpuTextReadOverlay(const void* native, std::vector<uint8_t>& bgra, UINT& w, UINT& h) {
+  if (!GpuTextHasText(native)) return false;
+  Overlay& o = g_overlays[native];
+  if (!o.tex.Valid()) return false;
+  w = o.tex.width;
+  h = o.tex.height;
+  bgra.assign(static_cast<size_t>(w) * h * 4, 0);
+  struct Ctx {
+    std::vector<uint8_t>* out;
+    UINT w;
+  } ctx{&bgra, w};
+  const bool ok = DownloadTop(
+      o.tex,
+      [](void* c, UINT y, const uint8_t* px) {
+        Ctx* k = static_cast<Ctx*>(c);
+        std::memcpy(k->out->data() + static_cast<size_t>(y) * k->w * 4, px, static_cast<size_t>(k->w) * 4);
+      },
+      &ctx);
+  TLog("read overlay %ux%u for a readback: %s", w, h, ok ? "ok" : "failed");
+  return ok;
+}
+
 void GpuTextComposite(const GpuTexture& src, ID3D11RenderTargetView* dst, IDirect3DSurface9* dst9, UINT dst_w,
                       UINT dst_h, const RECT& r) {
   Report();
