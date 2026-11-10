@@ -435,8 +435,8 @@ HFONT ScaledFont(const LOGFONTA& lf, float kx, float ky) {
 
 // Draw the texts of a panel that fall in `region` (panel pixels) at screen
 // X = ax + x * kx, Y = ay + y * ky, clipped to `clip` (render target pixels).
-void DrawItems(Surface* rt, uintptr_t self, const Panel& p, const RECT& region, float ax, float ay, float kx,
-               float ky, const RECT& clip_rect, const char* what) {
+void DrawItemsNow(Surface* rt, uintptr_t self, const Panel& p, const RECT& region, float ax, float ay, float kx,
+                  float ky, const RECT& clip_rect, const char* what) {
   auto X = [&](LONG x) { return static_cast<LONG>(std::lround(ax + x * kx)); };
   auto Y = [&](LONG y) { return static_cast<LONG>(std::lround(ay + y * ky)); };
   bool any = false;
@@ -513,6 +513,24 @@ void DrawItems(Surface* rt, uintptr_t self, const Panel& p, const RECT& region, 
         "%u texts",
         what, static_cast<unsigned>(self), region.left, region.top, region.right, region.bottom, clip_rect.left,
         clip_rect.top, clip_rect.right, clip_rect.bottom, kx, ky, n);
+}
+
+// Text is drawn when the game ends its scene, over everything drawn in it:
+// HUD pieces drawn after a label (the radar's markers and glass) would
+// otherwise erase the text right away.
+struct Queued {
+  Surface* rt;
+  uintptr_t self;
+  RECT region, clip;
+  float ax, ay, kx, ky;
+  const char* what;
+};
+std::vector<Queued> g_queue;
+
+void DrawItems(Surface* rt, uintptr_t self, const Panel& p, const RECT& region, float ax, float ay, float kx,
+               float ky, const RECT& clip_rect, const char* what) {
+  (void)p;
+  if (g_queue.size() < 512) g_queue.push_back(Queued{rt, self, region, clip_rect, ax, ay, kx, ky, what});
 }
 
 // The panel's own quad (its layout at +0x44).
@@ -682,6 +700,29 @@ void HudTextForget(Surface* s) {
   g_panel_tex.erase(s);
   g_scratch.erase(s);
   g_pending.erase(s);
+}
+
+void HudTextFlush() {
+  if (g_queue.empty()) return;
+  std::vector<Queued> q;
+  q.swap(g_queue);
+  if (!Active()) return;
+  for (const Queued& e : q) {
+    auto it = g_panels.find(e.self);
+    if (it == g_panels.end()) continue;
+    DrawItemsNow(e.rt, e.self, it->second, e.region, e.ax, e.ay, e.kx, e.ky, e.clip, e.what);
+  }
+  static unsigned logged = 0;
+  if (++logged <= 3) {
+    std::string where;
+    for (const Queued& e : q) {
+      char b[96];
+      std::snprintf(b, sizeof(b), " %s %ux%u %ld,%ld;", e.what, e.rt ? e.rt->Width() : 0, e.rt ? e.rt->Height() : 0,
+                    e.clip.left, e.clip.top);
+      if (where.size() < 1500) where += b;
+    }
+    Log("hud text: end of scene, %u text pieces drawn:%s", static_cast<unsigned>(q.size()), where.c_str());
+  }
 }
 
 void HudPanelLayout(uintptr_t inst) {

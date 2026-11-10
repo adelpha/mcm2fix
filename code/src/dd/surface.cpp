@@ -1091,6 +1091,7 @@ HRESULT Surface::Flip(LPDIRECTDRAWSURFACE7, DWORD flags) {
   if (!back_) return DDERR_NOTFLIPPABLE;
   WaitForFrameSlot();  // frame cap, outside the lock
   DD_LOCK;
+  HudTextFlush();  // in case the scene was not ended
   if (!back_) return DDERR_NOTFLIPPABLE;
   ++Counters().flips;
   Surface* cur = this;

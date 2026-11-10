@@ -694,7 +694,10 @@ HRESULT Device::EnumTextureFormats(LPD3DENUMPIXELFORMATSCALLBACK cb, void* ctx) 
 }
 
 HRESULT Device::BeginScene() { return D3D_OK; }
-HRESULT Device::EndScene() { return D3D_OK; }
+HRESULT Device::EndScene() {
+  HudTextFlush();  // race HUD text goes over everything the scene drew
+  return D3D_OK;
+}
 
 HRESULT Device::GetDirect3D(IDirect3D7** out) {
   if (!out) return DDERR_INVALIDPARAMS;

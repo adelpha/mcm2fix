@@ -38,6 +38,8 @@ float HudTextLabelScale(Surface* tex, const uint8_t* verts, DWORD first, DWORD c
 // The game copied sr of src to dr of dst (Blt): a panel's text goes along.
 void HudTextBlt(Surface* src, const RECT& sr, Surface* dst, const RECT& dr);
 void HudTextForget(Surface* s);
+// The game ended its scene: draw the HUD text queued during it.
+void HudTextFlush();
 // Start of every overlay layout (0x4baad0, hooked in fixes_widescreen.cpp):
 // text panels get their rectangle scaled.
 void HudPanelLayout(uintptr_t inst);
