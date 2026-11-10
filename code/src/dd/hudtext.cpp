@@ -63,6 +63,7 @@ struct Panel {
   int orig[4] = {}, written[4] = {};  // the game's rectangle and what we stored
   bool have_rect = false;
   unsigned draws = 0;
+  float text_size = 1.0f;  // stunt score panel: HudStuntTextSize (its six big lines overran the panel)
 };
 
 std::map<uintptr_t, Panel> g_panels;
@@ -330,12 +331,20 @@ void __fastcall RestoreHook(uintptr_t self, void* edx, const RECT* rect) {
 // (in the line's font, scaled with the panel) and the game's quads are left
 // empty.
 constexpr uintptr_t kBitmapText = 0x511170;  // thiscall font (rect*, const char*, colour, int* count); ret 0x10
-constexpr uintptr_t kBitmapTextCalls[] = {0x51f519, 0x51fb81};
+constexpr uintptr_t kStuntTextCall = 0x51f519, kRaceClockCall = 0x51fb81;
 constexpr uintptr_t kPanelFont = 0x38;
 using BitmapTextFn = void*(__fastcall*)(uintptr_t font, void* edx, const RECT* r, const char* s, DWORD colour,
                                         int* count);
 
+void* BitmapText(uintptr_t font, void* edx, const RECT* r, const char* s, DWORD colour, int* count, bool stunt);
 void* __fastcall BitmapTextHook(uintptr_t font, void* edx, const RECT* r, const char* s, DWORD colour, int* count) {
+  return BitmapText(font, edx, r, s, colour, count, false);
+}
+// Stunt events: "Time Remaining:" over five scores, all in the big font.
+void* __fastcall StuntTextHook(uintptr_t font, void* edx, const RECT* r, const char* s, DWORD colour, int* count) {
+  return BitmapText(font, edx, r, s, colour, count, true);
+}
+void* BitmapText(uintptr_t font, void* edx, const RECT* r, const char* s, DWORD colour, int* count, bool stunt) {
   const auto original = reinterpret_cast<BitmapTextFn>(kBitmapText);
   if (!Active() || !r || !s || !font) return original(font, edx, r, s, colour, count);
   Report();
@@ -343,6 +352,12 @@ void* __fastcall BitmapTextHook(uintptr_t font, void* edx, const RECT* r, const 
   for (auto& p : g_panels)
     if (*reinterpret_cast<const uintptr_t*>(p.first + kPanelFont) == font) self = p.first;
   Panel* p = self ? &g_panels[self] : nullptr;
+  if (p) {
+    const float want = stunt ? GetConfig().hud_stunt_text_size : 1.0f;
+    if (p->text_size != want) Log("hud text: panel %08x text drawn x%.2f (%s)", static_cast<unsigned>(self), want,
+                                  stunt ? "stunt scores, HudStuntTextSize" : "race");
+    p->text_size = want;
+  }
   // The line's own label (e.g. "TRT:") gives the font, colour and baseline.
   const Item* label = nullptr;
   if (p)
@@ -608,7 +623,7 @@ std::vector<Run> CheckGlyphsNow(HDC dc, HFONT digit_font, const std::vector<Run>
 }
 
 // Draws `it` in mixed fonts; false (nothing drawn) when that does not apply.
-bool DrawMixed(HDC dc, const Item& it, LONG x0, LONG top, float kx, float ky, LONG want) {
+bool DrawMixed(HDC dc, const Item& it, LONG x0, LONG top, float kx, float ky, LONG want, LONG* end = nullptr) {
   EnsureFonts();
   if (!g_digit_face[0]) return false;
   const bool left_top = it.draw_text ? !(it.fmt & (DT_CENTER | DT_RIGHT | DT_VCENTER | DT_BOTTOM))
@@ -647,6 +662,7 @@ bool DrawMixed(HDC dc, const Item& it, LONG x0, LONG top, float kx, float ky, LO
     x += ext.cx;
     total += ext.cx;
   }
+  if (end) *end = x;
   static unsigned logged = 0;
   if (++logged <= 12) {
     std::string desc;
@@ -661,8 +677,9 @@ bool DrawMixed(HDC dc, const Item& it, LONG x0, LONG top, float kx, float ky, LO
 // X = ax + x * kx, Y = ay + y * ky, clipped to `clip` (render target pixels).
 void DrawItemsNow(Surface* rt, uintptr_t self, const Panel& p, const RECT& region, float ax, float ay, float kx,
                   float ky, const RECT& clip_rect, const char* what) {
-  auto X = [&](LONG x) { return static_cast<LONG>(std::lround(ax + x * kx)); };
-  auto Y = [&](LONG y) { return static_cast<LONG>(std::lround(ay + y * ky)); };
+  const float px = kx, py = ky;  // panel pixels -> screen (kx, ky become the font scale)
+  auto X = [&](LONG x) { return static_cast<LONG>(std::lround(ax + x * px)); };
+  auto Y = [&](LONG y) { return static_cast<LONG>(std::lround(ay + y * py)); };
   bool any = false;
   for (const Item& it : p.items) any = any || Intersects(it.box, region);
   if (!any) {
@@ -682,14 +699,29 @@ void DrawItemsNow(Surface* rt, uintptr_t self, const Panel& p, const RECT& regio
   RECT live_clip = clip_rect;
   live_clip.right += (clip_rect.right - clip_rect.left) / 2;
   bool live_clipped = false;
+  // A smaller text size (stunt panel) keeps each line's left edge and the
+  // middle of its letters where they were. A live clock follows its label
+  // wherever that ended up.
+  const float ts = p.text_size;
+  kx *= ts;
+  ky *= ts;
+  std::map<LONG, LONG> line_end;  // box top -> right edge of the text drawn there (screen)
   for (const Item& it : p.items) {
     if (!Intersects(it.box, region)) continue;
     if (it.live != live_clipped) {
       live_clipped = it.live;
       GpuTextSetClip(dc, live_clipped ? &live_clip : &clip_rect);
     }
-    if (DrawMixed(dc, it, it.draw_text ? X(it.rect.left) : X(it.x), it.draw_text ? Y(it.rect.top) : Y(it.y), kx, ky,
-                  static_cast<LONG>(std::lround((it.box.right - it.box.left) * kx)))) {
+    const LONG lift = static_cast<LONG>(std::lround(it.ascent * py * (1.0f - ts) * 0.5f));
+    LONG left = it.draw_text ? X(it.rect.left) : X(it.x);
+    if (it.live && ts != 1.0f) {
+      auto le = line_end.find(it.box.top);
+      if (le != line_end.end()) left = le->second + static_cast<LONG>(std::lround(4 * kx));
+    }
+    const LONG top = (it.draw_text ? Y(it.rect.top) : Y(it.y)) + lift;
+    LONG end = 0;
+    if (DrawMixed(dc, it, left, top, kx, ky, static_cast<LONG>(std::lround((it.box.right - it.box.left) * kx)), &end)) {
+      if (!it.live) line_end[it.box.top] = end;
       ++n;
       continue;
     }
@@ -720,7 +752,7 @@ void DrawItemsNow(Surface* rt, uintptr_t self, const Panel& p, const RECT& regio
     GpuTextMetrics(dc, &tm);
     const bool top_aligned = it.draw_text ? !(it.fmt & (DT_VCENTER | DT_BOTTOM))
                                           : (it.align & (TA_BASELINE | TA_BOTTOM)) == TA_TOP;
-    const LONG dy = top_aligned ? static_cast<LONG>(std::lround(it.ascent * ky)) - tm.tmAscent : 0;
+    const LONG dy = (top_aligned ? static_cast<LONG>(std::lround(it.ascent * ky)) - tm.tmAscent : 0) + lift;
     GdiCall call{};
     call.dc = dc;
     call.s = it.s.c_str();
@@ -733,10 +765,13 @@ void DrawItemsNow(Surface* rt, uintptr_t self, const Panel& p, const RECT& regio
       call.fmt = it.fmt;
     } else {
       call.fn = GdiFn::kTextOut;
-      call.x = X(it.x);
+      call.x = left;
       call.y = Y(it.y) + dy;
     }
     if (GpuTextRun(call)) ++g_st.drawn;
+    if (!it.live && (it.draw_text ? !(it.fmt & (DT_CENTER | DT_RIGHT)) : !(it.align & (TA_CENTER | TA_RIGHT))))
+      line_end[it.box.top] = (it.draw_text ? r.left : call.x) +
+                             GpuTextExtent(dc, it.s.c_str(), static_cast<int>(it.s.size())).cx;
     ++n;
   }
   SelectObject(dc, GetStockObject(SYSTEM_FONT));
@@ -977,10 +1012,9 @@ void InstallHudTextHooks() {
     ++total;
     ok += PatchCall(site, kRestore, reinterpret_cast<const void*>(&RestoreHook));
   }
-  for (uintptr_t site : kBitmapTextCalls) {
-    ++total;
-    ok += PatchCall(site, kBitmapText, reinterpret_cast<const void*>(&BitmapTextHook));
-  }
+  total += 2;
+  ok += PatchCall(kStuntTextCall, kBitmapText, reinterpret_cast<const void*>(&StuntTextHook));
+  ok += PatchCall(kRaceClockCall, kBitmapText, reinterpret_cast<const void*>(&BitmapTextHook));
   Log("hud text: %u of %u HUD panel calls hooked; panels drawn x%.2f", ok, total, Scale());
 }
 

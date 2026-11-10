@@ -131,6 +131,7 @@ LineWidth=3    ; speedometer needle width in pixels, antialiased (1 = original t
 HudFont=       ; a .ttf for the HUD panel and name label text, e.g. FONTS\ContrailOne-Regular.ttf (empty = the game's fonts)
 HudDigitFont=   ; .ttf for the numbers in the stats panel (times, position, lap); words keep HudFont
 HudDigitSize=0.7 ; size of those numbers relative to the words beside them
+HudStuntTextSize=0.8 ; stunt events: size of the score panel's text (1 = as big as the race panel's)
 TextLog=0      ; debugging: log GPU text drawing and what erases it
 GdiLog=0       ; debugging: log the GDI calls (text, boxes, lines) the game draws onto the screen with
 RestartLog=0   ; debugging: log the start grid at race load and on Restart Race

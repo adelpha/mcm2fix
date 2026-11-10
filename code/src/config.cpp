@@ -94,6 +94,8 @@ void LoadConfig() {
   g_config.hud_digit_font[std::strcspn(g_config.hud_digit_font, "\t;")] = 0;
   for (size_t n = std::strlen(g_config.hud_digit_font); n && g_config.hud_digit_font[n - 1] == ' ';)
     g_config.hud_digit_font[--n] = 0;
+  g_config.hud_stunt_text_size = ReadFloat("HudStuntTextSize", 0.8f, ini);
+  if (!(g_config.hud_stunt_text_size >= 0.5f && g_config.hud_stunt_text_size <= 1.5f)) g_config.hud_stunt_text_size = 0.8f;
   g_config.hud_digit_size = ReadFloat("HudDigitSize", 0.7f, ini);
   if (!(g_config.hud_digit_size >= 0.5f && g_config.hud_digit_size <= 2.0f)) g_config.hud_digit_size = 0.7f;
   g_config.text_log = GetPrivateProfileIntA("mcm2fix", "TextLog", 0, ini) != 0;

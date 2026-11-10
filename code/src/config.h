@@ -23,6 +23,7 @@ struct Config {
   float label_scale = 1.5f;   // LabelScale: name labels over the riders drawn this many times larger (1..4)
   char hud_font[260] = {};    // HudFont: .ttf file (relative to the game folder) for HUD panel and label text
   char hud_digit_font[260] = {};  // HudDigitFont: .ttf for the numbers in the stats panel (times, position, lap)
+  float hud_stunt_text_size = 0.8f;  // HudStuntTextSize: stunt score panel text, relative to the race panel's
   float hud_digit_size = 0.7f;    // HudDigitSize: size of those numbers relative to the text around them
   bool hud_text = true;       // HudText: race HUD panel text (GDI turned into textures) drawn sharp too
   bool text_log = false;      // TextLog: log GPU text drawing (first calls, what erases it)
