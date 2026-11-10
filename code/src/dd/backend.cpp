@@ -18,6 +18,8 @@
 #include "../patch.h"
 #include "../prof.h"
 
+void PerfBeforePresent();  // fixes_perf.cpp
+
 namespace dd {
 
 namespace {
@@ -795,6 +797,7 @@ void Present(const GpuTexture& src_tex, UINT src_w, UINT src_h, UINT interval) {
     GpuTextComposite(src_tex, b.swap_rtv, nullptr, b.swap_w, b.swap_h, p.dst_rect);
   }
   DrawRendererLabel(b.swap_rtv, nullptr, b.swap_w, b.swap_h);
+  PerfBeforePresent();
   zone.Switch(prof::kSwapPresent);
   HRESULT hr = b.swapchain->Present(interval, interval == 0 && g_tearing ? DXGI_PRESENT_ALLOW_TEARING : 0);
   if (FAILED(hr)) LogOnce("Present failed %08lx", hr);

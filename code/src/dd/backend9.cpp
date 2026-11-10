@@ -26,6 +26,8 @@
 #include "msaa.h"
 #include "surface.h"
 
+void PerfBeforePresent();  // fixes_perf.cpp
+
 namespace dd {
 
 void UploadLevel9(GpuTexture& t, UINT level, const uint8_t* bgra, UINT w, UINT h);
@@ -1159,6 +1161,7 @@ void Present9(const GpuTexture& src, UINT src_w, UINT src_h, UINT interval) {
   DrawRendererLabel(nullptr, back, g_sc.w, g_sc.h);
   back->Release();
   EndScene9();
+  PerfBeforePresent();
   zone.Switch(prof::kSwapPresent);
   HRESULT hr = sc->Present(nullptr, nullptr, nullptr, nullptr, 0);
   zone.Switch(prof::kCompose);

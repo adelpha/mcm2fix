@@ -115,13 +115,18 @@ void PatchStricmp() {
 // IDirectSound3DListener::CommitDeferredSettings (0x4c32d0, vtable +0x44),
 // which waits on DirectSound's own lock and took ~60% of a step's time in
 // perf-2. The commit now runs on a worker thread; the game goes on at once.
+// The commit holds DirectSound's lock for 1-2 ms, and perf-5 showed the game's
+// own sound calls in the next step waiting on that lock. With AsyncSound=2 the
+// worker starts the commit when the frame is handed to Present, so it runs
+// while the game thread waits for VSync instead of during a sim step.
 
 using CommitFn = HRESULT(__stdcall*)(void*);
 using RefFn = ULONG(__stdcall*)(void*);
 
 void* volatile g_pending = nullptr;  // listener to commit (holds a reference)
 HANDLE g_commit_event = nullptr;
-volatile LONG g_commits = 0, g_commit_us = 0, g_commit_max_us = 0, g_skipped = 0;
+bool g_at_present = false;  // AsyncSound=2: commit started by PerfBeforePresent
+volatile LONG g_timeouts = 0, g_commits = 0, g_commit_us = 0, g_commit_max_us = 0, g_skipped = 0;
 LARGE_INTEGER g_commit_freq;
 
 ULONG Vcall(void* obj, int slot) {
@@ -132,8 +137,10 @@ ULONG Vcall(void* obj, int slot) {
 DWORD WINAPI CommitThread(void*) {
   DWORD last_log = GetTickCount();
   for (;;) {
-    WaitForSingleObject(g_commit_event, 1000);
+    // The timeout keeps sound moving when nothing is presented (loading, video).
+    const bool timed_out = WaitForSingleObject(g_commit_event, 50) == WAIT_TIMEOUT;
     if (void* l = InterlockedExchangePointer(const_cast<void**>(&g_pending), nullptr)) {
+      if (timed_out) InterlockedIncrement(&g_timeouts);
       LARGE_INTEGER a, b;
       QueryPerformanceCounter(&a);
       reinterpret_cast<CommitFn>((*reinterpret_cast<void***>(l))[0x44 / 4])(l);
@@ -149,9 +156,11 @@ DWORD WINAPI CommitThread(void*) {
       last_log = now;
       const LONG n = InterlockedExchange(&g_commits, 0), t = InterlockedExchange(&g_commit_us, 0);
       const LONG mx = InterlockedExchange(&g_commit_max_us, 0), sk = InterlockedExchange(&g_skipped, 0);
+      const LONG to = InterlockedExchange(&g_timeouts, 0);
       if (n && (GetConfig().profile || GetConfig().dd_stats))
-        patch::Log("perf: 3D sound commits on the worker 10s: %ld, average %ld us, max %ld us, %ld merged", n, t / n,
-                   mx, sk);
+        patch::Log("perf: 3D sound commits on the worker 10s: %ld, average %ld us, max %ld us, %ld merged, %ld started "
+                   "without a Present",
+                   n, t / n, mx, sk, to);
     }
   }
 }
@@ -165,7 +174,7 @@ int __fastcall SoundCommit(uintptr_t self) {
     Vcall(old, 2);  // the worker had not got to the previous one: one commit covers both
     InterlockedIncrement(&g_skipped);
   }
-  SetEvent(g_commit_event);
+  if (!g_at_present) SetEvent(g_commit_event);
   return 1;
 }
 
@@ -191,11 +200,19 @@ void PatchSoundCommit() {
   }
   CloseHandle(t);
   // thiscall (ecx) -> our __fastcall (ecx): same registers, no stack arguments.
+  g_at_present = GetConfig().async_sound >= 2;
   patch::Jump(kAt, reinterpret_cast<uintptr_t>(&SoundCommit), 5);
-  patch::Log("perf: 3D sound listener commit (0x4c32d0) runs on a worker thread (AsyncSound=1)");
+  patch::Log("perf: 3D sound listener commit (0x4c32d0) runs on a worker thread (AsyncSound=%d%s)",
+             GetConfig().async_sound, g_at_present ? ", started at Present" : "");
 }
 
 }  // namespace
+
+// Called by both renderers just before Present: the game thread is about to
+// wait for VSync, so the pending 3D sound commit runs now.
+void PerfBeforePresent() {
+  if (g_at_present && g_pending) SetEvent(g_commit_event);
+}
 
 void ApplyPerfFixes() {
   if (GetConfig().async_sound) PatchSoundCommit();
