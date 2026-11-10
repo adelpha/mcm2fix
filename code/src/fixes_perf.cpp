@@ -123,9 +123,15 @@ void PatchStricmp() {
 using CommitFn = HRESULT(__stdcall*)(void*);
 using RefFn = ULONG(__stdcall*)(void*);
 
-void* volatile g_pending = nullptr;  // listener to commit (holds a reference)
+// Listeners to commit (each holds a reference). The game commits from two
+// places (0x4c32d0 and 0x402b70), normally on the same listener.
+constexpr int kMaxPending = 4;
+void* g_pending[kMaxPending] = {};
+volatile LONG g_npending = 0;
+CRITICAL_SECTION g_pending_cs;
 HANDLE g_commit_event = nullptr;
 bool g_at_present = false;  // AsyncSound=2: commit started by PerfBeforePresent
+volatile LONG g_obj_commits = 0, g_obj_sync = 0;  // 0x402b70 calls, and those not queued
 volatile LONG g_timeouts = 0, g_commits = 0, g_commit_us = 0, g_commit_max_us = 0, g_skipped = 0;
 LARGE_INTEGER g_commit_freq;
 
@@ -139,8 +145,15 @@ DWORD WINAPI CommitThread(void*) {
   for (;;) {
     // The timeout keeps sound moving when nothing is presented (loading, video).
     const bool timed_out = WaitForSingleObject(g_commit_event, 50) == WAIT_TIMEOUT;
-    if (void* l = InterlockedExchangePointer(const_cast<void**>(&g_pending), nullptr)) {
-      if (timed_out) InterlockedIncrement(&g_timeouts);
+    void* todo[kMaxPending];
+    int count = 0;
+    EnterCriticalSection(&g_pending_cs);
+    for (; count < g_npending; ++count) todo[count] = g_pending[count];
+    g_npending = 0;
+    LeaveCriticalSection(&g_pending_cs);
+    if (count && timed_out) InterlockedIncrement(&g_timeouts);
+    for (int i = 0; i < count; ++i) {
+      void* l = todo[i];
       LARGE_INTEGER a, b;
       QueryPerformanceCounter(&a);
       reinterpret_cast<CommitFn>((*reinterpret_cast<void***>(l))[0x44 / 4])(l);
@@ -157,25 +170,97 @@ DWORD WINAPI CommitThread(void*) {
       const LONG n = InterlockedExchange(&g_commits, 0), t = InterlockedExchange(&g_commit_us, 0);
       const LONG mx = InterlockedExchange(&g_commit_max_us, 0), sk = InterlockedExchange(&g_skipped, 0);
       const LONG to = InterlockedExchange(&g_timeouts, 0);
+      const LONG oc = InterlockedExchange(&g_obj_commits, 0), os = InterlockedExchange(&g_obj_sync, 0);
       if (n && (GetConfig().profile || GetConfig().dd_stats))
         patch::Log("perf: 3D sound commits on the worker 10s: %ld, average %ld us, max %ld us, %ld merged, %ld started "
-                   "without a Present",
-                   n, t / n, mx, sk, to);
+                   "without a Present; 0x402b70 calls %ld (%ld left on the game thread)",
+                   n, t / n, mx, sk, to, oc, os);
     }
   }
 }
+
+// Queue a commit of listener l for the worker. False when the queue is full
+// (then the caller commits itself).
+bool QueueCommit(void* l) {
+  bool queued = true;
+  EnterCriticalSection(&g_pending_cs);
+  int i = 0;
+  while (i < g_npending && g_pending[i] != l) ++i;
+  if (i < g_npending) {
+    InterlockedIncrement(&g_skipped);  // already queued: one commit covers both
+  } else if (g_npending < kMaxPending) {
+    Vcall(l, 1);  // AddRef: kept alive until the worker has committed
+    g_pending[g_npending++] = l;
+  } else {
+    queued = false;
+  }
+  LeaveCriticalSection(&g_pending_cs);
+  if (queued && !g_at_present) SetEvent(g_commit_event);
+  return queued;
+}
+
+HRESULT CommitNow(void* l) { return reinterpret_cast<CommitFn>((*reinterpret_cast<void***>(l))[0x44 / 4])(l); }
 
 int __fastcall SoundCommit(uintptr_t self) {
   if (!(*reinterpret_cast<uint8_t*>(self + 0x2c) & 1)) return 0;
   void* l = *reinterpret_cast<void**>(self + 0x464);
   if (!l) return 0;
-  Vcall(l, 1);  // AddRef: kept alive until the worker has committed
-  if (void* old = InterlockedExchangePointer(const_cast<void**>(&g_pending), l)) {
-    Vcall(old, 2);  // the worker had not got to the previous one: one commit covers both
-    InterlockedIncrement(&g_skipped);
-  }
-  if (!g_at_present) SetEvent(g_commit_event);
+  if (!QueueCommit(l)) CommitNow(l);
   return 1;
+}
+
+// 0x402b70: the sound wrappers' own commit (listener at +4), called in a loop
+// over the game's sound objects (0x40376b) and after setting the distance
+// factor (0x402b57). perf-6 showed it on the game thread inside DirectSound's
+// registry reads. Each object is checked once to really be a 3D listener;
+// anything else is committed the game's way.
+const GUID kIID_Listener = {0x279AFA84, 0x4981, 0x11CE, {0xA5, 0x21, 0x00, 0x20, 0xAF, 0x0B, 0xE5, 0x60}};
+void* g_checked[16] = {};
+bool g_checked_ok[16] = {};
+
+bool IsListener(void* l) {
+  for (int i = 0; i < 16; ++i)
+    if (g_checked[i] == l) return g_checked_ok[i];
+  void* out = nullptr;
+  using QiFn = HRESULT(__stdcall*)(void*, const GUID&, void**);
+  const HRESULT hr = reinterpret_cast<QiFn>((*reinterpret_cast<void***>(l))[0])(l, kIID_Listener, &out);
+  const bool ok = SUCCEEDED(hr) && out == l;
+  if (out) Vcall(out, 2);
+  static int next = 0;
+  g_checked[next] = l;
+  g_checked_ok[next] = ok;
+  next = (next + 1) % 16;
+  patch::Log("perf: sound object commit 0x402b70 on %p: %s", l,
+             ok ? "3D listener, runs on the worker" : "not a 3D listener, left on the game thread");
+  return ok;
+}
+
+int __fastcall ObjectCommit(uintptr_t self) {
+  void* l = *reinterpret_cast<void**>(self + 4);
+  if (!l) return 0;  // the original returns with eax = 0 here too
+  InterlockedIncrement(&g_obj_commits);
+  if (IsListener(l) && QueueCommit(l)) return 1;
+  InterlockedIncrement(&g_obj_sync);
+  return CommitNow(l) >= 0 ? 1 : 0;
+}
+
+void PatchObjectCommit() {
+  const uint8_t original[] = {
+      0x8B, 0x41, 0x04,        // mov eax,[ecx+4]
+      0x85, 0xC0,              // test eax,eax
+      0x75, 0x01, 0xC3,        // jne / ret
+      0x8B, 0x08, 0x50,        // mov ecx,[eax] / push eax
+      0xFF, 0x51, 0x44,        // call [ecx+44h]
+      0x33, 0xD2, 0x85, 0xC0,  // xor edx,edx / test eax,eax
+      0x0F, 0x9D, 0xC2,        // setge dl
+  };
+  constexpr uintptr_t kAt = 0x402B70;
+  if (!patch::Matches(kAt, original, sizeof(original))) {
+    patch::Log("perf: sound object commit 0x402b70 differs, not changed");
+    return;
+  }
+  patch::Jump(kAt, reinterpret_cast<uintptr_t>(&ObjectCommit), 5);
+  patch::Log("perf: sound object commit (0x402b70) also goes to the worker");
 }
 
 void PatchSoundCommit() {
@@ -192,6 +277,7 @@ void PatchSoundCommit() {
     return;
   }
   QueryPerformanceFrequency(&g_commit_freq);
+  InitializeCriticalSection(&g_pending_cs);
   g_commit_event = CreateEventA(nullptr, FALSE, FALSE, nullptr);
   HANDLE t = g_commit_event ? CreateThread(nullptr, 0, &CommitThread, nullptr, 0, nullptr) : nullptr;
   if (!t) {
@@ -202,6 +288,7 @@ void PatchSoundCommit() {
   // thiscall (ecx) -> our __fastcall (ecx): same registers, no stack arguments.
   g_at_present = GetConfig().async_sound >= 2;
   patch::Jump(kAt, reinterpret_cast<uintptr_t>(&SoundCommit), 5);
+  PatchObjectCommit();
   patch::Log("perf: 3D sound listener commit (0x4c32d0) runs on a worker thread (AsyncSound=%d%s)",
              GetConfig().async_sound, g_at_present ? ", started at Present" : "");
 }
@@ -211,7 +298,7 @@ void PatchSoundCommit() {
 // Called by both renderers just before Present: the game thread is about to
 // wait for VSync, so the pending 3D sound commit runs now.
 void PerfBeforePresent() {
-  if (g_at_present && g_pending) SetEvent(g_commit_event);
+  if (g_at_present && g_npending) SetEvent(g_commit_event);
 }
 
 void ApplyPerfFixes() {
