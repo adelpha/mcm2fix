@@ -118,6 +118,7 @@ GpuText=1      ; draw the game's menu and HUD text (GDI) on the GPU, antialiased
 HudText=1      ; with GpuText: the race HUD panels' text is drawn by mcm2fix on screen, sharp
 HudScale=2     ; race HUD text panels (position, lap, times) drawn this many times larger (1 = original)
 LabelScale=1.5 ; name labels over the riders drawn this many times larger (1 = original)
+HudFont=       ; a .ttf for the HUD panel and name label text, e.g. FONTS\ContrailOne-Regular.ttf (empty = the game's fonts)
 TextLog=0      ; debugging: log GPU text drawing and what erases it
 GdiLog=0       ; debugging: log the GDI calls (text, boxes, lines) the game draws onto the screen with
 RestartLog=0   ; debugging: log the start grid at race load and on Restart Race

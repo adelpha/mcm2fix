@@ -78,6 +78,9 @@ void LoadConfig() {
   g_config.hud_text = GetPrivateProfileIntA("mcm2fix", "HudText", 1, ini) != 0;
   g_config.hud_scale = ReadFloat("HudScale", 2.0f, ini);
   g_config.label_scale = ReadFloat("LabelScale", 1.5f, ini);
+  GetPrivateProfileStringA("mcm2fix", "HudFont", "", g_config.hud_font, sizeof(g_config.hud_font), ini);
+  g_config.hud_font[std::strcspn(g_config.hud_font, "\t;")] = 0;  // drop an inline comment
+  for (size_t n = std::strlen(g_config.hud_font); n && g_config.hud_font[n - 1] == ' ';) g_config.hud_font[--n] = 0;
   g_config.text_log = GetPrivateProfileIntA("mcm2fix", "TextLog", 0, ini) != 0;
   g_config.gdi_log = GetPrivateProfileIntA("mcm2fix", "GdiLog", 0, ini) != 0;
   g_config.d3d9_log = GetPrivateProfileIntA("mcm2fix", "D3D9Log", 1, ini) != 0;

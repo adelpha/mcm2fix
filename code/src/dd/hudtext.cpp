@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <map>
 #include <set>
@@ -335,9 +336,93 @@ struct FontKey {
   bool operator<(const FontKey& o) const { return std::memcmp(&lf, &o.lf, sizeof(lf)) < 0; }
 };
 std::map<FontKey, HFONT> g_fonts;
+char g_face[LF_FACESIZE] = {};  // HudFont's family name, when loaded
+
+// The family name (name ID 1) in a TrueType / OpenType file.
+bool FontFamily(const std::vector<uint8_t>& f, char* out, size_t out_size) {
+  auto u16 = [&](size_t o) { return o + 2 <= f.size() ? static_cast<unsigned>(f[o] << 8 | f[o + 1]) : 0u; };
+  auto u32 = [&](size_t o) { return o + 4 <= f.size() ? (u16(o) << 16 | u16(o + 2)) : 0u; };
+  const unsigned tables = u16(4);
+  for (unsigned t = 0; t < tables; ++t) {
+    const size_t rec = 12 + t * 16;
+    if (rec + 16 > f.size() || std::memcmp(&f[rec], "name", 4) != 0) continue;
+    const size_t name = u32(rec + 8);
+    const unsigned count = u16(name + 2);
+    const size_t strings = name + u16(name + 4);
+    std::string ascii;
+    for (unsigned i = 0; i < count; ++i) {
+      const size_t r = name + 6 + i * 12;
+      const unsigned platform = u16(r), id = u16(r + 6), len = u16(r + 8);
+      const size_t off = strings + u16(r + 10);
+      if (id != 1 || off + len > f.size()) continue;
+      if (platform == 3 || platform == 0) {  // UTF-16 big-endian
+        std::wstring w;
+        for (unsigned k = 0; k + 1 < len; k += 2) w += static_cast<wchar_t>(u16(off + k));
+        if (WideCharToMultiByte(CP_ACP, 0, w.c_str(), -1, out, static_cast<int>(out_size), nullptr, nullptr) > 1)
+          return true;
+      } else if (platform == 1 && ascii.empty()) {
+        ascii.assign(reinterpret_cast<const char*>(&f[off]), len);
+      }
+    }
+    if (!ascii.empty()) {
+      strncpy_s(out, out_size, ascii.c_str(), _TRUNCATE);
+      return true;
+    }
+  }
+  return false;
+}
+
+// HudFont=<file>: load it for this process only and use its family.
+void LoadHudFont() {
+  const char* file = GetConfig().hud_font;
+  if (!file[0]) return;
+  char path[MAX_PATH] = {};
+  if (file[0] == '\\' || std::strchr(file, ':')) {
+    strncpy_s(path, file, _TRUNCATE);
+  } else {
+    GetModuleFileNameA(nullptr, path, MAX_PATH);
+    if (char* slash = std::strrchr(path, '\\')) slash[1] = 0;
+    strncat_s(path, file, _TRUNCATE);
+  }
+  std::vector<uint8_t> data;
+  if (FILE* fp = std::fopen(path, "rb")) {
+    uint8_t buf[4096];
+    size_t n;
+    while ((n = std::fread(buf, 1, sizeof(buf), fp)) > 0) data.insert(data.end(), buf, buf + n);
+    std::fclose(fp);
+  }
+  if (data.empty()) {
+    Log("hud text: HudFont %s could not be read; the game's fonts are used", path);
+    return;
+  }
+  if (!FontFamily(data, g_face, sizeof(g_face))) {
+    Log("hud text: HudFont %s has no family name; the game's fonts are used", path);
+    return;
+  }
+  const int added = AddFontResourceExA(path, FR_PRIVATE, nullptr);
+  if (!added) {
+    Log("hud text: HudFont %s could not be loaded (error %lu); the game's fonts are used", path, GetLastError());
+    g_face[0] = 0;
+    return;
+  }
+  Log("hud text: HudFont %s loaded (%d font%s, family \"%s\")", path, added, added == 1 ? "" : "s", g_face);
+}
 
 HFONT ScaledFont(const LOGFONTA& lf, float kx, float ky) {
+  static bool loaded = false;  // not at DLL load: GDI is called from the game's thread
+  if (!loaded) {
+    loaded = true;
+    LoadHudFont();
+  }
   FontKey key{lf};
+  if (g_face[0]) {  // HudFont: same size, its own face, regular weight
+    strncpy_s(key.lf.lfFaceName, g_face, _TRUNCATE);
+    key.lf.lfCharSet = DEFAULT_CHARSET;
+    key.lf.lfWeight = FW_NORMAL;
+    key.lf.lfItalic = 0;
+    key.lf.lfPitchAndFamily = 0;
+    key.lf.lfOutPrecision = OUT_TT_ONLY_PRECIS;
+  }
   key.lf.lfHeight = static_cast<LONG>(std::lround(lf.lfHeight * ky));
   key.lf.lfWidth = static_cast<LONG>(std::lround(lf.lfWidth * kx));
   key.lf.lfQuality = ANTIALIASED_QUALITY;
