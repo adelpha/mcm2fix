@@ -12,6 +12,7 @@ struct Config {
   bool profile = false;       // Profile: performance profiling (see prof.cpp)
   int profile_sample_us = 1000;  // ProfileSampleUs: sampling profiler interval (0 = off)
   bool fast_crt = true;
+  bool async_sound = true;    // AsyncSound: 3D sound listener commit on a worker thread (fixes_perf.cpp)
   bool state_cache = true;    // StateCache: skip D3D11 state the device already has bound (device.cpp)       // FastCrt: QPC game clock and table-driven _stricmp (fixes_perf.cpp)
   bool dd_stats = false;      // DDStats: log renderer activity every 2 seconds
   int renderer = 11;          // Renderer: 11 = Direct3D 11, 9 = Direct3D 9 (also used when D3D11 is missing)

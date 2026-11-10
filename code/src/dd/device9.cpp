@@ -136,7 +136,6 @@ bool Device::BindTarget9(bool& has_depth, bool full_clear) {
   } else {
     MsaaRelease(rt->Native());
   }
-  IDirect3DDevice9* dev = B().dev9;
   SetTarget9(target, ds);
   cur_rt9_ = target;
   cur_ds9_ = ds;
