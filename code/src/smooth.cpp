@@ -48,6 +48,8 @@ unsigned g_shadow_why[6] = {};  // calls, no meshes, no prev, moved too far, off
 unsigned g_total = 0, g_blended = 0;
 unsigned g_race_frames = 0;  // frames drawn while smoothing could run
 bool g_trace = false;          // SmoothLog: tracing this frame
+float g_arrow_pos[3] = {};
+unsigned g_arrow_frames = 0;  // ArrowLog: frames left to trace
 bool g_trace_view = false;     // SmoothLog=2: tracing the camera this frame  // matrices seen / blended, for the log
 
 bool Affine(const float* m) {
@@ -400,6 +402,17 @@ uint32_t g_proj_use = 0;
 unsigned g_proj_why[4] = {};  // seen, blended, no previous, jumped
 bool g_proj_sample = false;
 
+void SmoothArrowTrace(const float pos[3], unsigned frames) {
+  std::memcpy(g_arrow_pos, pos, sizeof(g_arrow_pos));
+  if (frames > g_arrow_frames) g_arrow_frames = frames;
+}
+
+bool SmoothArrowTracing(const float* m) {
+  if (!g_arrow_frames) return false;
+  const float dx = m[12] - g_arrow_pos[0], dy = m[13] - g_arrow_pos[1], dz = m[14] - g_arrow_pos[2];
+  return dx * dx + dy * dy + dz * dz < 25.0f;
+}
+
 void SmoothProjection(float* m) {
   unsigned tick;
   float alpha;
@@ -412,6 +425,9 @@ void SmoothProjection(float* m) {
     r.tick = tick;
   }
   r.cur[0] = m[0]; r.cur[1] = m[5]; r.cur[2] = m[8]; r.cur[3] = m[9];
+  if (g_arrow_frames)
+    patch::Log("arrow trace: projection tick %u a=%.3f m00 prev %.4f cur %.4f (prev tick %u)", tick, alpha, r.prev[0],
+               r.cur[0], r.prev_tick);
   if (r.prev_tick == 0 || r.prev_tick + 1 != tick) { ++g_proj_why[2]; return; }
   if (r.prev[0] == 0.0f || r.prev[1] == 0.0f) { ++g_proj_why[2]; return; }
   const float k0 = r.cur[0] / r.prev[0], k1 = r.cur[1] / r.prev[1];
@@ -454,7 +470,13 @@ void SmoothTransform(uint32_t type, const float* in, const void* src, float* out
     std::memcpy(out, blended, sizeof(blended));
     ++g_blended;
   }
-  if (g_trace_view && type == 2) {
+  if (g_trace_view && type == 2 && g_arrow_frames) {
+    float ei[3], eo[3];
+    ViewEye(in, ei);
+    ViewEye(out, eo);
+    patch::Log("arrow trace: view tick %u a=%.3f use %u eye now (%.2f %.2f %.2f) drawn (%.2f %.2f %.2f)%s", tick, alpha,
+               use, ei[0], ei[1], ei[2], eo[0], eo[1], eo[2], ok ? "" : " NOT blended");
+  } else if (g_trace_view && type == 2) {
     patch::Log("view: f=%u tick=%u a=%.3f use=%u in=(%.3f %.3f %.3f | %.2f %.2f %.2f) out=(%.3f %.3f %.3f | %.2f %.2f %.2f)",
                g_race_frames, tick, alpha, use, in[0], in[1], in[2], in[12], in[13], in[14], out[0], out[1],
                out[2], out[12], out[13], out[14]);
@@ -490,7 +512,11 @@ void SmoothFrameEnd() {
       // Trace 6 frames, 5 seconds or so into the race.
       const int mode = GetConfig().smooth_log;
       g_trace = mode == 1 && g_race_frames >= 600 && g_race_frames < 606;
-      g_trace_view = mode == 2 && g_race_frames >= 600 && g_race_frames < 720;
+      g_trace_view = (mode == 2 && g_race_frames >= 600 && g_race_frames < 720) || g_arrow_frames > 0;
+      if (g_arrow_frames > 0) {
+        --g_arrow_frames;
+        patch::Log("arrow trace: ---- frame %u, tick %u, a=%.3f", g_race_frames, tick, alpha);
+      }
       if (g_trace) patch::Log("trace: ---- frame %u, tick %u, a=%.3f", g_race_frames, tick, alpha);
     } else {
       g_trace = g_trace_view = false;
@@ -805,6 +831,7 @@ void BlendCasterMeshes(uintptr_t c, unsigned tick, float alpha) {
   }
 }
 unsigned g_ps_casters_max = 0;
+unsigned g_ps_dirtied = 0;  // casters we marked for a rebuild from blended parts (frames after a step)
 
 void PsRestore() {
   for (uintptr_t c : g_casters_written) {
@@ -827,11 +854,31 @@ int __fastcall SmoothPsPreDraw(void* self, void*) {
   const int n = *reinterpret_cast<int*>(obj + 0x30);
   if (!casters || n <= 0 || n > 64) { ++g_ps_why[2]; return kPsPreDraw(self); }
   if (static_cast<unsigned>(n) > g_ps_casters_max) g_ps_casters_max = n;
+  int dirty_before[4] = {};  // for the SmoothLog=3 trace
+  for (int i = 0; i < n && i < 4; ++i)
+    if (casters[i]) dirty_before[i] = *reinterpret_cast<int*>(casters[i] + 0x18c);
   for (int i = 0; i < n; ++i) {
     const uintptr_t c = casters[i];
     if (!c) continue;
     ++g_ps_why[3];
-    if (!SmoothPartsActive()) BlendCasterMeshes(c, tick, alpha);  // else already built from blended parts
+    if (!SmoothPartsActive()) {
+      BlendCasterMeshes(c, tick, alpha);
+    } else {
+      // The shadow texture is drawn from the caster's world-space vertices,
+      // which GetMesh (0x444390) rebuilds only when the object is marked
+      // dirty. Between steps our draw leaves it marked, so they are rebuilt
+      // from blended parts; but on a frame right after a simulation step
+      // the game has already rebuilt them at the new step's positions and
+      // cleared the mark, while the shadow window is placed with the blend
+      // (still near the previous step). The shadow then jumped ahead of the
+      // rider for one frame in every step. Mark it, so they are rebuilt from
+      // blended parts every frame.
+      int& dirty = *reinterpret_cast<int*>(c + 0x18c);
+      if (!dirty) {
+        dirty = 1;
+        ++g_ps_dirtied;
+      }
+    }
     CasterRec& r = g_casters[c];
     float* m = reinterpret_cast<float*>(c + kCasterMatrix);
     if (r.tick != tick) {
@@ -865,11 +912,40 @@ int __fastcall SmoothPsPreDraw(void* self, void*) {
   // step, every [+0x120] steps) sets +0x11c; otherwise the old texture from
   // the last step is drawn. Ask for a fresh render every frame so the shadow
   // shows the riders where they are drawn now.
+  // SmoothLog=3: trace the shadow window and the first caster's mesh.
+  const bool trace = GetConfig().smooth_log == 3 && g_race_frames >= 900 && g_race_frames < 2700;
   int* want = reinterpret_cast<int*>(obj + 0x11c);
   g_ps_tex[3] = *reinterpret_cast<unsigned*>(obj + 0x120);
   if (*want) ++g_ps_tex[0];
   else { *want = 1; ++g_ps_tex[1]; }
   const int result = kPsPreDraw(self);
+  if (trace) {
+    const float* ctr = reinterpret_cast<const float*>(obj + 0xcc);
+    const float* ext = reinterpret_cast<const float*>(obj + 0xc0);
+    patch::Log("shadow trace: frame %u tick %u a=%.3f window centre (%.3f %.3f %.3f) extent (%.3f %.3f %.3f) k %.5f "
+               "rendered %d",
+               g_race_frames, tick, alpha, ctr[0], ctr[1], ctr[2], ext[0], ext[1], ext[2],
+               *reinterpret_cast<const float*>(obj + 0xbc), *reinterpret_cast<const int*>(obj + 0x130));
+    for (int i = 0; i < n && i < 4; ++i) {
+      const uintptr_t c = casters[i];
+      if (!c) continue;
+      const float* m = reinterpret_cast<const float*>(c + kCasterMatrix);
+      const CasterRec& r = g_casters[c];
+      uintptr_t verts = 0, idx = 0;
+      int count = 0, nidx = 0;
+      const int dirty_now = *reinterpret_cast<int*>(c + 0x18c);
+      float v0[3] = {};
+      if (!dirty_now) {  // reading the mesh would rebuild a dirty object; skip then
+        kGetMesh(reinterpret_cast<void*>(c), 0, &verts, &count, &idx, &nidx, 0, -1);
+        if (verts && count > 0) std::memcpy(v0, reinterpret_cast<const float*>(verts), sizeof(v0));
+      }
+      patch::Log("shadow trace:   caster %d %08x matrix (%.3f %.3f %.3f) step (%.3f %.3f %.3f) prev (%.3f %.3f %.3f)%s "
+                 "dirty %d->%d mesh0 v0 (%.3f %.3f %.3f) v0-matrix (%.3f %.3f %.3f)",
+                 i, static_cast<unsigned>(c), m[12], m[13], m[14], r.cur[12], r.cur[13], r.cur[14], r.prev[12],
+                 r.prev[13], r.prev[14], r.written ? " blended" : " NOT blended", dirty_before[i], dirty_now, v0[0],
+                 v0[1], v0[2], v0[0] - m[12], v0[1] - m[13], v0[2] - m[14]);
+    }
+  }
   MeshRestore();  // the scene draws read these too; give them back the step's values
   if (*reinterpret_cast<int*>(obj + 0x130)) ++g_ps_tex[2];
   return result;
@@ -908,8 +984,10 @@ void ProjectedShadowFrameEnd() {
                  g_ps_why[6], g_ps_why[7], static_cast<unsigned>(g_casters.size()));
     }
     if (g_ps_why[0]) {
-      patch::Log("smoothing: shadow texture renders: game asked %u, forced %u, drew casters %u; period %u steps",
-                 g_ps_tex[0], g_ps_tex[1], g_ps_tex[2], g_ps_tex[3]);
+      patch::Log("smoothing: shadow texture renders: game asked %u, forced %u, drew casters %u; period %u steps; "
+                 "casters re-marked for a blended rebuild %u",
+                 g_ps_tex[0], g_ps_tex[1], g_ps_tex[2], g_ps_tex[3], g_ps_dirtied);
+      g_ps_dirtied = 0;
     }
     if (g_ps_why[0]) {
       patch::Log("smoothing: shadow meshes: %u seen, %u blended (%u vertices, mean move %.3f); skipped: count "

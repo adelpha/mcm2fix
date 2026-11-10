@@ -10,19 +10,33 @@ struct Config {
   bool activate_log = false;  // ActivateLog: log window activation
   bool reg_log = false;       // RegLog: log every registry call
   bool dd_stats = false;      // DDStats: log renderer activity every 2 seconds
+  int renderer = 11;          // Renderer: 11 = Direct3D 11, 9 = Direct3D 9 (also used when D3D11 is missing)
+  bool renderer_label = true;  // RendererLabel: name the active renderer in the corner of the menus
+  bool gpu_text = true;       // GpuText: draw the game's GDI text on the GPU at screen resolution
+  float hud_scale = 2.0f;     // HudScale: race HUD text panels drawn this many times larger (1..4)
+  float line_width = 3.0f;    // LineWidth: screen-space lines (speedometer needle) in pixels, antialiased (1 = original)
+  float label_scale = 1.5f;   // LabelScale: name labels over the riders drawn this many times larger (1..4)
+  char hud_font[260] = {};    // HudFont: .ttf file (relative to the game folder) for HUD panel and label text
+  char hud_digit_font[260] = {};  // HudDigitFont: .ttf for the numbers in the stats panel (times, position, lap)
+  float hud_digit_size = 0.7f;    // HudDigitSize: size of those numbers relative to the text around them
+  bool hud_text = true;       // HudText: race HUD panel text (GDI turned into textures) drawn sharp too
+  bool text_log = false;      // TextLog: log GPU text drawing (first calls, what erases it)
+  bool gdi_log = false;       // GdiLog: log the GDI calls the game draws text and boxes with
+  bool d3d9_log = true;       // D3D9Log: extra logging from the Direct3D 9 renderer (first frames, fallbacks)
   bool wide_fov = true;       // WideFov: wide modes show more to the sides instead of cropping
   bool vsync = true;          // VSync: wait for the monitor's refresh when showing a frame
   int frame_cap = 0;          // FrameCap: most frames per second (0 = no cap beyond VSync)
   bool precise_timer = true;  // PreciseTimer: frame time from QueryPerformanceCounter, not whole ms
   bool frame_fix = true;      // FrameFix: per-frame animation/physics steps scale with frame time
   int ai_rate = 30;           // AiRate: computer riders re-plan this many times a second (0 = every frame)
-  int smooth_log = 0;         // SmoothLog: 1 = trace a few frames of matrices and draws, 2 = camera only, 120 frames
+  int smooth_log = 0;         // SmoothLog: 1 = trace a few frames of matrices and draws, 2 = camera only, 120 frames, 3 = rider shadows
   int sim_smooth = 1;         // SimSmooth: draw objects between simulation steps (needs SimRate)
   int sim_rate = 30;          // SimRate: race simulation steps per second, drawing stays per frame (0 = one step per frame)
   int ai_steer_rate = 0;    // AiSteerRate: fastest a computer rider's front wheel turns, degrees/s (0 = no limit)
   int ref_rate = 30;          // RefRate: frame rate those per-frame steps were tuned for
   bool arrow_heading = true;  // ArrowFix: draw the race direction arrow without perspective lean
   float arrow_turn = 0.8f;    // ArrowTurn: how much of that correction to apply (1 = full)
+  bool arrow_log = false;     // ArrowLog: trace the direction arrow and camera for 4 s after each race start
   float arrow_tilt = 10.0f;   // ArrowTilt: degrees the arrow's nose is raised, to see it more from above
   float arrow_scale = 2.0f;   // ArrowScale: size of the race direction arrow (1 = original)
   bool restart_fix = true;   // RestartFix: Restart Race turns the bikes to face the course again

@@ -17,6 +17,7 @@
 #include "framerate.h"
 #include "smooth.h"
 #include "patch.h"
+#include "dd/hudtext.h"
 
 namespace {
 
@@ -186,6 +187,15 @@ void __stdcall AdjustNeedle(uintptr_t inst) {
   needle *= s;
 }
 
+bool g_layout_hooked = false;
+bool g_wide_dial = false;
+
+// Every screen overlay's layout (0x4baad0) starts here.
+void __stdcall OverlayLayoutHook(uintptr_t inst) {
+  if (g_wide_dial) AdjustOverlayRect(inst);
+  dd::HudPanelLayout(inst);
+}
+
 // Allocates a small executable thunk.
 struct Thunk {
   uint8_t* p = nullptr;
@@ -228,7 +238,30 @@ unsigned SmoothMarginHits() {
   return n;
 }
 
+void InstallOverlayLayoutHook() {
+  if (g_layout_hooked) return;
+  if (!patch::Matches(kOverlayLayout, kOverlayLayoutEntry, sizeof(kOverlayLayoutEntry))) {
+    patch::Log("overlay layout hook: code differs, not applied");
+    return;
+  }
+  Thunk d;
+  if (!d.p) return;
+  d.put({0x60, 0x51});  // pushad; push ecx (the overlay)
+  d.put({0xB8});
+  d.put32(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&OverlayLayoutHook)));
+  d.put({0xFF, 0xD0, 0x61});  // call eax; popad
+  for (uint8_t b : kOverlayLayoutEntry) d.put({b});
+  d.put({0x68});
+  d.put32(static_cast<uint32_t>(kOverlayLayoutResume));
+  d.put({0xC3});
+  d.done();
+  patch::Jump(kOverlayLayout, reinterpret_cast<uintptr_t>(d.p), sizeof(kOverlayLayoutEntry));
+  g_layout_hooked = true;
+  patch::Log("overlay layout hook: applied");
+}
+
 void ApplyWidescreenFov() {
+  InstallOverlayLayoutHook();
   if (!GetConfig().wide_fov && GetConfig().fov <= 0.0f) return;
   if (!patch::Matches(kCameraUpdate, kCameraUpdateEntry, sizeof(kCameraUpdateEntry))) {
     patch::Log("widescreen fov: camera update code differs, not applied");
@@ -262,8 +295,8 @@ void ApplyWidescreenFov() {
              GetConfig().wide_fov ? 1 : 0);
   if (!GetConfig().wide_fov) return;
 
-  // Speedometer dial: AdjustOverlayRect(ecx) at the base layout's entry.
-  if (!patch::Matches(kOverlayLayout, kOverlayLayoutEntry, sizeof(kOverlayLayoutEntry))) {
+  // Speedometer dial: AdjustOverlayRect, from the overlay layout hook.
+  if (!g_layout_hooked) {
     patch::Log("widescreen speedometer: overlay layout code differs, not applied");
     return;
   }
@@ -272,17 +305,7 @@ void ApplyWidescreenFov() {
     patch::Log("widescreen speedometer: needle code differs, not applied");
     return;
   }
-  Thunk d;
-  if (!d.p) return;
-  d.put({0x60, 0x51});  // pushad; push ecx (the overlay)
-  d.put({0xB8});
-  d.put32(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&AdjustOverlayRect)));
-  d.put({0xFF, 0xD0, 0x61});  // call eax; popad
-  for (uint8_t b : kOverlayLayoutEntry) d.put({b});
-  d.put({0x68});
-  d.put32(static_cast<uint32_t>(kOverlayLayoutResume));
-  d.put({0xC3});
-  d.done();
+  g_wide_dial = true;
 
   // Speedometer needle: AdjustNeedle(esi), then the original vertex builder.
   Thunk u;
@@ -296,7 +319,6 @@ void ApplyWidescreenFov() {
   u.put({0xC3});  // ret (= jmp, caller's return address stays)
   u.done();
 
-  patch::Jump(kOverlayLayout, reinterpret_cast<uintptr_t>(d.p), sizeof(kOverlayLayoutEntry));
   patch::Call(kInstrumentLayoutCall, u.p, sizeof(call_build));
   patch::Log("widescreen speedometer: applied");
 }

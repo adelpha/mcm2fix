@@ -92,6 +92,8 @@ SimSmooth=1    ; draw the camera, bikes, riders, shadows and names blended betwe
                ; (smooth motion at any frame rate, one step of delay); 0 = show each step as it is
 Fov=0          ; field of view in degrees as a 4:3 screen shows it (0 = game default, 77);
                ; the zoom keys still step from it, widescreen adds to the sides
+Renderer=D3D11 ; D3D11 (default) or D3D9; D3D9 is also used by itself when Direct3D 11 is missing
+RendererLabel=1 ; show the active renderer (Direct3D 9 / 11) in the bottom right corner of the menus
 Anisotropy=16  ; anisotropic texture filtering, 0/1 = off, 2-16
 Antialiasing=4 ; multisample antialiasing of the 3D scene: 0/1 = off, 2, 4 or 8
 MipBias=0      ; texture sharpness at a distance: negative = sharper (e.g. -0.5), positive = softer
@@ -106,11 +108,23 @@ ArrowFix=1     ; race direction arrow points the right way (0 = original, leans 
 ArrowTurn=0.8  ; how much of that correction to apply (1.0 = full; lower if the arrow points left of a gate dead ahead)
 ArrowTilt=10   ; degrees the arrow's nose is raised so it is seen a little from above (0 = level)
 ArrowScale=2.0 ; size of the race direction arrow (1.0 = original)
+ArrowLog=0     ; log the arrow placement for a few seconds after each race start
 RestartFix=1   ; Restart Race puts every rider back on the grid facing the course (0 = original bug)
 OneCore=0      ; 1 = pin the game to one CPU core (old stopgap)
 ActivateLog=0  ; debugging: log window activation
 RegLog=0       ; debugging: log every registry call
 DDStats=0      ; debugging: log renderer activity every 2 seconds
+D3D9Log=1      ; debugging: extra Direct3D 9 renderer logging (device caps, first frames, fallbacks)
+GpuText=1      ; draw the game's menu and HUD text (GDI) on the GPU, antialiased, at screen resolution
+HudText=1      ; with GpuText: the race HUD panels' text is drawn by mcm2fix on screen, sharp
+HudScale=2     ; race HUD text panels (position, lap, times) drawn this many times larger (1 = original)
+LabelScale=1.5 ; name labels over the riders drawn this many times larger (1 = original)
+LineWidth=3    ; speedometer needle width in pixels, antialiased (1 = original thin line)
+HudFont=       ; a .ttf for the HUD panel and name label text, e.g. FONTS\ContrailOne-Regular.ttf (empty = the game's fonts)
+HudDigitFont=   ; .ttf for the numbers in the stats panel (times, position, lap); words keep HudFont
+HudDigitSize=0.7 ; size of those numbers relative to the words beside them
+TextLog=0      ; debugging: log GPU text drawing and what erases it
+GdiLog=0       ; debugging: log the GDI calls (text, boxes, lines) the game draws onto the screen with
 RestartLog=0   ; debugging: log the start grid at race load and on Restart Race
 TextureLog=0   ; debugging: log the format of each texture the game creates
 ```

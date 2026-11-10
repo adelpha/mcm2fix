@@ -57,7 +57,18 @@ class VertexBuffer final : public d3d7::IDirect3DVertexBuffer7 {
   struct Processed {
     float clip[4];
     float screen[4];  // what was written to the buffer
+    float obj[3];     // the source vertex (object space)
+    uint32_t mat;     // which entry of Matrix() transformed it
   };
+  struct Mat {
+    float m[16];
+  };
+  // The world*view*projection a Processed::mat refers to (null if stale).
+  const float* Matrix(uint32_t id) const {
+    const uint32_t i = id & 0xfff;
+    if ((id >> 12) != (mat_epoch_ & 0xfffff) || i >= mats_.size()) return nullptr;
+    return mats_[i].m;
+  }
   // True if vertices [first, first+n) still hold what ProcessVertices wrote.
   bool HasClipData(DWORD first, DWORD n) const;
   const Processed* ClipData() const { return processed_.data(); }
@@ -71,6 +82,8 @@ class VertexBuffer final : public d3d7::IDirect3DVertexBuffer7 {
   std::vector<Processed> processed_;
   std::vector<uint8_t> processed_valid_;
   d3d7::D3DVIEWPORT7 processed_vp_{};
+  std::vector<Mat> mats_;
+  uint32_t mat_epoch_ = 0;
 };
 
 class Device : public d3d7::IDirect3DDevice7 {
@@ -156,6 +169,15 @@ class Device : public d3d7::IDirect3DDevice7 {
     const VertexBuffer* vb = nullptr;  // for ProcessVertices clip data
   };
   void Submit(const Draw& d);
+  bool SubmitWideLine(const Draw& d);
+  void SubmitDraw(const Draw& d);
+  void OccludeText(const Draw& d);
+  // Direct3D 9 (device9.cpp): the fixed-function pipeline does the work.
+  bool Init9();
+  HRESULT Clear9(DWORD count, d3d7::D3DRECT* rects, DWORD flags, d3d7::D3DCOLOR color, float z);
+  void Submit9(const Draw& d);
+  bool BindTarget9(bool& has_depth, bool full_clear);
+  void ApplyState9(int mode, bool has_depth);
   // Binds the render target (or its multisampled stand-in) and depth.
   // `full_clear`: the caller will overwrite all of the colour buffer.
   bool BindTarget(bool& has_depth, bool full_clear = false);
@@ -178,6 +200,8 @@ class Device : public d3d7::IDirect3DDevice7 {
   DWORD rs_[256] = {};
   DWORD tss_[8][32] = {};
   Surface* tex_[8] = {};
+  std::vector<uint8_t> line_verts_;   // screen-space lines drawn wide (LineWidth)
+  std::vector<uint8_t> label_verts_;  // HUD name labels drawn larger (hudtext.cpp)
   d3d7::D3DMATRIX world_{}, view_{}, proj_{};
   d3d7::D3DMATRIX world_set_{}, view_set_{}, proj_set_{};  // as the game set them (world_/view_ may be smoothed)
   float wvp_[16] = {};
@@ -200,6 +224,11 @@ class Device : public d3d7::IDirect3DDevice7 {
   std::map<uint32_t, ID3D11SamplerState*> sampler_cache_;
   std::vector<uint8_t> scratch_;
   std::vector<WORD> scratch_idx_;
+  // Direct3D 9: what BindTarget9 bound.
+  IDirect3DSurface9* cur_rt9_ = nullptr;
+  IDirect3DSurface9* cur_ds9_ = nullptr;
+  UINT cur_rt9_w_ = 0, cur_rt9_h_ = 0;
+  unsigned draws9_ = 0;  // for the first-frames log
 };
 
 }  // namespace dd

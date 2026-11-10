@@ -164,30 +164,10 @@ bool LoadPicture(const std::wstring& path, const char* label, GpuTexture& out) {
     LogOnce("texture replacement %s: could not read the picture", label);
     return false;
   }
-  out.Reset();
-  Backend& b = B();
-  D3D11_TEXTURE2D_DESC td{};
-  td.Width = w;
-  td.Height = h;
-  td.MipLevels = 0;  // full chain
-  td.ArraySize = 1;
-  td.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-  td.SampleDesc.Count = 1;
-  td.Usage = D3D11_USAGE_DEFAULT;
-  td.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
-  td.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
-  if (FAILED(b.device->CreateTexture2D(&td, nullptr, &out.tex))) return false;
-  out.tex->GetDesc(&td);
-  b.device->CreateShaderResourceView(out.tex, nullptr, &out.srv);
-  if (!out.srv) {
-    out.Reset();
+  if (!CreateTextureFromBGRA(out, px.data(), w, h)) {
+    LogOnce("texture replacement %s: could not create a %ux%u texture", label, w, h);
     return false;
   }
-  b.ctx->UpdateSubresource(out.tex, 0, nullptr, px.data(), w * 4, 0);
-  b.ctx->GenerateMips(out.srv);
-  out.width = w;
-  out.height = h;
-  out.levels = td.MipLevels;
   return true;
 }
 
@@ -292,12 +272,7 @@ bool LoadReplacementByName(const std::string& key, GpuTexture& out) {
     Log("texture replacement \"%s\": %ux%u", key.c_str(), t.width, t.height);
   }
   out.Reset();
-  out.tex = c->second.tex;
-  out.srv = c->second.srv;
-  out.tex->AddRef();
-  out.srv->AddRef();
-  out.width = c->second.width;
-  out.height = c->second.height;
+  out = c->second.Share();
   out.levels = c->second.levels;
   return true;
 }

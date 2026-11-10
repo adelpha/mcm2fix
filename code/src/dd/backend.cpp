@@ -1,9 +1,11 @@
-#include "backend.h"
+#include "backend9.h"
+#include "gputext.h"
 #include "msaa.h"
 
 #include <d3dcompiler.h>
 #include <dxgi1_6.h>
 
+#include <algorithm>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -18,6 +20,7 @@ namespace dd {
 
 namespace {
 Backend g_backend;
+Api g_api = Api::kD3D11;
 bool g_device_failed = false;
 bool g_tearing = false;  // swap chain made with ALLOW_TEARING (VSync=0)
 RECT g_monitor_rect{};
@@ -44,6 +47,7 @@ float4 ps_main(VSOut i) : SV_Target {
   if (flags.x == 0) return fill;
   float4 c = tex.Sample(smp, i.uv);
   if (flags.y != 0 && all(abs(c.rgb - key.rgb) < 0.002)) discard;
+  if (flags.w != 0) return c * fill;
   return flags.z != 0 ? float4(c.rgb, 1) : c;
 }
 )";
@@ -69,7 +73,7 @@ void Log(const char* fmt, ...) {
   va_start(ap, fmt);
   std::vsnprintf(buf, sizeof(buf), fmt, ap);
   va_end(ap);
-  patch::Log("d3d11: %s", buf);
+  patch::Log("%s: %s", g_api == Api::kD3D9 ? "d3d9" : "d3d11", buf);
 }
 
 void LogOnce(const char* fmt, ...) {
@@ -80,22 +84,50 @@ void LogOnce(const char* fmt, ...) {
   std::vsnprintf(buf, sizeof(buf), fmt, ap);
   va_end(ap);
   DD_LOCK;
-  if (seen.insert(buf).second) patch::Log("d3d11: %s", buf);
+  if (seen.insert(buf).second) patch::Log("%s: %s", g_api == Api::kD3D9 ? "d3d9" : "d3d11", buf);
 }
 
+Api ActiveApi() { return g_api; }
+
 void GpuTexture::Reset() {
-  MsaaForget(tex);
+  if (const void* n = Native()) {
+    MsaaForget(n);
+    GpuTextForget(n);
+  }
   SafeRelease(srv);
   SafeRelease(rtv);
   SafeRelease(dsv);
   SafeRelease(tex);
+  SafeRelease(surf9);
+  SafeRelease(tex9);
+  fmt9 = 0;
+  pool_default = false;
   width = height = levels = 0;
   depth = false;
+  rt = false;
   gdi = false;
 }
 
+void BlitParams::SetSrc(const GpuTexture& t) {
+  src = t.srv;
+  src9 = t.tex9;
+  src_w = t.width;
+  src_h = t.height;
+}
+
+GpuTexture GpuTexture::Share() const {
+  GpuTexture t = *this;
+  if (t.tex) t.tex->AddRef();
+  if (t.srv) t.srv->AddRef();
+  if (t.rtv) t.rtv->AddRef();
+  if (t.dsv) t.dsv->AddRef();
+  if (t.tex9) t.tex9->AddRef();
+  if (t.surf9) t.surf9->AddRef();
+  return t;
+}
+
 Backend& B() { return g_backend; }
-bool Ready() { return g_backend.device != nullptr; }
+bool Ready() { return g_backend.device != nullptr || g_backend.dev9 != nullptr; }
 
 ID3DBlob* Compile(const char* source, const char* entry, const char* target) {
   using CompileFn = HRESULT(WINAPI*)(LPCVOID, SIZE_T, LPCSTR, const D3D_SHADER_MACRO*,
@@ -124,6 +156,18 @@ ID3DBlob* Compile(const char* source, const char* entry, const char* target) {
 }
 
 namespace {
+
+// d3d11.dll and dxgi.dll are loaded at run time, so the DLL itself loads on
+// systems without them (Windows XP), where the D3D9 renderer is used.
+using CreateFactoryFn = HRESULT(WINAPI*)(REFIID, void**);
+using CreateDeviceFn = HRESULT(WINAPI*)(IDXGIAdapter*, D3D_DRIVER_TYPE, HMODULE, UINT,
+                                        const D3D_FEATURE_LEVEL*, UINT, UINT, ID3D11Device**,
+                                        D3D_FEATURE_LEVEL*, ID3D11DeviceContext**);
+template <typename T>
+T LoadFn(const char* dll, const char* name) {
+  HMODULE m = LoadLibraryA(dll);
+  return m ? reinterpret_cast<T>(reinterpret_cast<void*>(GetProcAddress(m, name))) : nullptr;
+}
 
 IDXGIAdapter1* PickAdapter(IDXGIFactory1* factory) {
   IDXGIFactory6* f6 = nullptr;
@@ -182,20 +226,67 @@ bool CreatePipeline() {
   b.device->CreateBlendState(&bd, &b.no_blend);
   bd.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALPHA;
   b.device->CreateBlendState(&bd, &b.alpha_only);
+  bd.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+  bd.RenderTarget[0].BlendEnable = TRUE;
+  bd.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+  bd.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+  bd.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+  bd.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ZERO;
+  bd.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ONE;
+  bd.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+  b.device->CreateBlendState(&bd, &b.alpha_blend);
+  bd.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
+  bd.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+  bd.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
+  b.device->CreateBlendState(&bd, &b.premul_blend);
+  bd.RenderTarget[0].SrcBlend = D3D11_BLEND_ZERO;
+  bd.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ZERO;
+  b.device->CreateBlendState(&bd, &b.erase_blend);
   return b.blit_vs && b.blit_ps && b.blit_cb;
 }
 
 }  // namespace
 
+namespace {
+bool InitDevice11();
+}
+
 bool InitDevice() {
   DD_LOCK;
   Backend& b = g_backend;
-  if (b.device) return true;
+  if (b.device || b.dev9) return true;
   if (g_device_failed) return false;
   g_device_failed = true;
+  const bool want9 = GetConfig().renderer == 9;
+  patch::Log("renderer: %s asked for in mcm2fix.ini", want9 ? "Direct3D 9" : "Direct3D 11");
+  if (!want9) {
+    g_api = Api::kD3D11;
+    if (InitDevice11()) {
+      g_device_failed = false;
+      return true;
+    }
+    patch::Log("renderer: Direct3D 11 not available; trying Direct3D 9");
+  }
+  g_api = Api::kD3D9;
+  if (InitDevice9()) {
+    g_device_failed = false;
+    return true;
+  }
+  patch::Log("renderer: no usable Direct3D device");
+  return false;
+}
 
+namespace {
+bool InitDevice11() {
+  Backend& b = g_backend;
+  static const auto create_factory = LoadFn<CreateFactoryFn>("dxgi.dll", "CreateDXGIFactory1");
+  static const auto create_device = LoadFn<CreateDeviceFn>("d3d11.dll", "D3D11CreateDevice");
+  if (!create_factory || !create_device) {
+    Log("d3d11.dll / dxgi.dll not found");
+    return false;
+  }
   IDXGIFactory1* factory = nullptr;
-  if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&factory)))) {
+  if (FAILED(create_factory(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&factory)))) {
     Log("CreateDXGIFactory1 failed");
     return false;
   }
@@ -212,7 +303,7 @@ bool InitDevice() {
   const D3D_FEATURE_LEVEL levels[] = {D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0,
                                       D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_10_0};
   D3D_FEATURE_LEVEL got{};
-  HRESULT hr = D3D11CreateDevice(adapter, adapter ? D3D_DRIVER_TYPE_UNKNOWN : D3D_DRIVER_TYPE_HARDWARE,
+  HRESULT hr = create_device(adapter, adapter ? D3D_DRIVER_TYPE_UNKNOWN : D3D_DRIVER_TYPE_HARDWARE,
                                  nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, levels,
                                  sizeof(levels) / sizeof(levels[0]), D3D11_SDK_VERSION,
                                  &b.device, &got, &b.ctx);
@@ -223,15 +314,15 @@ bool InitDevice() {
   }
   if (!CreatePipeline()) {
     Log("blit pipeline failed");
+    SafeRelease(b.ctx);
+    SafeRelease(b.device);
     return false;
   }
-  g_device_failed = false;
   Log("device on \"%s\" (vendor %04x device %04x), feature level %x", b.adapter_name,
       b.vendor_id, b.device_id, static_cast<unsigned>(got));
   return true;
 }
-
-namespace {
+}  // namespace
 
 void ApplyBorderless(HWND hwnd) {
   HMONITOR mon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY);
@@ -257,6 +348,8 @@ void ApplyBorderless(HWND hwnd) {
                  SWP_FRAMECHANGED | SWP_NOOWNERZORDER);
   }
 }
+
+namespace {
 
 bool ResizeSwapchain() {
   Backend& b = g_backend;
@@ -347,6 +440,7 @@ bool ResizeSwapchain() {
 bool AttachWindow(HWND hwnd) {
   DD_LOCK;
   if (!InitDevice() || !hwnd) return false;
+  if (IsD3D9()) return AttachWindow9(hwnd);
   Backend& b = g_backend;
   if (b.hwnd != hwnd) {
     SafeRelease(b.swap_rtv);
@@ -362,9 +456,13 @@ void KeepBorderless() {
   if (g_backend.hwnd && !IsIconic(g_backend.hwnd)) ApplyBorderless(g_backend.hwnd);
 }
 
+bool CreateGpuTexture9(GpuTexture& t, UINT w, UINT h, UINT levels, bool render_target,
+                       bool depth, bool alpha);
+
 bool CreateGpuTexture(GpuTexture& t, UINT w, UINT h, UINT levels, bool render_target,
-                      bool depth) {
+                      bool depth, bool alpha) {
   t.Reset();
+  if (IsD3D9()) return CreateGpuTexture9(t, w, h, levels, render_target, depth, alpha);
   Backend& b = g_backend;
   D3D11_TEXTURE2D_DESC td{};
   td.Width = w ? w : 1;
@@ -402,11 +500,13 @@ bool CreateGpuTexture(GpuTexture& t, UINT w, UINT h, UINT levels, bool render_ta
   t.height = td.Height;
   t.levels = td.MipLevels;
   t.depth = depth;
+  t.rt = render_target && !depth;
   t.gdi = td.MiscFlags != 0;
   return true;
 }
 
 void Blit(const BlitParams& p) {
+  if (IsD3D9()) return Blit9(p);
   Backend& b = g_backend;
   if (!p.dst || !p.dst_w || !p.dst_h) return;
   BlitCB cb{};
@@ -422,6 +522,7 @@ void Blit(const BlitParams& p) {
   cb.flags[0] = p.src ? 1.0f : 0.0f;
   cb.flags[1] = p.color_key ? 1.0f : 0.0f;
   cb.flags[2] = p.opaque ? 1.0f : 0.0f;
+  cb.flags[3] = p.tint ? 1.0f : 0.0f;
   for (int i = 0; i < 3; ++i) cb.key[i] = p.key[i];
   b.ctx->UpdateSubresource(b.blit_cb, 0, nullptr, &cb, 0, 0);
 
@@ -432,7 +533,10 @@ void Blit(const BlitParams& p) {
   b.ctx->RSSetViewports(1, &vp);
   b.ctx->RSSetState(b.blit_raster);
   b.ctx->OMSetDepthStencilState(b.no_depth, 0);
-  b.ctx->OMSetBlendState(p.alpha_only && b.alpha_only ? b.alpha_only : b.no_blend, nullptr,
+  b.ctx->OMSetBlendState(p.erase && b.erase_blend ? b.erase_blend
+                         : p.premul && b.premul_blend ? b.premul_blend
+                         : p.blend && b.alpha_blend ? b.alpha_blend
+                         : p.alpha_only && b.alpha_only ? b.alpha_only : b.no_blend, nullptr,
                          0xffffffff);
   b.ctx->IASetInputLayout(nullptr);
   b.ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
@@ -463,7 +567,6 @@ void NoteReadback(const char* why, DWORD caps, UINT w, UINT h) {
   ++g_readbacks[key];
 }
 
-namespace {
 void ReportStats() {
   static DWORD last = GetTickCount();
   static int reports = 0;
@@ -491,10 +594,11 @@ void ReportStats() {
   last = now;
   ++reports;
 }
-}  // namespace
 
-void Present(ID3D11ShaderResourceView* src, UINT src_w, UINT src_h, UINT interval) {
+void Present(const GpuTexture& src_tex, UINT src_w, UINT src_h, UINT interval) {
   DD_LOCK;
+  if (IsD3D9()) return Present9(src_tex, src_w, src_h, interval);
+  ID3D11ShaderResourceView* src = src_tex.srv;
   Backend& b = g_backend;
   ++Counters().presents;
   ReportStats();
@@ -521,12 +625,15 @@ void Present(ID3D11ShaderResourceView* src, UINT src_w, UINT src_h, UINT interva
     p.src_rect = {0, 0, static_cast<LONG>(src_w), static_cast<LONG>(src_h)};
     p.linear = true;
     Blit(p);
+    GpuTextComposite(src_tex, b.swap_rtv, nullptr, b.swap_w, b.swap_h, p.dst_rect);
   }
+  DrawRendererLabel(b.swap_rtv, nullptr, b.swap_w, b.swap_h);
   HRESULT hr = b.swapchain->Present(interval, interval == 0 && g_tearing ? DXGI_PRESENT_ALLOW_TEARING : 0);
   if (FAILED(hr)) LogOnce("Present failed %08lx", hr);
 }
 
 void WaitVBlank() {
+  if (IsD3D9()) return WaitVBlank9();
   IDXGIOutput* out = nullptr;
   {
     DD_LOCK;
@@ -538,6 +645,214 @@ void WaitVBlank() {
   } else {
     Sleep(1);
   }
+}
+
+// ------------------------------------------------------------- renderer label
+
+namespace {
+DWORD g_last_3d = 0;
+bool g_any_3d = false;
+}  // namespace
+
+void Note3DDraw() {
+  g_last_3d = GetTickCount();
+  g_any_3d = true;
+}
+
+void DrawRendererLabel(ID3D11RenderTargetView* dst, IDirect3DSurface9* dst9, UINT w, UINT h) {
+  if (!GetConfig().renderer_label || (!dst && !dst9) || w < 64 || h < 64) return;
+  // Menus: no 3D scene drawn for half a second.
+  if (g_any_3d && GetTickCount() - g_last_3d < 500) return;
+  static GpuTexture label;
+  static UINT label_h = 0;
+  static Api label_api = Api::kD3D11;
+  static bool failed = false;
+  const UINT font_h = h / 54 < 12 ? 12 : h / 54;
+  if (!label.Valid() || label_h != font_h || label_api != ActiveApi()) {
+    if (failed) return;
+    label.Reset();
+    label_h = font_h;
+    label_api = ActiveApi();
+    const char* text = IsD3D9() ? "Direct3D 9" : "Direct3D 11";
+    // Draw the text with GDI (white on black), then turn brightness into
+    // a white label on a translucent dark box.
+    HDC dc = CreateCompatibleDC(nullptr);
+    HFONT font = CreateFontA(-static_cast<int>(font_h), 0, 0, 0, FW_SEMIBOLD, 0, 0, 0, DEFAULT_CHARSET,
+                             OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
+                             DEFAULT_PITCH | FF_SWISS, "Tahoma");
+    HGDIOBJ old_font = SelectObject(dc, font);
+    SIZE sz{};
+    GetTextExtentPoint32A(dc, text, static_cast<int>(std::strlen(text)), &sz);
+    const int pad = static_cast<int>(font_h) / 3 + 2;
+    const int tw = sz.cx + pad * 2, th = sz.cy + pad;
+    BITMAPINFO bi{};
+    bi.bmiHeader.biSize = sizeof(bi.bmiHeader);
+    bi.bmiHeader.biWidth = tw;
+    bi.bmiHeader.biHeight = -th;
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32;
+    void* bits = nullptr;
+    HBITMAP bmp = CreateDIBSection(dc, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
+    if (bmp && bits) {
+      HGDIOBJ old_bmp = SelectObject(dc, bmp);
+      std::memset(bits, 0, static_cast<size_t>(tw) * th * 4);
+      SetBkMode(dc, TRANSPARENT);
+      SetTextColor(dc, RGB(255, 255, 255));
+      TextOutA(dc, pad, pad / 2, text, static_cast<int>(std::strlen(text)));
+      GdiFlush();
+      auto* px = static_cast<uint8_t*>(bits);
+      for (int i = 0; i < tw * th; ++i) {
+        const uint8_t v = std::max(px[i * 4], std::max(px[i * 4 + 1], px[i * 4 + 2]));
+        px[i * 4 + 0] = px[i * 4 + 1] = px[i * 4 + 2] = v;
+        px[i * 4 + 3] = static_cast<uint8_t>(110 + v * (255 - 110) / 255);
+      }
+      if (!CreateTextureFromBGRA(label, px, static_cast<UINT>(tw), static_cast<UINT>(th))) failed = true;
+      SelectObject(dc, old_bmp);
+    } else {
+      failed = true;
+    }
+    if (bmp) DeleteObject(bmp);
+    SelectObject(dc, old_font);
+    DeleteObject(font);
+    DeleteDC(dc);
+    if (failed) {
+      Log("renderer label could not be made");
+      return;
+    }
+    LogOnce("renderer label \"%s\" %ux%u", text, label.width, label.height);
+  }
+  const LONG margin = static_cast<LONG>(font_h) / 2 + 4;
+  BlitParams p;
+  p.dst = dst;
+  p.dst9 = dst9;
+  p.dst_w = w;
+  p.dst_h = h;
+  p.dst_rect = {static_cast<LONG>(w) - margin - static_cast<LONG>(label.width),
+                static_cast<LONG>(h) - margin - static_cast<LONG>(label.height), 0, 0};
+  p.dst_rect.right = p.dst_rect.left + static_cast<LONG>(label.width);
+  p.dst_rect.bottom = p.dst_rect.top + static_cast<LONG>(label.height);
+  p.SetSrc(label);
+  p.src_rect = {0, 0, static_cast<LONG>(label.width), static_cast<LONG>(label.height)};
+  p.opaque = false;
+  p.blend = true;
+  Blit(p);
+}
+
+// ---------------------------------------------------------------- texture I/O
+
+bool CreateTextureFromBGRA9(GpuTexture& t, const uint8_t* bgra, UINT w, UINT h);
+void UploadLevel9(GpuTexture& t, UINT level, const uint8_t* bgra, UINT w, UINT h);
+bool DownloadTop9(GpuTexture& t, void (*row)(void*, UINT, const uint8_t*), void* ctx);
+bool CopyTexture9(GpuTexture& dst, const GpuTexture& src);
+void ClearDepth9(GpuTexture& t, float z);
+bool GpuGetDC9(GpuTexture& t, HDC* dc);
+void GpuReleaseDC9(GpuTexture& t, HDC dc);
+
+bool CreateTextureFromBGRA(GpuTexture& out, const uint8_t* px, UINT w, UINT h) {
+  out.Reset();
+  if (IsD3D9()) return CreateTextureFromBGRA9(out, px, w, h);
+  Backend& b = g_backend;
+  D3D11_TEXTURE2D_DESC td{};
+  td.Width = w;
+  td.Height = h;
+  td.MipLevels = 0;  // full chain
+  td.ArraySize = 1;
+  td.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+  td.SampleDesc.Count = 1;
+  td.Usage = D3D11_USAGE_DEFAULT;
+  td.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+  td.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
+  if (FAILED(b.device->CreateTexture2D(&td, nullptr, &out.tex))) return false;
+  out.tex->GetDesc(&td);
+  b.device->CreateShaderResourceView(out.tex, nullptr, &out.srv);
+  if (!out.srv) {
+    out.Reset();
+    return false;
+  }
+  b.ctx->UpdateSubresource(out.tex, 0, nullptr, px, w * 4, 0);
+  b.ctx->GenerateMips(out.srv);
+  out.width = w;
+  out.height = h;
+  out.levels = td.MipLevels;
+  return true;
+}
+
+void UploadLevel(GpuTexture& t, UINT level, const uint8_t* bgra, UINT w, UINT h) {
+  if (IsD3D9()) return UploadLevel9(t, level, bgra, w, h);
+  if (t.tex) g_backend.ctx->UpdateSubresource(t.tex, level, nullptr, bgra, w * 4, 0);
+}
+
+bool DownloadTop(GpuTexture& t, void (*row)(void*, UINT, const uint8_t*), void* ctx) {
+  if (IsD3D9()) return DownloadTop9(t, row, ctx);
+  if (!t.tex) return false;
+  Backend& b = g_backend;
+  D3D11_TEXTURE2D_DESC td{};
+  td.Width = t.width;
+  td.Height = t.height;
+  td.MipLevels = 1;
+  td.ArraySize = 1;
+  td.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+  td.SampleDesc.Count = 1;
+  td.Usage = D3D11_USAGE_STAGING;
+  td.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+  // One reusable readback texture per size.
+  static std::map<uint64_t, ID3D11Texture2D*> cache;
+  ID3D11Texture2D*& staging = cache[(static_cast<uint64_t>(td.Width) << 32) | td.Height];
+  if (!staging && FAILED(b.device->CreateTexture2D(&td, nullptr, &staging))) {
+    staging = nullptr;
+    Log("readback texture %ux%u failed", t.width, t.height);
+    return false;
+  }
+  b.ctx->CopySubresourceRegion(staging, 0, 0, 0, 0, t.tex, 0, nullptr);
+  D3D11_MAPPED_SUBRESOURCE m{};
+  if (FAILED(b.ctx->Map(staging, 0, D3D11_MAP_READ, 0, &m))) return false;
+  for (UINT y = 0; y < t.height; ++y)
+    row(ctx, y, static_cast<const uint8_t*>(m.pData) + static_cast<size_t>(y) * m.RowPitch);
+  b.ctx->Unmap(staging, 0);
+  return true;
+}
+
+bool CopyTexture(GpuTexture& dst, const GpuTexture& src) {
+  if (IsD3D9()) return CopyTexture9(dst, src);
+  if (!src.tex || !CreateGpuTexture(dst, src.width, src.height, 1, false, false)) return false;
+  g_backend.ctx->CopySubresourceRegion(dst.tex, 0, 0, 0, 0, src.tex, 0, nullptr);
+  return true;
+}
+
+void ClearDepth(GpuTexture& t, float z) {
+  if (IsD3D9()) return ClearDepth9(t, z);
+  if (t.dsv) g_backend.ctx->ClearDepthStencilView(t.dsv, D3D11_CLEAR_DEPTH, z, 0);
+}
+
+bool GpuGetDC(GpuTexture& g, HDC* out, void** handle) {
+  *handle = nullptr;
+  if (IsD3D9()) return GpuGetDC9(g, out);
+  if (!g.tex || !g.gdi) return false;
+  IDXGISurface1* s = nullptr;
+  if (FAILED(g.tex->QueryInterface(__uuidof(IDXGISurface1), reinterpret_cast<void**>(&s))))
+    return false;
+  // The texture must not be bound while GDI owns it; the device and the
+  // blitter bind their targets again before every draw.
+  ID3D11ShaderResourceView* null_srv[8] = {};
+  g_backend.ctx->PSSetShaderResources(0, 8, null_srv);
+  g_backend.ctx->OMSetRenderTargets(0, nullptr, nullptr);
+  HDC dc = nullptr;
+  if (FAILED(s->GetDC(FALSE, &dc)) || !dc) {
+    LogOnce("IDXGISurface1::GetDC failed; using CPU copies for GDI");
+    s->Release();
+    return false;
+  }
+  *handle = s;
+  *out = dc;
+  return true;
+}
+
+void GpuReleaseDC(GpuTexture& g, HDC dc, void* handle) {
+  if (IsD3D9()) return GpuReleaseDC9(g, dc);
+  auto* s = static_cast<IDXGISurface1*>(handle);
+  if (!s) return;
+  s->ReleaseDC(nullptr);
+  s->Release();
 }
 
 }  // namespace dd

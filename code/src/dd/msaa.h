@@ -15,6 +15,8 @@ namespace dd {
 struct MsaaViews {
   ID3D11RenderTargetView* rtv = nullptr;
   ID3D11DepthStencilView* dsv = nullptr;
+  IDirect3DSurface9* rt9 = nullptr;  // Direct3D 9: multisampled colour + depth surfaces
+  IDirect3DSurface9* ds9 = nullptr;
 };
 
 // Sample count in use (1 when off or unsupported).
@@ -27,10 +29,13 @@ UINT MsaaSamples();
 bool MsaaAcquire(GpuTexture* rt, MsaaViews& out, bool full_clear = false);
 // The MSAA buffer was drawn into (it is now newer than the texture).
 void MsaaMarkDrawn();
-// Something other than 3D drawing is about to use `tex`: if it is the
-// mirrored target, resolve pending MSAA drawing into it and stop mirroring.
-void MsaaRelease(ID3D11Texture2D* tex);
+// Something other than 3D drawing is about to use `tex` (GpuTexture::Native):
+// if it is the mirrored target, resolve pending MSAA drawing into it and stop
+// mirroring.
+void MsaaRelease(const void* tex);
 // `tex` is being destroyed.
-void MsaaForget(ID3D11Texture2D* tex);
+void MsaaForget(const void* tex);
+// Direct3D 9 device reset: drop the buffers (they are recreated on demand).
+void MsaaDeviceLost();
 
 }  // namespace dd
