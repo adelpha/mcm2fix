@@ -477,6 +477,9 @@ void SmoothProjection(float* m) {
     r.tick = tick;
   }
   r.cur[0] = m[0]; r.cur[1] = m[5]; r.cur[2] = m[8]; r.cur[3] = m[9];
+  if (g_cam_trace)
+    patch::Log("cam: f=%u projection use %u tick %u a=%.3f m00 %.4f (prev step %.4f, tick %u)", g_race_frames,
+               g_proj_use - 1, tick, alpha, r.cur[0], r.prev[0], r.prev_tick);
   if (g_arrow_frames)
     patch::Log("arrow trace: projection tick %u a=%.3f m00 prev %.4f cur %.4f (prev tick %u)", tick, alpha, r.prev[0],
                r.cur[0], r.prev_tick);

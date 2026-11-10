@@ -879,10 +879,13 @@ HRESULT Device::SetTransform(DWORD type, D3DMATRIX* m) {
     case D3DTRANSFORMSTATE_PROJECTION: {
       proj_set_ = *m;
       proj_ = *m;
-      const float r = SmoothProjectionScale(&m->m[0][0]);  // undo the smoothing cull margin
-      SmoothProjection(&proj_.m[0][0]);                      // zoom between steps
+      // Undo the smoothing cull margin first, so a zoom between steps is
+      // blended between drawn views (the margin starting at the gate drop is
+      // not a zoom).
+      const float r = SmoothProjectionScale(&m->m[0][0]);
       proj_.m[0][0] *= r;
       proj_.m[1][1] *= r;
+      SmoothProjection(&proj_.m[0][0]);  // zoom between steps
       if (m->m[2][3] != 0.0f && m->m[2][2] != 1.0f && m->m[2][2] != 0.0f) {
         const float zn = -m->m[3][2] / m->m[2][2], zf = m->m[3][2] / (1.0f - m->m[2][2]);
         LogOnce("projection near %.2f far %.0f", zn, zf);
