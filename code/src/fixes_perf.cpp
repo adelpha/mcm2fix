@@ -218,7 +218,25 @@ bool QueueCommit(void* l) {
 
 HRESULT CommitNow(void* l) { return reinterpret_cast<CommitFn>((*reinterpret_cast<void***>(l))[0x44 / 4])(l); }
 
+// The game's sound object (this of 0x4c32d0). At start-up (0x4c31e8) it only
+// probes EAX when flag bit 0 is set and the driver reports hardware 3D
+// buffers (+0x410 >= 1); a supported probe sets bit 2, and the EAX
+// environment is only sent (0x4c3450) with bit 2 and bit 3
+// (AllowEAXExtension, the options checkbox) both set.
+void LogEaxState(uintptr_t self) {
+  const uint8_t f = *reinterpret_cast<uint8_t*>(self + 0x45c);
+  patch::Log("sound: EAX state: flags %02x (bit0 probe allowed %d, bit2 EAX supported %d, bit3 EAX option on %d), "
+             "hardware 3D buffers %lu, probe buffer %p",
+             f, f & 1, (f >> 2) & 1, (f >> 3) & 1, *reinterpret_cast<unsigned long*>(self + 0x410),
+             *reinterpret_cast<void**>(self + 0x474));
+}
+
 int __fastcall SoundCommit(uintptr_t self) {
+  static uint8_t last_flags = 0xff;
+  if (*reinterpret_cast<uint8_t*>(self + 0x45c) != last_flags) {
+    last_flags = *reinterpret_cast<uint8_t*>(self + 0x45c);
+    LogEaxState(self);
+  }
   if (!(*reinterpret_cast<uint8_t*>(self + 0x2c) & 1)) return 0;
   void* l = *reinterpret_cast<void**>(self + 0x464);
   if (!l) return 0;
