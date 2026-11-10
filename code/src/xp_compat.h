@@ -31,4 +31,9 @@ void Append(char* dst, size_t cap, const char* src);
 template <size_t N>
 void Append(char (&dst)[N], const char* src) { Append(dst, N, src); }
 
+// strncpy_s(dst, src, _TRUNCATE) likewise.
+void Copy(char* dst, size_t cap, const char* src);
+template <size_t N>
+void Copy(char (&dst)[N], const char* src) { Copy(dst, N, src); }
+
 }  // namespace xp

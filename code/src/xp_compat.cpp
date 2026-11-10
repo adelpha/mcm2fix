@@ -69,6 +69,12 @@ void* xp_imp_GetTickCount64 __asm__("__imp__GetTickCount64@0") =
 
 namespace xp {
 
+void Copy(char* dst, size_t cap, const char* src) {
+  if (!cap) return;
+  dst[0] = '\0';
+  Append(dst, cap, src);
+}
+
 void Append(char* dst, size_t cap, const char* src) {
   if (!cap) return;
   size_t len = 0;
