@@ -552,7 +552,10 @@ std::vector<Run> SplitNumbers(const std::string& s) {
       while (j < s.size() && NumberPart(s[j])) ++j;
       size_t k = j;
       while (k > i && s[k - 1] == ' ') --k;
-      add(s.substr(i, k - i), true);
+      // A place in a list ("1) NEWTON : 15300", stunt scores) is a label,
+      // not a reading: it stays in the text font.
+      const bool place = k == j && j < s.size() && s[j] == ')';
+      add(s.substr(i, k - i), !place);
       add(s.substr(k, j - k), false);
       i = j;
     } else {
@@ -674,8 +677,17 @@ void DrawItemsNow(Surface* rt, uintptr_t self, const Panel& p, const RECT& regio
   GpuTextSetClip(dc, &clip_rect);  // only GPU text reads it: no GDI clip region needed
   SetBkMode(dc, TRANSPARENT);
   unsigned n = 0;
+  // The game's live clocks were drawn past the panel's edge in the original
+  // (stunts: "Time Remaining: 00:13" in a 128 pixel panel): let them overhang.
+  RECT live_clip = clip_rect;
+  live_clip.right += (clip_rect.right - clip_rect.left) / 2;
+  bool live_clipped = false;
   for (const Item& it : p.items) {
     if (!Intersects(it.box, region)) continue;
+    if (it.live != live_clipped) {
+      live_clipped = it.live;
+      GpuTextSetClip(dc, live_clipped ? &live_clip : &clip_rect);
+    }
     if (DrawMixed(dc, it, it.draw_text ? X(it.rect.left) : X(it.x), it.draw_text ? Y(it.rect.top) : Y(it.y), kx, ky,
                   static_cast<LONG>(std::lround((it.box.right - it.box.left) * kx)))) {
       ++n;
