@@ -140,8 +140,21 @@ ULONG Vcall(void* obj, int slot) {
   return fn(obj);
 }
 
+// Which DirectSound the game got (Windows' own, or a replacement such as
+// DSOAL dropped next to the exe), plus a DSOAL driver if one is loaded.
+void LogSoundModules() {
+  const char* names[] = {"dsound.dll", "dsoal-aldrv.dll", "soft_oal.dll", "OpenAL32.dll"};
+  for (const char* name : names) {
+    HMODULE m = GetModuleHandleA(name);
+    char path[MAX_PATH] = {};
+    if (m) GetModuleFileNameA(m, path, MAX_PATH);
+    if (m || name == names[0]) patch::Log("sound: %s %s%s", name, m ? "loaded from " : "not loaded", path);
+  }
+}
+
 DWORD WINAPI CommitThread(void*) {
   DWORD last_log = GetTickCount();
+  bool logged_modules = false;
   for (;;) {
     // The timeout keeps sound moving when nothing is presented (loading, video).
     const bool timed_out = WaitForSingleObject(g_commit_event, 50) == WAIT_TIMEOUT;
@@ -152,6 +165,10 @@ DWORD WINAPI CommitThread(void*) {
     g_npending = 0;
     LeaveCriticalSection(&g_pending_cs);
     if (count && timed_out) InterlockedIncrement(&g_timeouts);
+    if (count && !logged_modules) {
+      logged_modules = true;
+      LogSoundModules();
+    }
     for (int i = 0; i < count; ++i) {
       void* l = todo[i];
       LARGE_INTEGER a, b;
