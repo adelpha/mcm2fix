@@ -51,7 +51,10 @@ Windows no longer ships, and Windows looks in the game folder first.
 Settings
 --------
 Edit mcm2fix.ini. Every setting is explained there, and a missing setting
-uses its default.
+uses its default. The file has three parts: preferences to change to taste;
+advanced settings that keep the game working and playing correctly (physics
+and timing, compatibility, sound), which are best left alone; and logging,
+where only the main log is on.
 
 Uninstalling
 ------------

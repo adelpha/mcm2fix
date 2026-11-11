@@ -264,115 +264,139 @@ then cut off, so a slight snap-off at the edge is original behaviour.
 
 ## mcm2fix.ini reference
 
-`mcm2fix.ini` sits next to `Mcm2.exe`, in a section called `[mcm2fix]`. All
-settings are optional and fall back to the defaults below. On/off settings
-take `1` or `0`. A `; comment` after a value is ignored.
+`mcm2fix.ini` sits next to `Mcm2.exe`. Its settings go in a section called
+`[mcm2fix]`. Every setting is optional, and a missing one (or a missing file)
+uses the default below. On/off settings take `1` or `0`. Lines starting with
+`;` are comments. Changes take effect the next time the game starts. The
+shipped file explains every setting in its comments, in the same order as
+these tables.
 
-### Core fixes
+The file has three parts:
+
+1. **[Preferences](#1-preferences)**: change these to taste.
+2. **[Advanced](#2-advanced-changing-these-is-not-recommended)**: these keep
+   the game starting, saving and playing correctly. Changing them is **not
+   recommended**.
+3. **[Logging](#3-logging)**: only the main log is on. The rest are for
+   debugging and are all off in the release.
+
+### 1. Preferences
+
+#### Display
+
+| Setting | Default | Values | Description |
+|---|---|---|---|
+| `Renderer` | `D3D11` | `D3D11`, `D3D9` | The graphics API. D3D9 is a fixed-function Direct3D 9 renderer, and it's used automatically when Direct3D 11 is missing (Windows XP, very old cards). |
+| `Fullscreen` | `Borderless` | `Borderless`, `Exclusive` | *Borderless*: a borderless window covering the primary monitor at its current resolution. The desktop resolution never changes and Alt+Tab is instant. *Exclusive*: the game takes over the screen, Alt+Tab leaves fullscreen and it comes back when you return. This can help VSync on XP. Either way, the game renders at the resolution chosen in its own Options, scaled to the screen with its shape kept. |
+| `FullscreenMode` | `Desktop` | `Desktop`, `<w>x<h>`, `<w>x<h>@<Hz>` | With `Fullscreen=Exclusive` only: the screen mode. `Desktop` keeps the current mode. Without `@<Hz>`, the highest refresh rate is used. Example: `1024x768@85`. |
+| `VSync` | `1` | `0`, `1` | `1` waits for the monitor's refresh before showing each frame: no tearing, and the frame rate is limited to the refresh rate. `0` shows frames as soon as they are ready, with tearing where Windows allows it. |
+| `FrameCap` | `0` | `0`, frames/s | The most frames per second, on top of VSync. `0` = no cap. Useful with `VSync=0`. It does not change game speed. |
+| `WideFov` | `1` | `0`, `1` | `1` widens the view on widescreen resolutions, so you see more to the sides. `0` keeps the 4:3 width and crops the top and bottom, like the original. |
+| `Fov` | `0` | `0`, 20-150 | Field of view in degrees, as a 4:3 screen would show it. `0` = the game's default (77). `WideFov` widens it further on widescreen, and the zoom keys still step from it. |
+| `RendererLabel` | `1` | `0`, `1` | Shows "Direct3D 11" or "Direct3D 9" in the bottom right corner of the menus, only while no 3D scene is being drawn. |
+
+#### Graphics quality
+
+| Setting | Default | Values | Description |
+|---|---|---|---|
+| `Antialiasing` | `4` | `0`/`1` (off), `2`, `4`, `8` | Multisample antialiasing (MSAA) of the 3D scene. If the card can't do the number asked for, the next lower one is used. |
+| `Anisotropy` | `16` | `0`/`1` (off), 2-16 | Anisotropic filtering, which keeps the ground sharp at shallow angles. It's capped at what the card supports. |
+| `MipBias` | `0` | -4 to 4 | Texture sharpness at a distance. Negative values are sharper but may shimmer (e.g. `-0.5`); positive values are softer. |
+| `ViewDistance` | `1` | 0.25-10 | Multiplies how far the game draws. The far clip, the distance objects such as trees are drawn to, and the fog move out together, so the fog still hides the edge. Higher values cost frame rate. |
+| `FogDistance` | `1` | 0.1-20 | Multiplies the fog distances on top of `ViewDistance` (`2` = fog starts twice as far away). Above 1, the edge of the drawn world may show unless `ViewDistance` is raised too. |
+| `ModelLod` | `1` | 0.25-10 | Detailed models stay this many times further away before the game switches to simpler versions. |
+| `TreeDetailDistance` | `1` | `0`, `1` | `0` makes every tree use its sparse close-up version at any distance. It looks sparse and is for fun only. |
+| `AlphaCut` | `128` | 0-255 | For trees, flags and other cut-out pictures, pixels less opaque than this aren't drawn. This removes the stair-step fringe where tree edges hide what's behind them, a flaw of the original. `0` = the original look. Soft see-through layers (shadows, ground detail, supercross ground) are never affected. |
+| `TrueColorTextures` | `1` | `0`, `1` | Loads textures in full colour (24-bit, or 32-bit with alpha) wherever the picture has more than 16 bits; a bug made the game always use 16-bit. Most of the game's art is stored in 16-bit, so only a few textures change. Changing it renames unnamed dumped textures. |
+| `TextureReplace` | `1` | `0`, `1` | Uses replacement pictures from `textures\` in the game folder or in `%LOCALAPPDATA%\Motocross Madness 2\textures\` (the per-user folder wins). See [Texture dumping and replacement](#texture-dumping-and-replacement). |
+| `TextureDump` | `0` | `0`, `1` | Saves every texture the game loads as a PNG in `%LOCALAPPDATA%\Motocross Madness 2\textures_dump`, to start replacements from. Loading is slower while it's on. |
+
+#### Text and HUD
+
+| Setting | Default | Values | Description |
+|---|---|---|---|
+| `GpuText` | `1` | `0`, `1` | The game's menu and HUD text is drawn by the graphics card, antialiased, at screen resolution. `0` = the game's own text, drawn at the game's resolution and scaled up. |
+| `HudText` | `1` | `0`, `1` | Redraws the race HUD panels (position, lap, times, stunt score) and the rider name labels sharply, using the sizes and fonts below. Needs `GpuText=1`. |
+| `HudScale` | `2` | 1-4 | Size of the race HUD text panels (`1` = original). |
+| `LabelScale` | `1.5` | 1-4 | Size of the name labels over the riders (`1` = original). Names that would be too long are shrunk to fit. |
+| `LineWidth` | `3` | 1-16 | Width in pixels of the speedometer needle, antialiased (`1` = original thin line). |
+| `HudFont` | `FONTS\ContrailOne-Regular.ttf` | .ttf path | Font for the HUD panel and name label text, relative to the game folder or a full path. It's used by the game only and isn't installed in Windows. Empty = the game's fonts. |
+| `HudDigitFont` | `FONTS\DSEG7Classic-BoldItalic.ttf` | .ttf path | Font for the numbers in the race stats panel (times, position, lap); words keep `HudFont`. Characters it lacks fall back to `HudFont`. Empty = `HudFont`. |
+| `HudDigitSize` | `0.7` | 0.5-2 | Size of those numbers relative to the words beside them. |
+| `HudStuntTextSize` | `0.8` | 0.5-1.5 | Stunt events: size of the score panel's text relative to the race panel's. |
+
+#### Race direction arrow
+
+| Setting | Default | Values | Description |
+|---|---|---|---|
+| `ArrowFix` | `1` | `0`, `1` | The green direction arrow (bottom left) points at the next gate. `0` = the original arrow, which leans toward the screen centre because of a perspective bug. |
+| `ArrowTurn` | `0.8` | 0-2 | How much of that correction is applied (`1.0` = the full correction). Lower it if the arrow points left of a gate straight ahead, and raise it if it points right. |
+| `ArrowTilt` | `10` | -45 to 45 | Degrees the arrow's nose is raised so it's seen a little from above (`0` = level, as in the original). |
+| `ArrowScale` | `2.0` | 0.25-8 | Size of the arrow (`1.0` = original). |
+
+### 2. Advanced: changing these is not recommended
+
+These settings keep the game starting, saving and playing correctly on modern
+PCs. Changing them can stop the game from starting, lose settings or saves,
+make bikes and computer riders behave differently, make motion judder, or
+bring back bugs of the original game. Leave them alone unless you're
+troubleshooting.
+
+#### Compatibility
+
+| Setting | Default | Values | Description |
+|---|---|---|---|
+| `Startup` | `1` | `0`, `1` | No video card picker (the primary display adapter is used) and no "detected a change in your video hardware" box. `0` = the original prompts. |
+| `Registry` | `1` | `0`, `1` | The game's settings are kept in `HKCU\Software\mcm2fix\Motocross Madness 2`; on first run, settings from an earlier install in HKLM are copied there. `0` = the original HKLM key, which needs administrator rights. |
+| `Files` | `1` | `0`, `1` | Everything the game writes (profiles, replays, ghosts, tracks, circuits, its own .ini and log files) goes to `%LOCALAPPDATA%\Motocross Madness 2`, and is read from there first. `0` = the game folder, which fails under Program Files without admin rights. Saves made with `1` aren't seen with `0`. |
+| `OneCore` | `0` | `0`, `1` | `1` runs the game on one CPU core. This was an old workaround for a startup hang that is now fixed, and it costs performance. |
+
+#### Simulation and timing
+
+| Setting | Default | Values | Description |
+|---|---|---|---|
+| `SimRate` | `30` | `0`, 10-1000 | During races, the physics and AI run this many steps per second whatever the frame rate. They were tuned at low frame rates and go wrong when stepped faster, so 30 is the tested value. `0` = one step per drawn frame, the original behaviour (bikes and AI misbehave at high frame rates). Menus always step once per frame. |
+| `SimSmooth` | `1` | `0`, `1` | With `SimRate`, each frame shows the camera, bikes, riders, shadows and name labels blended between the last two steps. Motion is smooth at any refresh rate, with one step (1/30 s) of delay. `0` = motion judders at 30 steps a second. |
+| `PreciseTimer` | `1` | `0`, `1` | Measures the game's frame time with `QueryPerformanceCounter` instead of whole milliseconds. It's only used with `SimRate=0`; with `SimRate`, the precise timer is always used. |
+| `FrameFix` | `1` | `0`, `1` | Some effects the game applies once per step rather than per second (steering and lean speed, spin damping, bodies coming to rest, camera zoom) are scaled to the real step length. With `SimRate=30` and `RefRate=30`, race steps are unchanged; it matters in menus and with `SimRate=0`. |
+| `RefRate` | `30` | 10-240 | The step rate `FrameFix` treats those effects as tuned for. |
+| `AiRate` | `30` | `0`, steps/s | Computer riders re-plan their racing line at most this many times a second (`0` = every step). It only has an effect when lower than `SimRate`, or with `SimRate=0`. |
+| `AiSteerRate` | `0` | `0`, degrees/s | The fastest a computer rider's front wheel can turn (`0` = no limit, as in the original). Other values change how the AI rides. |
+| `RestartFix` | `1` | `0`, `1` | Restart Race puts every rider back on their start position facing the course, and FINAL LAP shows again. `0` = the original bugs: riders who had crashed or left the track restart in the wrong place or facing the wrong way. |
+
+#### Sound and performance
+
+| Setting | Default | Values | Description |
+|---|---|---|---|
+| `AsyncSound` | `2` | `0`, `1`, `2` | Where the 3D sound position update runs. The game makes it every physics step, and it's slow on Windows 10/11 because it holds the sound system's lock. `2` = a worker thread, started while the frame waits for VSync. `1` = a worker thread, started at once. `0` = the game thread, as in the original (can cause stutter). |
+| `SoundMaxDistanceMute` | `1` | `0`, `1` | mcm2fix mutes 3D sounds beyond their maximum distance, as Windows' DirectSound does. This is needed with DSOAL, which ignores that rule and otherwise leaves quiet looping fragments of distant riders' sounds. |
+| `FastCrt` | `1` | `0`, `1` | The game's millisecond clock uses `QueryPerformanceCounter` instead of changing the Windows timer period on every call, and its case-insensitive name comparisons use a lookup table. Both were measurable slowdowns. |
+| `StateCache` | `1` | `0`, `1` | Direct3D 11 only: renderer state that's already set isn't sent again for every draw. `0` is slower and is for troubleshooting rendering problems. |
+
+### 3. Logging
+
+`Log=1` writes one short log per run; please include the newest one with any
+problem report. Everything else here is for debugging: it slows the game down
+and makes the log much bigger. All of it is off by default, so turn one on
+only when asked to. Logs go to `%LOCALAPPDATA%\Motocross Madness 2\logs`.
 
 | Setting | Default | Description |
 |---|---|---|
-| `Log` | `1` | Write a log per run to `%LOCALAPPDATA%\Motocross Madness 2\logs\` (newest 50 kept). |
-| `Startup` | `1` | Pick the video card automatically and skip the "detected a change" box. |
-| `Registry` | `1` | Keep the game's settings in `HKCU\Software\mcm2fix\Motocross Madness 2` instead of HKLM. |
-| `Files` | `1` | Send the game's file writes to `%LOCALAPPDATA%\Motocross Madness 2` (overlay on the game folder). |
-| `OneCore` | `0` | Pin the game to one CPU core. This was the old workaround for the startup race and isn't needed now. |
-
-### Display and renderer
-
-| Setting | Default | Description |
-|---|---|---|
-| `Renderer` | `D3D11` | `D3D11` or `D3D9`. D3D9 is used automatically when Direct3D 11 is missing. |
-| `Fullscreen` | `Borderless` | `Borderless` (a window covering the screen) or `Exclusive` (owns the screen; Alt+Tab leaves it). |
-| `FullscreenMode` | `Desktop` | Exclusive only: `Desktop` (keep the current mode) or `<width>x<height>[@<Hz>]`, e.g. `1024x768@85`. |
-| `VSync` | `1` | Wait for the monitor's refresh. `0` = no wait (tears if the system allows it). |
-| `FrameCap` | `0` | Most frames per second. `0` = no cap beyond VSync. |
-| `WideFov` | `1` | Widescreen modes show more to the sides. `0` = crop top and bottom like the original. |
-| `Fov` | `0` | Field of view in degrees as a 4:3 screen shows it, 20-150. `0` = game default (77). The zoom keys still step from it. |
-| `RendererLabel` | `1` | Show the active renderer (Direct3D 9 / 11) in the bottom right corner of the menus. |
-
-### Graphics quality
-
-| Setting | Default | Description |
-|---|---|---|
-| `Antialiasing` | `4` | Multisample antialiasing of the 3D scene: `0`/`1` = off, `2`, `4` or `8`. |
-| `Anisotropy` | `16` | Anisotropic texture filtering: `0`/`1` = off, `2`-`16`. |
-| `MipBias` | `0` | Texture sharpness at a distance, -4 to 4. Negative = sharper (e.g. `-0.5`), positive = softer. |
-| `ViewDistance` | `1` | Multiplies how far the game draws, 0.25-10. Far clip, object culling and fog move together. |
-| `FogDistance` | `1` | Multiplies the fog distances on top of `ViewDistance`, 0.1-20 (`2` = fog starts twice as far away). |
-| `ModelLod` | `1` | Detailed models stay this many times further away before switching to simpler ones, 0.25-10. |
-| `TreeDetailDistance` | `1` | `0` = every tree uses its sparse close-up version at any distance (looks bad; for fun). |
-| `AlphaCut` | `128` | Trees and flags: drop pixels less opaque than this (0-255), which removes the fringe where trees hide flags behind them. `0` = original look. |
-| `TrueColorTextures` | `1` | Load textures in full colour (24-bit, 32-bit with alpha) instead of the game's 16-bit, where the source has more than 16 bits. |
-| `TextureReplace` | `1` | Draw pictures from `textures\` in place of the game's textures. |
-| `TextureDump` | `0` | Save every texture the game loads to `%LOCALAPPDATA%\Motocross Madness 2\textures_dump`. |
-
-### Text and HUD
-
-| Setting | Default | Description |
-|---|---|---|
-| `GpuText` | `1` | Draw the game's menu and HUD text (GDI) on the GPU, antialiased, at screen resolution. |
-| `HudText` | `1` | With `GpuText`: the race HUD panels' text is drawn sharp by mcm2fix. |
-| `HudScale` | `2` | Race HUD text panels (position, lap, times) drawn this many times larger. `1` = original. |
-| `LabelScale` | `1.5` | Name labels over the riders drawn this many times larger. `1` = original. |
-| `LineWidth` | `3` | Speedometer needle width in pixels, antialiased, 1-16. `1` = original thin line. |
-| `HudFont` | `FONTS\ContrailOne-Regular.ttf` | A .ttf (relative to the game folder) for the HUD panel and name label text. Empty = the game's fonts. |
-| `HudDigitFont` | `FONTS\DSEG7Classic-BoldItalic.ttf` | A .ttf for the numbers in the stats panel (times, position, lap). Words keep `HudFont`. Empty = same as `HudFont`. |
-| `HudDigitSize` | `0.7` | Size of those numbers relative to the words beside them, 0.5-2. |
-| `HudStuntTextSize` | `0.8` | Stunt events: size of the score panel's text, 0.5-1.5 (`1` = as big as the race panel's). |
-
-### Frame pacing and simulation
-
-| Setting | Default | Description |
-|---|---|---|
-| `SimRate` | `30` | Races run this many simulation steps per second whatever the frame rate, 10-1000. `0` = one step per frame (the original way). 30 is the tested value. |
-| `SimSmooth` | `1` | Draw the camera, bikes, riders, shadows and names blended between simulation steps (smooth at any frame rate, one step of delay). `0` = show each step as it is. |
-| `PreciseTimer` | `1` | The game's frame time comes from `QueryPerformanceCounter` instead of whole milliseconds. |
-| `FrameFix` | `1` | Steps the game applies once per frame scale with frame time. `0` = original. |
-| `RefRate` | `30` | The frame rate those per-frame steps are treated as tuned for, 10-240. |
-| `AiRate` | `30` | Computer riders re-plan their line this many times a second. `0` = every frame. |
-| `AiSteerRate` | `0` | Fastest a computer rider's front wheel can turn, degrees per second. `0` = no limit. |
-
-### Gameplay fixes
-
-| Setting | Default | Description |
-|---|---|---|
-| `RestartFix` | `1` | Restart Race puts every rider back on the grid facing the course, and FINAL LAP shows again. `0` = original bug. |
-| `ArrowFix` | `1` | The race direction arrow points the right way. `0` = original (leans toward the screen centre). |
-| `ArrowTurn` | `0.8` | How much of that correction to apply, 0-2 (`1.0` = full; lower it if the arrow points left of a gate dead ahead). |
-| `ArrowTilt` | `10` | Degrees the arrow's nose is raised so it is seen a little from above, -45 to 45 (`0` = level). |
-| `ArrowScale` | `2.0` | Size of the race direction arrow, 0.25-8 (`1.0` = original). |
-
-### Sound and performance
-
-| Setting | Default | Description |
-|---|---|---|
-| `AsyncSound` | `2` | The 3D sound listener update the game makes every physics step runs on a worker thread, started while the frame waits for VSync. `1` = started at once, `0` = on the game thread. |
-| `SoundMaxDistanceMute` | `1` | 3D sounds further away than their max distance are muted by mcm2fix, as Windows' DirectSound does (DSOAL doesn't). |
-| `FastCrt` | `1` | The game's millisecond clock reads `QueryPerformanceCounter` (no timer-period change per call), and its case-insensitive name compares use a table. `0` = the game's own code. |
-| `StateCache` | `1` | Direct3D 11: state already bound isn't sent again for every draw. |
-
-### Debugging
-
-These settings are for diagnosing problems. Each one adds lines to the log,
-or files to `logs\`.
-
-| Setting | Default | Description |
-|---|---|---|
-| `D3D9Log` | `1` | Extra Direct3D 9 renderer logging (device caps, first frames, fallbacks). |
-| `DDStats` | `0` | Log renderer activity every 2 seconds. |
-| `Profile` | `0` | Performance profile: frame times, timed sections, GPU time and a sampling profile of the game thread, in `logs\perf-*.csv` / `perf-samples-*.txt` (summarise with `tools/perf_report.py`). |
-| `ProfileSampleUs` | `1000` | How often (microseconds) `Profile` samples the game thread. `0` = no sampling. |
-| `ActivateLog` | `0` | Log window activation. |
-| `RegLog` | `0` | Log every registry call. |
-| `TextLog` | `0` | Log GPU text drawing and what erases it. |
-| `GdiLog` | `0` | Log the GDI calls (text, boxes, lines) the game draws onto the screen with. |
-| `TextureLog` | `0` | Log the format of each texture the game creates. |
-| `SoundLog` | `0` | Log 3D sound buffers and when they are muted / unmuted. |
-| `RestartLog` | `0` | Log the start grid at race load and on Restart Race. |
-| `ArrowLog` | `0` | Log the arrow placement for a few seconds after each race start. |
-| `AlphaLog` | `0` | Log each blended / alpha-tested draw combination and whether `AlphaCut` applied. |
-| `SmoothLog` | `0` | Trace `SimSmooth`: `1` = matrices and draws for a few frames, `2` = camera only (120 frames), `3` = rider shadows, `4` = camera and projection after each race start. |
+| `Log` | `1` | Writes `logs\mcm2fix-<date>-<time>.log` each run (the newest 50 are kept): Windows version, these settings, the renderer chosen and any problems. `0` = no log. |
+| `D3D9Log` | `0` | Direct3D 9 renderer details: card capabilities, the first frames, fallbacks. |
+| `DDStats` | `0` | Renderer activity (draws, uploads, surfaces) every 2 seconds. |
+| `Profile` | `0` | Performance profile: frame times, timed sections, GPU time and a sampling profile of the game thread, in `logs\perf-*.csv` and `logs\perf-samples-*.txt` (summarise with `tools/perf_report.py`). It costs some frame rate. |
+| `ProfileSampleUs` | `1000` | With `Profile=1`, how often the game thread is sampled, in microseconds. `0` = timings only. |
+| `ActivateLog` | `0` | Window activation (the game pauses while in the background). |
+| `RegLog` | `0` | Every registry call the game makes. |
+| `TextLog` | `0` | GPU text drawing and what erases it. |
+| `GdiLog` | `0` | The GDI calls (text, boxes, lines) the game draws onto the screen with. |
+| `TextureLog` | `0` | The format of each texture the game creates. |
+| `SoundLog` | `0` | 3D sound buffers, and when `SoundMaxDistanceMute` mutes or unmutes them. |
+| `RestartLog` | `0` | The start grid when a race loads and on Restart Race. |
+| `ArrowLog` | `0` | The direction arrow's placement for a few seconds after each race start. |
+| `AlphaLog` | `0` | Each kind of see-through draw, and whether `AlphaCut` applied to it. |
+| `SmoothLog` | `0` | `SimSmooth` tracing: `1` = matrices and draws for a few frames, `2` = camera only (120 frames), `3` = rider shadows, `4` = camera and projection after each race start. |
 
 The shipped `mcm2fix.ini` is generated from the block in
 [code/README.md](code/README.md) by `tools/package.sh`, and the parser is
