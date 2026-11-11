@@ -85,6 +85,10 @@ std::vector<Buffer*> g_buffers;
 void* g_listener = nullptr;
 Vec g_listener_pos{};
 bool g_listener_set = false;  // no muting until the game has placed the listener
+bool g_dirty = false;         // deferred 3D changes waiting for CommitDeferredSettings
+volatile LONG g_deferred = 0, g_immediate = 0, g_commit_checks = 0;
+constexpr DWORD kDeferred = 1;  // DS3D_DEFERRED
+constexpr float kUnmuteFraction = 0.98f;  // back in range only below 98% of max distance
 CRITICAL_SECTION g_cs;
 int g_next_id = 0;
 bool g_log = false;
@@ -139,7 +143,10 @@ float Distance(const Buffer& b) {
 void Update(Buffer& b, const char* why) {
   if (!(b.flags & kCapsMuteMax) || !b.buffer || !g_listener_set) return;
   const float dist = Distance(b);
-  const bool out = b.mode != kModeDisable && dist > b.max_dist;
+  // A muted sound must come a little closer than max distance to be heard
+  // again, so one sitting right on the edge doesn't flip every frame.
+  const float limit = b.muted ? b.max_dist * kUnmuteFraction : b.max_dist;
+  const bool out = b.mode != kModeDisable && dist > limit;
   if (out == b.muted) return;
   b.muted = out;
   const HRESULT hr = reinterpret_cast<SetVolumeFn>(Orig(b.buffer, 0x3c / 4))(b.buffer, out ? kVolumeMin : b.volume);
@@ -148,6 +155,20 @@ void Update(Buffer& b, const char* why) {
     patch::Log("sound: buffer #%d %s (%s): distance %.1f, max %.1f, mode %lu, %s%s, game volume %ld, hr %08lx", b.id,
                out ? "muted" : "unmuted", why, dist, b.max_dist, b.mode, b.playing ? "playing" : "stopped",
                b.looping ? " looping" : "", b.volume, static_cast<unsigned long>(hr));
+}
+
+// Windows' DirectSound applies deferred 3D settings, and so the mute, at
+// CommitDeferredSettings. Checking at each call instead sees the listener
+// moved but a sound not yet (or the other way round), which flipped sounds
+// near the edge every frame (perf-18).
+void Changed(Buffer& b, DWORD apply, const char* why) {
+  if (apply & kDeferred) {
+    g_dirty = true;
+    InterlockedIncrement(&g_deferred);
+  } else {
+    InterlockedIncrement(&g_immediate);
+    Update(b, why);
+  }
 }
 
 void Summary() {
@@ -161,10 +182,13 @@ void Summary() {
     playing_muted += b->playing && b->muted;
   }
   patch::Log("sound: 10s: %d 3D buffers tracked, %d muted now, %d playing (%d of them muted); %ld mutes, %ld unmutes, "
-             "%ld plays started out of range, %ld volume changes held while muted; listener at %.1f %.1f %.1f",
+             "%ld plays started out of range, %ld volume changes held while muted; listener at %.1f %.1f %.1f; "
+             "3D changes %ld deferred / %ld immediate, %ld commits checked",
              static_cast<int>(g_buffers.size()), muted, playing, playing_muted, InterlockedExchange(&g_mutes, 0),
              InterlockedExchange(&g_unmutes, 0), InterlockedExchange(&g_plays_out, 0),
-             InterlockedExchange(&g_vol_held, 0), g_listener_pos.x, g_listener_pos.y, g_listener_pos.z);
+             InterlockedExchange(&g_vol_held, 0), g_listener_pos.x, g_listener_pos.y, g_listener_pos.z,
+             InterlockedExchange(&g_deferred, 0), InterlockedExchange(&g_immediate, 0),
+             InterlockedExchange(&g_commit_checks, 0));
 }
 
 void Forget(Buffer* b) {
@@ -305,7 +329,7 @@ HRESULT WINAPI SetAllParameters3D(void* self, const Ds3dBuffer* p, DWORD apply) 
     b->pos = p->pos;
     b->max_dist = p->max_dist;
     b->mode = p->mode;
-    Update(*b, "all parameters");
+    Changed(*b, apply, "all parameters");
   }
   return hr;
 }
@@ -321,7 +345,7 @@ HRESULT WINAPI SetMaxDistance(void* self, float d, DWORD apply) {
       patch::Log("sound: buffer #%d max distance %.1f", b->id, d);
     }
     b->max_dist = d;
-    Update(*b, "max distance");
+    Changed(*b, apply, "max distance");
   }
   return hr;
 }
@@ -333,7 +357,7 @@ HRESULT WINAPI SetMode(void* self, DWORD mode, DWORD apply) {
   Buffer* b = Find(self);
   if (b && SUCCEEDED(hr)) {
     b->mode = mode;
-    Update(*b, "mode");
+    Changed(*b, apply, "mode");
   }
   return hr;
 }
@@ -345,7 +369,7 @@ HRESULT WINAPI SetPosition3D(void* self, float x, float y, float z, DWORD apply)
   Buffer* b = Find(self);
   if (b && SUCCEEDED(hr)) {
     b->pos = {x, y, z};
-    Update(*b, "position");
+    Changed(*b, apply, "position");
   }
   return hr;
 }
@@ -360,19 +384,39 @@ void Hook3D(void* obj) {
 
 // ---------------------------------------------------- IDirectSound3DListener
 
-void ListenerMoved(const Vec& p) {
+void ListenerMoved(const Vec& p, DWORD apply) {
   if (!g_listener_set) patch::Log("sound: listener first placed at %.1f %.1f %.1f, muting starts", p.x, p.y, p.z);
   g_listener_set = true;
   g_listener_pos = p;
+  if (apply & kDeferred) {
+    g_dirty = true;
+    InterlockedIncrement(&g_deferred);
+    return;
+  }
+  InterlockedIncrement(&g_immediate);
   for (Buffer* b : g_buffers) Update(*b, "listener moved");
   Summary();
+}
+
+// Runs where the commit runs (the AsyncSound worker or the game thread).
+HRESULT WINAPI ListenerCommit(void* self) {
+  using Fn = HRESULT(WINAPI*)(void*);
+  const HRESULT hr = reinterpret_cast<Fn>(Orig(self, 0x44 / 4))(self);
+  Lock lock;
+  if (g_dirty) {
+    g_dirty = false;
+    InterlockedIncrement(&g_commit_checks);
+    for (Buffer* b : g_buffers) Update(*b, "commit");
+  }
+  Summary();
+  return hr;
 }
 
 HRESULT WINAPI ListenerSetAll(void* self, const Ds3dListener* p, DWORD apply) {
   using Fn = HRESULT(WINAPI*)(void*, const Ds3dListener*, DWORD);
   const HRESULT hr = reinterpret_cast<Fn>(Orig(self, 0x28 / 4))(self, p, apply);
   Lock lock;
-  if (self == g_listener && p && SUCCEEDED(hr)) ListenerMoved(p->pos);
+  if (self == g_listener && p && SUCCEEDED(hr)) ListenerMoved(p->pos, apply);
   return hr;
 }
 
@@ -380,13 +424,14 @@ HRESULT WINAPI ListenerSetPosition(void* self, float x, float y, float z, DWORD 
   using Fn = HRESULT(WINAPI*)(void*, float, float, float, DWORD);
   const HRESULT hr = reinterpret_cast<Fn>(Orig(self, 0x38 / 4))(self, x, y, z, apply);
   Lock lock;
-  if (self == g_listener && SUCCEEDED(hr)) ListenerMoved({x, y, z});
+  if (self == g_listener && SUCCEEDED(hr)) ListenerMoved({x, y, z}, apply);
   return hr;
 }
 
 void HookListener(void* obj) {
   Hook(obj, 0x28 / 4, reinterpret_cast<void*>(&ListenerSetAll));
   Hook(obj, 0x38 / 4, reinterpret_cast<void*>(&ListenerSetPosition));
+  Hook(obj, 0x44 / 4, reinterpret_cast<void*>(&ListenerCommit));
 }
 
 // ------------------------------------------------------------- IDirectSound
