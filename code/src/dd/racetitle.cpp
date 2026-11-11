@@ -53,6 +53,12 @@ constexpr uintptr_t kOnline = 0x3428;
 constexpr uintptr_t kDropStart = 0x520840;  // DropTextOverlay start (thiscall)
 constexpr uintptr_t kDropStartCalls[] = {0x405C76, 0x50A7B6};
 constexpr uintptr_t kDropText = 0x48;
+// Podium cutscene (0x45f610 -> 0x45e490 sets it up, then game+0x3430 = 1).
+constexpr uintptr_t kPodium = 0x3430, kPodium4 = 0x3434, kPodium8 = 0x3438;
+// Every other text queue add, logged with RaceTitleLog (finding the podium's
+// "You have finished" text).
+constexpr uintptr_t kQueueAddCalls[] = {0x41E2B1, 0x41E717, 0x42080F, 0x420A2C, 0x420B35, 0x4607DD, 0x4608EA, 0x497287,
+                                        0x497908, 0x497B11, 0x4992D6, 0x4E54B0, 0x4E5AD2, 0x4E5BE3, 0x4E9415};
 
 // Timing (seconds).
 constexpr float kLineTime = 0.30f;   // dot -> full line
@@ -204,6 +210,40 @@ void Start(uintptr_t race) {
 void __fastcall CountdownInitHook(uintptr_t race, void* edx) {
   reinterpret_cast<InitFn>(kCountdownInit)(race, edx);
   if (GetConfig().race_title || GetConfig().announcer) Start(race);
+}
+
+__attribute__((noinline)) void __fastcall QueueAddLogHook(uintptr_t queue, void* edx, const char* item) {
+  const uintptr_t ret = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+  char text[0x81] = {};
+  if (item) std::memcpy(text, item, 0x80);
+  Log("race title: text queue %08x add from %08x: \"%s\" (%.2f s)", static_cast<unsigned>(queue),
+      static_cast<unsigned>(ret - 5), text, item ? Rd<float>(reinterpret_cast<uintptr_t>(item) + 0x80) : 0.0f);
+  reinterpret_cast<QueueAddFn>(kQueueAdd)(queue, edx, item);
+}
+
+// Podium cutscene watch (RaceTitleLog): when it starts and ends, and what
+// the fields next to the flag do meanwhile.
+void PodiumWatch() {
+  if (!Logging()) return;
+  static int last = -1;
+  static double start = 0, last_trace = 0;
+  const uintptr_t game = Rd<uintptr_t>(kGame);
+  if (!game) return;
+  const int on = Rd<int>(game + kPodium);
+  const double now = Now();
+  const uint32_t a = Rd<uint32_t>(game + kPodium4), b = Rd<uint32_t>(game + kPodium8);
+  float fa, fb;
+  std::memcpy(&fa, &a, 4);
+  std::memcpy(&fb, &b, 4);
+  if (on != last) {
+    if (on) start = now;
+    Log("podium: game+3430 %d -> %d (%.2f s since start); +3434 %08x (%g) +3438 %08x (%g)", last, on,
+        on ? 0.0 : now - start, a, fa, b, fb);
+    last = on;
+  } else if (on && now - last_trace >= 0.5) {
+    last_trace = now;
+    Log("podium: %.2f s: +3434 %08x (%g) +3438 %08x (%g)", now - start, a, fa, b, fb);
+  }
 }
 
 // FINAL LAP: the HUD update (0x405c10 / 0x50a750) starts its DropTextOverlay
@@ -406,6 +446,11 @@ void InstallRaceTitleHooks() {
   int calls = 0;
   for (uintptr_t site : kCountdownCalls)
     calls += PatchCall(site, kCountdownInit, reinterpret_cast<const void*>(&CountdownInitHook)) ? 1 : 0;
+  int qlog = 0;
+  if (c.race_title_log)
+    for (uintptr_t site : kQueueAddCalls)
+      qlog += PatchCall(site, kQueueAdd, reinterpret_cast<const void*>(&QueueAddLogHook)) ? 1 : 0;
+  if (qlog) Log("race title: %d text queue adds logged", qlog);
   int drops = 0;
   for (uintptr_t site : kDropStartCalls)
     drops += PatchCall(site, kDropStart, reinterpret_cast<const void*>(&DropStartHook)) ? 1 : 0;
@@ -530,6 +575,7 @@ void RaceTitleDraw(Surface* rt) {
   if (!rt || g.drawn_this_frame) return;
   if (rt->Width() < 320 || rt->Height() < 200) return;  // not the screen
   g.drawn_this_frame = true;
+  PodiumWatch();
   AnnouncerTick();
   if (!g.active && !fl.active) return;
   const Config& cfg = GetConfig();
