@@ -315,11 +315,36 @@ void KeepBikesOnGrid(uintptr_t race) {
   g_nspots = 0;
 }
 
+// The race's engine sound manager (BikeRace+0x44, vtable 0x55c990, update
+// 0x4e84a0) keeps a voice record per bike (stride 0x54 at +0x98) with its
+// engine sound state machine. The constructor sets +0x1208 so the first
+// update re-initialises the records (0x4e81a0) and starts the idle loops;
+// Restart Race never does, so bikes that were driving kept their driving
+// engine sound through the countdown. Ask for the same re-initialisation,
+// and free the four near-voice slots (+0x44c) the old records held.
+constexpr uintptr_t kEngineSoundVtable = 0x55C990;
+
+void ResetEngineSounds(uintptr_t race) {
+  const uintptr_t mgr = Rd<uintptr_t>(race + 0x44);
+  if (!mgr || Rd<uintptr_t>(mgr) != kEngineSoundVtable) {
+    patch::Log("restart: engine sound manager not found (race+0x44 = %08x, vtable %08x), engine sounds not reset",
+               static_cast<unsigned>(mgr), static_cast<unsigned>(Rd<uintptr_t>(mgr)));
+    return;
+  }
+  for (int i = 0; i < 4; ++i) *reinterpret_cast<int*>(mgr + 0x44c + 4 * i) = 0;
+  *reinterpret_cast<int*>(mgr + 0x1208) = 1;
+  patch::Log("restart: engine sounds reset (manager %08x, %d voices)", static_cast<unsigned>(mgr),
+             Rd<int>(mgr + 0x94));
+}
+
 void __fastcall RestartHook(uintptr_t self, void*, int a, int b, int c) {
   ++g_restarts;
   if (!GetConfig().restart_log) {
     g_restart(self, nullptr, a, b, c);
-    if (GetConfig().restart_fix) PlaceBikesOnGrid(self);
+    if (GetConfig().restart_fix) {
+      PlaceBikesOnGrid(self);
+      ResetEngineSounds(self);
+    }
     return;
   }
   patch::Log("restart: Restart Race race=%08x args=%d,%d,%d nbikes=%d", static_cast<unsigned>(self), a, b,
@@ -335,6 +360,7 @@ void __fastcall RestartHook(uintptr_t self, void*, int a, int b, int c) {
   patch::Log("restart: bikes right after restart");
   LogBikes(self, true);
   if (GetConfig().restart_fix) {
+    ResetEngineSounds(self);
     PlaceBikesOnGrid(self);
     patch::Log("restart: bikes after placing them");
     LogBikes(self, true);
