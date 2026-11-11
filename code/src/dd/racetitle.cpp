@@ -12,6 +12,7 @@
 #include "gdihook.h"
 #include "gputext.h"
 #include "hudtext.h"
+#include "oneshot.h"
 #include "surface.h"
 
 // Race title intro (ini RaceTitle=1).
@@ -93,7 +94,14 @@ struct State {
   unsigned frames = 0, inits = 0, names = 0, swallowed = 0, no_dc = 0, lost = 0;
   double last_trace = 0;
   bool drawn_this_frame = false;
+  // Announcer: countdown voices at whole seconds left, air horn at the start.
+  bool snd_active = false;
+  float snd_prev = 0;
 } g;
+
+const char* const kCountWav[] = {"one.wav", "two.wav", "three.wav", "four.wav", "five.wav"};
+constexpr const char* kGoWav = "airhorn.wav";
+constexpr const char* kFinalLapWav = "finallap.wav";
 
 // FINAL LAP banner.
 struct FinalLap {
@@ -176,6 +184,13 @@ void Start(uintptr_t race) {
   g.phase = -1;
   g.frames = 0;
   g.active = true;  // the name may come later (the HUD can be built after the countdown is set)
+  g.snd_active = GetConfig().announcer && !g.real_time;
+  g.snd_prev = left;
+  if (g.snd_active) {
+    for (const char* w : kCountWav) OneShotPreload(w);
+    OneShotPreload(kGoWav);
+    OneShotPreload(kFinalLapWav);
+  }
   const uintptr_t game = Rd<uintptr_t>(kGame);
   char why[160] = {};
   g.sub = game ? Subtitle(game, why, sizeof(why)) : std::string();
@@ -188,7 +203,7 @@ void Start(uintptr_t race) {
 
 void __fastcall CountdownInitHook(uintptr_t race, void* edx) {
   reinterpret_cast<InitFn>(kCountdownInit)(race, edx);
-  if (GetConfig().race_title) Start(race);
+  if (GetConfig().race_title || GetConfig().announcer) Start(race);
 }
 
 // FINAL LAP: the HUD update (0x405c10 / 0x50a750) starts its DropTextOverlay
@@ -203,6 +218,7 @@ void __fastcall DropStartHook(uintptr_t overlay, void* edx) {
   ++fl.starts;
   Log("final lap: drop text \"%s\" (overlay %08x) %s", t, static_cast<unsigned>(overlay),
       take ? "shown as a banner instead" : "left to the game");
+  if (GetConfig().announcer) OneShotPlay(kFinalLapWav, "final lap");
   if (!take) {
     reinterpret_cast<InitFn>(kDropStart)(overlay, edx);
     return;
@@ -373,8 +389,8 @@ void DrawBanner(Surface* rt, const std::string& name, const std::string& sub, co
 
 void InstallRaceTitleHooks() {
   const Config& c = GetConfig();
-  if (!c.race_title) {
-    Log("race title: off (RaceTitle=0), the game's corner text stays");
+  if (!c.race_title && !c.announcer) {
+    Log("race title: off (RaceTitle=0, Announcer=0), the game's corner text stays");
     return;
   }
   int ok = PatchCall(kNameAddCall, kQueueAdd, reinterpret_cast<const void*>(&NameAddHook)) ? 1 : 0;
@@ -384,9 +400,10 @@ void InstallRaceTitleHooks() {
   int drops = 0;
   for (uintptr_t site : kDropStartCalls)
     drops += PatchCall(site, kDropStart, reinterpret_cast<const void*>(&DropStartHook)) ? 1 : 0;
-  Log("race title: on (size %.2f); race name hook %s, %d of %d countdown calls hooked, %d of %d FINAL LAP starts "
+  Log("race title: %s (size %.2f), announcer %s (volume %d%%); race name hook %s, %d of %d countdown calls hooked, %d of %d FINAL LAP starts "
       "hooked",
-      c.race_title_size, ok ? "applied" : "MISSING", calls,
+ c.race_title ? "on" : "off", c.race_title_size, c.announcer ? "on" : "off", c.announcer_volume,
+      ok ? "applied" : "MISSING", calls,
       static_cast<int>(sizeof(kCountdownCalls) / sizeof(kCountdownCalls[0])), drops,
       static_cast<int>(sizeof(kDropStartCalls) / sizeof(kDropStartCalls[0])));
 }
@@ -468,14 +485,46 @@ void FinalLapBanner(Surface* rt) {
   DrawBanner(rt, fl.text, std::string(), p, "final lap", fl.frames, e, total, 0, fl.last_trace);
 }
 
+// Once per frame: a voice as the countdown passes 5, 4, 3, 2 and 1 seconds
+// left (only those within the countdown), the air horn when it runs out.
+void AnnouncerTick() {
+  OneShotTick();
+  if (!g.snd_active) return;
+  const uintptr_t race = g.race;
+  const float left = Rd<float>(race + kCountdownLeft);
+  if (Rd<uintptr_t>(race) != g.vtable || !(left >= -1.0f && left <= g.total + 0.5f)) {
+    Log("announcer: race %08x no longer counting down (left %.3f); stopped", static_cast<unsigned>(race), left);
+    g.snd_active = false;
+    return;
+  }
+  const float prev = g.snd_prev;
+  if (left >= prev) return;
+  g.snd_prev = left;
+  for (int n = 5; n >= 1; --n) {
+    if (prev > n && left <= n) {
+      char why[64];
+      std::snprintf(why, sizeof(why), "countdown %.3f s left, was %.3f", left, prev);
+      OneShotPlay(kCountWav[n - 1], why);
+    }
+  }
+  if (left <= 0) {
+    char why[64];
+    std::snprintf(why, sizeof(why), "countdown over (%.3f, was %.3f)", left, prev);
+    OneShotPlay(kGoWav, why);
+    g.snd_active = false;
+  }
+}
+
 }  // namespace
 
 void RaceTitleDraw(Surface* rt) {
-  if (!rt || g.drawn_this_frame || (!g.active && !fl.active)) return;
-  const Config& cfg = GetConfig();
-  if (!cfg.race_title || !GpuTextActive()) return;
+  if (!rt || g.drawn_this_frame) return;
   if (rt->Width() < 320 || rt->Height() < 200) return;  // not the screen
   g.drawn_this_frame = true;
+  AnnouncerTick();
+  if (!g.active && !fl.active) return;
+  const Config& cfg = GetConfig();
+  if (!cfg.race_title || !GpuTextActive()) return;
   CountdownBanner(rt);
   FinalLapBanner(rt);
 }

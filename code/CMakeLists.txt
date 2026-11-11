@@ -43,6 +43,7 @@ add_library(mcm2fix SHARED
   src/dd/drawlog.cpp
   src/dd/hudtext.cpp
   src/dd/racetitle.cpp
+  src/dd/oneshot.cpp
   src/dd/hook.cpp
   src/dd/msaa.cpp
   src/dd/texreplace.cpp

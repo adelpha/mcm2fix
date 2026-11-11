@@ -275,6 +275,16 @@ RaceTitle=1
 ; RaceTitleSize: size of that title, 0.5 to 2. Default 1.
 RaceTitleSize=1
 
+; Announcer: 1 = play WAV files from the game's SOUNDS\ folder, if they are
+; there: five.wav, four.wav, three.wav, two.wav and one.wav as the countdown
+; passes 5, 4, 3, 2 and 1 seconds left, airhorn.wav when the race starts and
+; finallap.wav when FINAL LAP shows (default). Missing files are skipped.
+; 8 or 16-bit PCM WAV. 0 = off.
+Announcer=1
+
+; AnnouncerVolume: volume of those sounds in percent, 0 to 100. Default 100.
+AnnouncerVolume=100
+
 ; --------------------------------------------------- Race direction arrow ----
 
 ; ArrowFix: 1 = the green race direction arrow (bottom left) points at the

@@ -34,6 +34,8 @@ struct Config {
   float hud_digit_size = 0.7f;    // HudDigitSize: size of those numbers relative to the text around them
   bool race_title = true;     // RaceTitle: countdown race name intro in the middle of the screen (0 = game's corner text)
   float race_title_size = 1.0f;  // RaceTitleSize: size of that title (0.5..2)
+  bool announcer = true;         // Announcer: countdown voices, air horn and final lap sounds from SOUNDS\ (when present)
+  int announcer_volume = 100;     // AnnouncerVolume: their volume in percent (0..100)
   bool race_title_log = false;   // RaceTitleLog: trace the race title intro
   bool hud_text = true;       // HudText: race HUD panel text (GDI turned into textures) drawn sharp too
   bool text_log = false;      // TextLog: log GPU text drawing (first calls, what erases it)
