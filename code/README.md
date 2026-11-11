@@ -380,6 +380,11 @@ FastCrt=1
 ; draw (slower; for troubleshooting rendering problems).
 StateCache=1
 
+; DrawBatch: 1 = 3D draws in a row with nothing changed between them (trees,
+; terrain, scenery) are sent to the graphics card as one draw (default). 0 =
+; send each draw the game makes on its own (for troubleshooting).
+DrawBatch=1
+
 ; =============================================================================
 ; 3. LOGGING
 ;
@@ -421,6 +426,15 @@ RegLog=0
 
 ; TextLog: GPU text drawing and what erases it. Default 0.
 TextLog=0
+
+; BatchLog: every 5 seconds, how many draws DrawBatch merged and what ended
+; each batch. Default 0.
+BatchLog=0
+
+; DrawLog: during races, which draw calls could be merged into fewer (per game
+; call site, plus a few whole frames listed draw by draw). Costs about 1.5 ms
+; a frame. Default 0.
+DrawLog=0
 
 ; GdiLog: the GDI calls (text, boxes, lines) the game draws onto the screen
 ; with. Default 0.

@@ -121,6 +121,10 @@ Windows 10 and 11.
   the slow CRT locale path (`FastCrt`).
 - Direct3D 11 state caching (`StateCache`), batched GPU text and cheaper
   texture uploads.
+- Draw batching: runs of 3D draws with nothing changed between them (trees,
+  terrain, scenery) go to the graphics card as one draw, about three times
+  fewer per frame (`DrawBatch`). Still scenery skips the smoothing blend, and
+  the race HUD text no longer asks Windows for font details every frame.
 - A built-in profiler for finding hitches (`Profile`).
 
 ### Other
@@ -373,6 +377,7 @@ troubleshooting.
 | `SoundMaxDistanceMute` | `1` | `0`, `1` | mcm2fix mutes 3D sounds beyond their maximum distance, as Windows' DirectSound does. This is needed with DSOAL, which ignores that rule and otherwise leaves quiet looping fragments of distant riders' sounds. |
 | `FastCrt` | `1` | `0`, `1` | The game's millisecond clock uses `QueryPerformanceCounter` instead of changing the Windows timer period on every call, and its case-insensitive name comparisons use a lookup table. Both were measurable slowdowns. |
 | `StateCache` | `1` | `0`, `1` | Direct3D 11 only: renderer state that's already set isn't sent again for every draw. `0` is slower and is for troubleshooting rendering problems. |
+| `DrawBatch` | `1` | `0`, `1` | 3D draws in a row with nothing changed between them (trees, terrain, scenery) are sent as one draw. `0` sends each draw on its own, for troubleshooting. |
 
 ### 3. Logging
 
@@ -391,6 +396,8 @@ only when asked to. Logs go to `%LOCALAPPDATA%\Motocross Madness 2\logs`.
 | `ActivateLog` | `0` | Window activation (the game pauses while in the background). |
 | `RegLog` | `0` | Every registry call the game makes. |
 | `TextLog` | `0` | GPU text drawing and what erases it. |
+| `BatchLog` | `0` | Every 5 seconds: how many draws `DrawBatch` merged and what ended each batch. |
+| `DrawLog` | `0` | During races, which draw calls could be merged into fewer (per game call site, plus a few whole frames). Costs about 1.5 ms a frame. |
 | `GdiLog` | `0` | The GDI calls (text, boxes, lines) the game draws onto the screen with. |
 | `TextureLog` | `0` | The format of each texture the game creates. |
 | `SoundLog` | `0` | 3D sound buffers, and when `SoundMaxDistanceMute` mutes or unmutes them. |

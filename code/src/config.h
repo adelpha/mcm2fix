@@ -16,6 +16,9 @@ struct Config {
   bool sound_max_distance_mute = true;  // SoundMaxDistanceMute: mute 3D sounds past their max distance ourselves (DSOAL ignores it; fixes_sound.cpp)
   bool sound_log = false;     // SoundLog: log 3D sound buffers, mutes and unmutes
   bool state_cache = true;    // StateCache: skip D3D11 state the device already has bound (device.cpp)       // FastCrt: QPC game clock and table-driven _stricmp (fixes_perf.cpp)
+  bool draw_batch = true;     // DrawBatch: send 3D draws in a row with the same state as one draw (device.cpp)
+  bool batch_log = false;     // BatchLog: log draw batching every 5 s
+  bool draw_log = false;      // DrawLog: measure which draw calls could be merged (dd/drawlog.cpp)
   bool dd_stats = false;      // DDStats: log renderer activity every 2 seconds
   int renderer = 11;          // Renderer: 11 = Direct3D 11, 9 = Direct3D 9 (also used when D3D11 is missing)
   bool exclusive = false;     // Fullscreen: false = borderless window (default), true = exclusive fullscreen

@@ -30,6 +30,10 @@ bool GpuTextRun(const GdiCall& call);
 // A font that is never deleted (the HUD's own scaled fonts): its metrics and
 // the extents of strings drawn with it are cached.
 void GpuTextKeepFont(HFONT f);
+// SelectObject of a font into a DC from GpuTextBeginDC that only mcm2fix
+// draws on: remembered, so measuring needs no GDI call to find the font, and
+// selecting the font that is already there costs nothing.
+void GpuTextSelectFont(HDC dc, HGDIOBJ f);
 // The clip of a DC from GpuTextBeginDC, set by mcm2fix (null: none), so
 // drawing does not have to read it back from GDI. Instead of SelectClipRgn.
 void GpuTextSetClip(HDC dc, const RECT* r);
