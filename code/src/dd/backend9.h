@@ -46,7 +46,7 @@ void InvalidateState9();
 // Alpha-to-coverage through the NVIDIA / AMD Direct3D 9 driver extensions
 // (cached; detected on first use). Returns whether it is now on: false when
 // turning it off or when the card has neither extension.
-bool SetAlphaToCoverage9(bool on);
+bool SetAlphaToCoverage9(bool on, bool resend = false);
 // Cached SetRenderTarget(0) + SetDepthStencilSurface, SetViewport, SetScissorRect.
 void SetTarget9(IDirect3DSurface9* rt, IDirect3DSurface9* ds);
 void SetDS9(IDirect3DSurface9* ds);

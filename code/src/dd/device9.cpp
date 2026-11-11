@@ -216,7 +216,7 @@ A2c9 DetectA2c9() {
 
 }  // namespace
 
-bool SetAlphaToCoverage9(bool on) {
+bool SetAlphaToCoverage9(bool on, bool resend) {
   if (g_a2c9 == A2c9::kUnknown) {
     if (!on) return false;  // not asked for yet: leave the device alone
     g_a2c9 = DetectA2c9();
@@ -226,7 +226,7 @@ bool SetAlphaToCoverage9(bool on) {
     g_a2c9_reset = ResetCount9();
     g_a2c9_on = -1;
   }
-  if (g_a2c9_on == (on ? 1 : 0)) return on;
+  if (g_a2c9_on == (on ? 1 : 0) && !resend) return on;
   IDirect3DDevice9* dev = B().dev9;
   HRESULT hr;
   if (g_a2c9 == A2c9::kNvidia) {
@@ -419,6 +419,9 @@ void Device::ApplyState9(int mode, bool has_depth) {
     RS9(D3DRS_ALPHAFUNC, afunc);
     RS9(D3DRS_ALPHAREF, aref);
   }
+  // The driver may only look at the extension when alpha test is set up, so
+  // send it again after the alpha test state, every cut-out draw.
+  if (a2c) SetAlphaToCoverage9(true, true);
   if (log)
     Log("  state: z %d write %d func %lu, blend %d %lu/%lu, alpha test %d func %lu ref %lu, cull %lu, "
         "fog %d, specular %d, shade %lu, zbias %lu, a2c %d",
