@@ -184,8 +184,20 @@ TreeDetailDistance=1
 ; than this (0 to 255) are not drawn. This removes the stair-step fringe where
 ; tree edges hide whatever is behind them, a flaw of the original game.
 ; 128 = default. 0 = the original look. Soft see-through layers (shadows,
-; ground detail, supercross ground) are never affected.
+; ground detail, supercross ground) are never affected. With
+; AlphaToCoverage on, this is where the smoothed edge sits instead.
 AlphaCut=128
+
+; AlphaToCoverage: smooth, antialiased edges on cut-out pictures (tree
+; leaves, flags, fences, metal arches, tents, desert plants) by turning their
+; transparency into MSAA coverage. Only works while Antialiasing is 2 or more;
+; without MSAA, AlphaCut and the game's own alpha test are used as before.
+; 1 = sharpened (default): crisp edges about one pixel wide at any distance.
+; 2 = soft: tree leaves and flags use their transparency as is, which keeps
+; distant trees fuller but makes edges softer and grainier (fences and other
+; solid models stay sharpened). 0 = off.
+; Direct3D 9: only on NVIDIA and AMD cards, and only for leaves and flags.
+AlphaToCoverage=1
 
 ; TrueColorTextures: 1 = load textures in full colour (24-bit, or 32-bit with
 ; alpha) wherever the picture has more than 16 bits of colour (default).
@@ -458,7 +470,8 @@ ArrowLog=0
 ; widened it to for the screen shape and the smoothing cull margin. Default 0.
 FovLog=0
 
-; AlphaLog: each kind of see-through draw and whether AlphaCut applied to it.
+; AlphaLog: each kind of see-through draw and whether AlphaCut or
+; AlphaToCoverage applied to it, plus alpha-to-coverage counts every 10 s.
 ; Default 0.
 AlphaLog=0
 

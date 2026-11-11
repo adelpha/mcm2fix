@@ -1038,6 +1038,7 @@ DWORD SetupBlit9(const BlitParams& p) {
   SetViewport9(D3DVIEWPORT9{0, 0, p.dst_w, p.dst_h, 0.0f, 1.0f});
   RS9(D3DRS_ZENABLE, FALSE);
   RS9(D3DRS_ZWRITEENABLE, FALSE);
+  SetAlphaToCoverage9(false);  // left on by a 3D cut-out draw
   RS9(D3DRS_ALPHABLENDENABLE, p.blend || p.premul || p.erase ? TRUE : FALSE);
   if (p.erase) {
     RS9(D3DRS_SRCBLEND, D3DBLEND_ZERO);

@@ -212,7 +212,17 @@ class Device : public d3d7::IDirect3DDevice7 {
   // `full_clear`: the caller will overwrite all of the colour buffer.
   bool BindTarget(bool& has_depth, bool full_clear = false);
   void ApplyState(bool tl, bool depth_clip, bool has_depth);
-  ID3D11BlendState* GetBlend();
+  ID3D11BlendState* GetBlend(bool a2c);
+  // Cut-out draws that write depth, which get alpha-to-coverage when the
+  // scene is multisampled (ini AlphaToCoverage):
+  //  kBlendedCutout: blended + alpha test > 0 (leaves, flags, bike numbers);
+  //    without coverage these get AlphaCut.
+  //  kTestedCutout: not blended, alpha test against a reference above 0
+  //    (fences, metal arches, tents, bikes, desert plants).
+  enum Cutout { kNoCutout, kBlendedCutout, kTestedCutout };
+  Cutout CutoutDraw() const;
+  // Alpha-to-coverage for this draw (cut-out, MSAA target, ini on), logged.
+  bool UseAlphaToCoverage(Cutout cutout);
   ID3D11DepthStencilState* GetDepth(bool has_depth);
   ID3D11RasterizerState* GetRaster(bool depth_clip);
   ID3D11SamplerState* GetSampler(int stage);

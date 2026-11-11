@@ -56,7 +56,7 @@ Windows 10 and 11.
 | Game speed, AI and physics break at high frame rates. | Races run at a fixed 30 simulation steps per second with smooth blended drawing (see [Frame pacing](#frame-pacing-and-smoothness)). |
 | **Restart Race** from the pause menu puts riders on the wrong grid spots, facing the wrong way, and FINAL LAP is not shown again. | Fixed (`RestartFix`). |
 | The race direction arrow leans toward the screen centre instead of pointing at the next gate. | Fixed, with a slight top-down tilt and a larger size (`Arrow*`). |
-| Trees and flags show a stair-step fringe that hides things behind them. | Fixed by alpha-test threshold (`AlphaCut`), and transparent texels no longer bleed grey into leaf edges. |
+| Trees and flags show a stair-step fringe that hides things behind them. | Fixed by alpha-test threshold (`AlphaCut`) or, with MSAA, alpha-to-coverage (`AlphaToCoverage`), and transparent texels no longer bleed grey into leaf edges. |
 | Texture formats are always 16-bit, because of a bug in the game's 32-bit format description. | Fixed (`TrueColorTextures`), plus full 32-bit texture replacements. |
 | With DSOAL, distant riders leave quiet looping snippets of old sounds. | mcm2fix mutes 3D sounds past their max distance itself (`SoundMaxDistanceMute`). |
 
@@ -81,7 +81,8 @@ Windows 10 and 11.
 
 ### Graphics
 - **Multisample antialiasing** of the 3D scene, up to 8x (`Antialiasing`,
-  default 4x).
+  default 4x), with **alpha-to-coverage** so tree leaves, fences and other
+  cut-outs get smooth edges too (`AlphaToCoverage`).
 - **Anisotropic filtering**, up to 16x (`Anisotropy`, default 16x).
 - **View distance, fog distance and model detail** multipliers
   (`ViewDistance`, `FogDistance`, `ModelLod`), plus texture sharpness
@@ -311,7 +312,8 @@ The file has three parts:
 | `FogDistance` | `1` | 0.1-20 | Multiplies the fog distances on top of `ViewDistance` (`2` = fog starts twice as far away). Above 1, the edge of the drawn world may show unless `ViewDistance` is raised too. |
 | `ModelLod` | `1` | 0.25-10 | Detailed models stay this many times further away before the game switches to simpler versions. |
 | `TreeDetailDistance` | `1` | `0`, `1` | `0` makes every tree use its sparse close-up version at any distance. It looks sparse and is for fun only. |
-| `AlphaCut` | `128` | 0-255 | For trees, flags and other cut-out pictures, pixels less opaque than this aren't drawn. This removes the stair-step fringe where tree edges hide what's behind them, a flaw of the original. `0` = the original look. Soft see-through layers (shadows, ground detail, supercross ground) are never affected. |
+| `AlphaCut` | `128` | 0-255 | For trees, flags and other cut-out pictures, pixels less opaque than this aren't drawn. This removes the stair-step fringe where tree edges hide what's behind them, a flaw of the original. `0` = the original look. Soft see-through layers (shadows, ground detail, supercross ground) are never affected. With `AlphaToCoverage` on, this is where the smoothed edge sits instead. |
+| `AlphaToCoverage` | `1` | `0`, `1`, `2` | Smooth, antialiased edges on cut-out pictures (tree leaves, flags, fences, metal arches, tents, desert plants) by turning their transparency into MSAA coverage. Only works while `Antialiasing` is 2 or more. `1` = sharpened: crisp edges about one pixel wide at any distance. `2` = soft: leaves and flags use their transparency as is, so distant trees look fuller but edges are softer and grainier (fences and solid models stay sharpened). `0` = off. On Direct3D 9 it works only on NVIDIA and AMD cards, and only for leaves and flags. |
 | `TrueColorTextures` | `1` | `0`, `1` | Loads textures in full colour (24-bit, or 32-bit with alpha) wherever the picture has more than 16 bits; a bug made the game always use 16-bit. Most of the game's art is stored in 16-bit, so only a few textures change. Changing it renames unnamed dumped textures. |
 | `TextureReplace` | `1` | `0`, `1` | Uses replacement pictures from `textures\` in the game folder or in `%LOCALAPPDATA%\Motocross Madness 2\textures\` (the per-user folder wins). See [Texture dumping and replacement](#texture-dumping-and-replacement). |
 | `TextureDump` | `0` | `0`, `1` | Saves every texture the game loads as a PNG in `%LOCALAPPDATA%\Motocross Madness 2\textures_dump`, to start replacements from. Loading is slower while it's on. |
@@ -404,7 +406,7 @@ only when asked to. Logs go to `%LOCALAPPDATA%\Motocross Madness 2\logs`.
 | `RestartLog` | `0` | The start grid when a race loads and on Restart Race. |
 | `ArrowLog` | `0` | The direction arrow's placement for a few seconds after each race start. |
 | `FovLog` | `0` | Every change to a camera's field of view: who set it and what mcm2fix widened it to. |
-| `AlphaLog` | `0` | Each kind of see-through draw, and whether `AlphaCut` applied to it. |
+| `AlphaLog` | `0` | Each kind of see-through draw, and whether `AlphaCut` or `AlphaToCoverage` applied to it, plus alpha-to-coverage counts every 10 seconds. |
 | `SmoothLog` | `0` | `SimSmooth` tracing: `1` = matrices and draws for a few frames, `2` = camera only (120 frames), `3` = rider shadows, `4` = camera and projection after each race start. |
 
 The shipped `mcm2fix.ini` is generated from the block in
