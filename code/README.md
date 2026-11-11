@@ -192,12 +192,13 @@ AlphaCut=128
 ; leaves, flags, fences, metal arches, tents, desert plants) by turning their
 ; transparency into MSAA coverage. Only works while Antialiasing is 2 or more;
 ; without MSAA, AlphaCut and the game's own alpha test are used as before.
-; 1 = sharpened (default): crisp edges about one pixel wide at any distance.
-; 2 = soft: tree leaves and flags use their transparency as is, which keeps
-; distant trees fuller but makes edges softer and grainier (fences and other
-; solid models stay sharpened). 0 = off.
+; 2 = soft (default): tree leaves and flags use their transparency as is,
+; so distant trees look fuller and fade smoothly between their far-away and
+; close-up versions; edges are softer (fences and other solid models are
+; always sharpened). 1 = sharpened: crisp edges about one pixel wide at any
+; distance, but trees switch abruptly between versions. 0 = off.
 ; Direct3D 9: only on NVIDIA and AMD cards, and only for leaves and flags.
-AlphaToCoverage=1
+AlphaToCoverage=2
 
 ; TrueColorTextures: 1 = load textures in full colour (24-bit, or 32-bit with
 ; alpha) wherever the picture has more than 16 bits of colour (default).
