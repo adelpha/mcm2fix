@@ -70,6 +70,8 @@ void LoadConfig() {
   g_config.profile_sample_us = GetPrivateProfileIntA("mcm2fix", "ProfileSampleUs", 1000, ini);
   g_config.fast_crt = GetPrivateProfileIntA("mcm2fix", "FastCrt", 1, ini) != 0;
   g_config.async_sound = GetPrivateProfileIntA("mcm2fix", "AsyncSound", 2, ini);
+  g_config.sound_max_distance_mute = GetPrivateProfileIntA("mcm2fix", "SoundMaxDistanceMute", 1, ini) != 0;
+  g_config.sound_log = GetPrivateProfileIntA("mcm2fix", "SoundLog", 0, ini) != 0;
   g_config.state_cache = GetPrivateProfileIntA("mcm2fix", "StateCache", 1, ini) != 0;
   g_config.dd_stats = GetPrivateProfileIntA("mcm2fix", "DDStats", 0, ini) != 0;
   {
