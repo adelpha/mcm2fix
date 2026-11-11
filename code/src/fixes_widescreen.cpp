@@ -27,9 +27,17 @@ const uint8_t kCameraUpdateEntry[] = {0x83, 0xEC, 0x48, 0x53, 0x8B, 0xD9};  // s
 
 constexpr float kGameFov = 77.0f;  // the game's default camera field of view
 
+// The camera's field of view (+0x16c) holds the game's own value except while
+// the camera update (0x42fd50) builds the projection from it: there it holds
+// the widened (and, while smoothing, culling-margin) value, and we put the
+// game's value back when the update returns. The game's own camera code reads
+// +0x16c back (the bike camera's zoom smoothing, its zoom target, its
+// fov/max-fov ratio, the zoom keys); when it read our widened value it zoomed
+// in or out on its own, differently from race to race.
 struct FovState {
-  float base;     // the game's own (4:3) value
-  float written;  // what we stored in its place
+  float base;     // the game's own (4:3) value, after the ini Fov
+  float drawn;    // the field of view the view is drawn with (widened, no margin)
+  float written;  // what the projection was built with (drawn + culling margin)
 };
 std::map<uintptr_t, FovState> g_fov;
 
@@ -67,22 +75,16 @@ void __stdcall AdjustFov(uintptr_t cam) {
   float& fov = *reinterpret_cast<float*>(cam + 0x16c);
   if (!(fov > 1.0f && fov < 179.0f)) return;
   const Config& cfg = GetConfig();
-  float base = fov;
-  bool fresh = true;
+  const float in = fov;
   auto it = g_fov.find(cam);
-  if (it != g_fov.end()) {
-    float delta = fov - it->second.written;
-    if (delta == 0.0f) {
-      base = it->second.base;
-      fresh = false;
-    } else if (std::fabs(delta) <= 1.5f) {
-      base = it->second.base + delta;  // zoom keys step our widened value
-      fresh = false;
-    }
-  }
-  // ini Fov replaces the game's default field of view on new cameras
-  // (the zoom keys still step from there).
-  if (fresh && cfg.fov > 0.0f && std::fabs(base - kGameFov) < 0.01f) base = cfg.fov;
+  const bool known = it != g_fov.end();
+  // Unchanged since we put the game's value back (or, if that was missed, still
+  // our own value): keep the base. Anything else was set by the game.
+  const bool same = known && (in == it->second.base || in == it->second.written);
+  float base = same ? it->second.base : in;
+  // ini Fov replaces the game's default field of view (the zoom keys still
+  // step from there).
+  if (!same && cfg.fov > 0.0f && std::fabs(base - kGameFov) < 0.01f) base = cfg.fov;
   const float aspect = static_cast<float>(w) / static_cast<float>(h);
   const bool widen = cfg.wide_fov && aspect > 4.0f / 3.0f + 0.01f;
   const float target = widen ? Widen(base, aspect) : base;
@@ -109,21 +111,29 @@ void __stdcall AdjustFov(uintptr_t cam) {
   if (cfg.fov_log) {
     // One line whenever something about this camera's field of view changes.
     FovLogState& L = g_fov_log[cam];
-    const float in = fov;
     const float ratio = g_margin.count(cam) ? g_margin[cam].ratio : 1.0f;
+    if (!known) g_fov_lines = 0;  // a new camera (race load): log it afresh
     if (!L.seen || in != L.in || written != L.written || ratio != L.ratio) {
       if (g_fov_lines < 20000) {
         ++g_fov_lines;
-        patch::Log("fov: cam %08x %dx%d in %.3f -> base %.3f (%s%s%.3f) drawn %.3f culls %.3f margin %.3f%s",
-                   static_cast<unsigned>(cam), w, h, in, base, it == g_fov.end() ? "new camera" : fresh ? "game set it" : "kept",
-                   fresh ? "" : ", delta ", fresh ? 0.0f : in - (it != g_fov.end() ? it->second.written : in), target,
-                   written, ratio, SimDrawPoint(&tick, &alpha) ? " racing" : "");
+        patch::Log("fov: cam %08x %dx%d game %.3f -> base %.3f (%s) drawn %.3f culls %.3f margin %.3f%s",
+                   static_cast<unsigned>(cam), w, h, in, base,
+                   !known ? "new camera" : same ? "unchanged" : "game set it", target, written, ratio,
+                   SimDrawPoint(&tick, &alpha) ? " racing" : "");
       }
       L = {true, in, written, ratio};
     }
   }
   fov = written;
-  g_fov[cam] = {base, written};
+  g_fov[cam] = {base, target, written};
+}
+
+// After the camera update: the game sees its own field of view again.
+void __stdcall RestoreFov(uintptr_t cam) {
+  auto it = g_fov.find(cam);
+  if (it == g_fov.end()) return;
+  float& fov = *reinterpret_cast<float*>(cam + 0x16c);
+  if (fov == it->second.written) fov = it->second.base;
 }
 
 // The speedometer (InstrumentOverlay, instr1.tga, vtable 0x55d914) is a
@@ -315,6 +325,13 @@ float SmoothProjectionScale(const float* m) {
   return 1.0f;
 }
 
+bool CameraDrawnFov(uintptr_t cam, float* drawn) {
+  auto it = g_fov.find(cam);
+  if (it == g_fov.end()) return false;
+  *drawn = it->second.drawn;
+  return true;
+}
+
 bool SmoothCullMargin(uintptr_t cam, float* ratio) {
   auto it = g_margin.find(cam);
   if (it == g_margin.end()) return false;
@@ -358,10 +375,11 @@ void ApplyWidescreenFov() {
     patch::Log("widescreen fov: camera update code differs, not applied");
     return;
   }
-  // Thunk: save ecx, AdjustFov(ecx), restore, run the replaced instructions,
-  // jump back.
+  // Thunk: AdjustFov(cam), run the update as a call (its replaced first
+  // instructions, then on into the game's code, which returns here), then
+  // RestoreFov(cam) and return to the caller.
   auto* t = static_cast<uint8_t*>(
-      VirtualAlloc(nullptr, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+      VirtualAlloc(nullptr, 96, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
   if (!t) return;
   size_t n = 0;
   auto put = [&](std::initializer_list<uint8_t> b) {
@@ -371,15 +389,30 @@ void ApplyWidescreenFov() {
     std::memcpy(t + n, &v, 4);
     n += 4;
   };
-  put({0x51, 0x51});  // push ecx; push ecx (argument)
+  put({0x51});        // push ecx (kept for RestoreFov)
+  put({0x51});        // push ecx (argument)
   put({0xB8});
   put32(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&AdjustFov)));  // mov eax, AdjustFov
   put({0xFF, 0xD0});  // call eax
-  put({0x59});        // pop ecx
+  put({0x8B, 0x0C, 0x24});  // mov ecx,[esp]
+  put({0xE8});              // call body (rel32, filled below)
+  const size_t call_at = n;
+  put32(0);
+  put({0x59});        // pop ecx (the camera)
+  put({0x50});        // push eax
+  put({0x51});        // push ecx (argument)
+  put({0xB8});
+  put32(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&RestoreFov)));  // mov eax, RestoreFov
+  put({0xFF, 0xD0});  // call eax
+  put({0x58});        // pop eax
+  put({0xC3});        // ret
+  const size_t body = n;
   for (uint8_t b : kCameraUpdateEntry) put({b});
   put({0x68});
   put32(static_cast<uint32_t>(kCameraUpdateResume));  // push resume
-  put({0xC3});                                        // ret
+  put({0xC3});                                        // ret (= jmp)
+  const int32_t rel = static_cast<int32_t>(body - (call_at + 4));
+  std::memcpy(t + call_at, &rel, 4);
   FlushInstructionCache(GetCurrentProcess(), t, n);
   patch::Jump(kCameraUpdate, reinterpret_cast<uintptr_t>(t), sizeof(kCameraUpdateEntry));
   patch::Log("widescreen fov: applied (Fov %.1f, WideFov %d)", GetConfig().fov,

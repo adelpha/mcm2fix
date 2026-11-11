@@ -49,6 +49,9 @@ void InstallNameSmoothing();
 // the ratio for a camera's screen positions.
 float SmoothProjectionScale(const float* m);
 bool SmoothCullMargin(uintptr_t cam, float* ratio);
+// The field of view the camera is drawn with (widened for the screen, without
+// the culling margin). False for a camera not seen yet.
+bool CameraDrawnFov(uintptr_t cam, float* drawn);
 unsigned SmoothMarginHits();
 
 // Blend a perspective projection's zoom between simulation steps (in place).

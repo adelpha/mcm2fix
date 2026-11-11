@@ -49,6 +49,7 @@ bool Normalize(Vec& a) {
 struct ScaleState {
   float base;     // the game's own size
   float written;  // what we stored in its place
+  float focal;    // the camera's focal length (+0x198) when the game worked base out
 };
 std::map<uintptr_t, ScaleState> g_scale;
 // The arrow's screen spot as offsets (+0xb4 right, +0xb8 up), worked out by
@@ -65,16 +66,29 @@ DWORD g_last_call = 0;      // ArrowLog: GetTickCount of the last AdjustCue
 unsigned g_log_steps = 0;   // ArrowLog: steps left to log
 unsigned g_step = 0;
 
-// While smoothing widens the camera for culling (fixes_widescreen.cpp) the
-// game places and sizes the arrow for the wider view; it is drawn with the
-// real one, so bring it back by that ratio.
-float MarginFix(uintptr_t cue, uintptr_t cam, bool* fresh) {
+// The game works out the arrow's spot (h, v) from the camera's field of view
+// as it sees it (cached at +0xb0): h and v grow with tan(fov / 2). The
+// camera holds the game's own (4:3) value, but the view is drawn wider on a
+// wide screen (fixes_widescreen.cpp), so scale the spot to the drawn field of
+// view. The size (+0x34) comes from the camera's focal length, built with the
+// culling margin while smoothing, so it is brought back by that ratio.
+// Returns the culling margin ratio.
+float MarginFix(uintptr_t cue, uintptr_t cam, bool* fresh, float* spot_scale) {
   *fresh = false;
+  *spot_scale = 1.0f;
   float r = 1.0f;
   if (!SmoothCullMargin(cam, &r) || !(r > 0.0f)) r = 1.0f;
   float& h = *reinterpret_cast<float*>(cue + 0xb4);
   float& v = *reinterpret_cast<float*>(cue + 0xb8);
   if (!std::isfinite(h) || !std::isfinite(v)) return r;
+  const float kHalfRad = 3.14159265f / 360.0f;
+  const float seen = *reinterpret_cast<float*>(cue + 0xb0);
+  float drawn = seen;
+  float k = 1.0f;
+  if (CameraDrawnFov(cam, &drawn) && seen > 1.0f && seen < 179.0f && drawn > 1.0f && drawn < 179.0f)
+    k = std::tan(drawn * kHalfRad) / std::tan(seen * kHalfRad);
+  if (!std::isfinite(k) || !(k > 0.0f)) k = 1.0f;
+  *spot_scale = k;
   SpotState st{h, v, h, v};
   auto it = g_spot.find(cue);
   if (it != g_spot.end() && h == it->second.h && v == it->second.v) {
@@ -83,8 +97,8 @@ float MarginFix(uintptr_t cue, uintptr_t cam, bool* fresh) {
   } else {
     *fresh = true;  // the game worked h and v out again this step
   }
-  st.h = h = st.base_h / r;
-  st.v = v = st.base_v / r;
+  st.h = h = st.base_h * k;
+  st.v = v = st.base_v * k;
   g_spot[cue] = st;
   return r;
 }
@@ -95,7 +109,8 @@ void __stdcall AdjustCue(uintptr_t cue, float* dir) {
   if (!cam) return;
   bool fresh = false;
   const float raw_h = *reinterpret_cast<float*>(cue + 0xb4), raw_v = *reinterpret_cast<float*>(cue + 0xb8);
-  const float margin = MarginFix(cue, cam, &fresh);
+  float spot_scale = 1.0f;
+  const float margin = MarginFix(cue, cam, &fresh, &spot_scale);
 
   // The game placed the arrow (0x48c2f2) with h and v as they were before we
   // got here. When it has just worked them out again (the field of view
@@ -130,10 +145,10 @@ void __stdcall AdjustCue(uintptr_t cue, float* dir) {
     if (late) ++s_fresh_lines;
     if (g_log_steps || late) {
       if (g_log_steps) --g_log_steps;
-      patch::Log("arrow: step %u fov %.4f cached %.4f %s h %.4f->%.4f v %.4f->%.4f margin %.4f %s dist %.3f "
+      patch::Log("arrow: step %u fov %.4f cached %.4f %s h %.4f->%.4f v %.4f->%.4f spot x%.4f margin %.4f %s dist %.3f "
                  "cam (%.2f %.2f %.2f) pos (%.2f %.2f %.2f)",
                  g_step++, cf[0x16c / 4], *reinterpret_cast<float*>(cue + 0xb0), fresh ? "NEW" : "same", raw_h, h,
-                 raw_v, v, margin, moved ? "re-placed" : "kept", dist, cf[0x170 / 4], cf[0x174 / 4],
+                 raw_v, v, spot_scale, margin, moved ? "re-placed" : "kept", dist, cf[0x170 / 4], cf[0x174 / 4],
                  cf[0x178 / 4], pos[0], pos[1], pos[2]);
     }
   }
@@ -178,16 +193,26 @@ void __stdcall AdjustCue(uintptr_t cue, float* dir) {
     }
   }
 
-  // Size: +0x34 is recomputed by the game only when the field of view
-  // changes, so remember the game's value and keep ours on top of it.
+  // Size: +0x34 = size * dist / (focal length * ...), recomputed by the game
+  // only when the field of view it sees changes, so remember the game's value
+  // and the focal length it used, and size the arrow for the focal length
+  // the view is drawn with now (the camera's, which includes the culling
+  // margin while smoothing, times that margin).
   const float k = GetConfig().arrow_scale;
   float& size = *reinterpret_cast<float*>(cue + 0x34);
   if (!(size > 0.0f) || !std::isfinite(size)) return;
-  float base = size;
+  const float focal_now = *reinterpret_cast<float*>(cam + 0x198);
+  float base = size, focal0 = focal_now;
   auto it = g_scale.find(cue);
-  if (it != g_scale.end() && size == it->second.written) base = it->second.base;
-  size = base * k / margin;
-  g_scale[cue] = {base, size};
+  if (it != g_scale.end() && size == it->second.written) {
+    base = it->second.base;
+    focal0 = it->second.focal;
+  }
+  float f = 1.0f / margin;
+  if (focal0 > 0.0f && focal_now > 0.0f && std::isfinite(focal0) && std::isfinite(focal_now))
+    f = focal0 / (focal_now * margin);
+  size = base * k * f;
+  g_scale[cue] = {base, size, focal0};
 }
 
 }  // namespace
