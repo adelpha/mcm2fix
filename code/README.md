@@ -134,8 +134,10 @@ HudText=1      ; with GpuText: the race HUD panels' text is drawn by mcm2fix on 
 HudScale=2     ; race HUD text panels (position, lap, times) drawn this many times larger (1 = original)
 LabelScale=1.5 ; name labels over the riders drawn this many times larger (1 = original)
 LineWidth=3    ; speedometer needle width in pixels, antialiased (1 = original thin line)
-HudFont=       ; a .ttf for the HUD panel and name label text, e.g. FONTS\ContrailOne-Regular.ttf (empty = the game's fonts)
-HudDigitFont=   ; .ttf for the numbers in the stats panel (times, position, lap); words keep HudFont
+HudFont=FONTS\ContrailOne-Regular.ttf ; a .ttf (relative to the game folder) for the HUD panel and name label
+               ; text (empty = the game's fonts)
+HudDigitFont=FONTS\DSEG7Classic-BoldItalic.ttf ; .ttf for the numbers in the stats panel (times, position,
+               ; lap); words keep HudFont (empty = same as HudFont)
 HudDigitSize=0.7 ; size of those numbers relative to the words beside them
 HudStuntTextSize=0.8 ; stunt events: size of the score panel's text (1 = as big as the race panel's)
 TextLog=0      ; debugging: log GPU text drawing and what erases it
