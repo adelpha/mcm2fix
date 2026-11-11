@@ -185,8 +185,9 @@ void LogBikes(uintptr_t race, bool full) {
     char buf[1024];
     char* p = buf;
     char* end = buf + sizeof(buf);
-    int n = std::snprintf(p, end - p, "restart:  bike%d %08x rst=%d", i,
-                        static_cast<unsigned>(bike), Rd<uint8_t>(bike + 0x109));
+    int n = std::snprintf(p, end - p, "restart:  bike%d %08x rst=%d thr=%d brk=%d spd=%.2f", i,
+                        static_cast<unsigned>(bike), Rd<uint8_t>(bike + 0x109), Rd<uint8_t>(bike + 0x478),
+                        Rd<uint8_t>(bike + 0x479), Rd<float>(bike + 0xb8));
     if (n > 0) p += (n < end - p) ? n : (end - p - 1);
     LogVec(p, end, "pos", bike + 0x0c);
     LogVec(p, end, "f88", bike + 0x88);
@@ -367,12 +368,33 @@ void ResetEngineSounds(uintptr_t race) {
              Rd<int>(mgr + 0x94));
 }
 
+// Each bike's throttle (+0x478) and brake (+0x479) flags. The AI driver
+// (0x4144ed/0x41451b) only writes them once the race is running and the
+// player's come from input, so after Restart Race an AI bike that was on
+// the throttle keeps +0x478 = 1 through the countdown. The engine sound
+// state machine (0x4e8a3c) reads it and picks the driving sound. A fresh
+// race has them zeroed by the bike constructor (0x52acaf); do the same.
+void ClearBikeControls(uintptr_t race) {
+  auto next = reinterpret_cast<NextBikeFn>(kNextBike);
+  int idx = 0, cleared = 0;
+  for (int guard = 0; guard < 64; ++guard) {
+    uintptr_t bike = next(race, nullptr, &idx);
+    if (!bike) break;
+    uint8_t* ctl = reinterpret_cast<uint8_t*>(bike + 0x478);
+    if (ctl[0] || ctl[1]) ++cleared;
+    ctl[0] = 0;
+    ctl[1] = 0;
+  }
+  patch::Log("restart: throttle/brake cleared (%d bikes had them on)", cleared);
+}
+
 void __fastcall RestartHook(uintptr_t self, void*, int a, int b, int c) {
   ++g_restarts;
   if (!GetConfig().restart_log) {
     g_restart(self, nullptr, a, b, c);
     if (GetConfig().restart_fix) {
       PlaceBikesOnGrid(self);
+      ClearBikeControls(self);
       ResetEngineSounds(self);
     }
     return;
@@ -390,6 +412,7 @@ void __fastcall RestartHook(uintptr_t self, void*, int a, int b, int c) {
   patch::Log("restart: bikes right after restart");
   LogBikes(self, true);
   if (GetConfig().restart_fix) {
+    ClearBikeControls(self);
     ResetEngineSounds(self);
     PlaceBikesOnGrid(self);
     patch::Log("restart: bikes after placing them");
