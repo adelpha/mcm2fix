@@ -341,7 +341,7 @@ The file has three parts:
 | `HudStuntTextSize` | `0.8` | 0.5-1.5 | Stunt events: size of the score panel's text relative to the race panel's. |
 | `RaceTitle` | `1` | `0`, `1` | During the countdown, the event's name and lap count (stunt events: time limit) open out of a white line in the middle of the screen and close back into it as the countdown ends, replacing the game's small green name in the bottom-left corner. FINAL LAP is shown the same way (held 2 seconds) instead of dropping down the screen. Needs `GpuText=1`. `0` = the game's corner text and drop text. |
 | `RaceTitleSize` | `1` | 0.5-2 | Size of that title. |
-| `Announcer` | `1` | `0`, `1` | Plays WAV files from the game's `SOUNDS\` folder if they're there: `five.wav` ... `one.wav` as the countdown passes 5 ... 1 seconds left, `airhorn.wav` when the race starts and `finallap.wav` when FINAL LAP shows. Missing files are skipped. 8 or 16-bit PCM. |
+| `Announcer` | `1` | `0`, `1` | Plays WAV files from the game's `SOUNDS\` folder if they're there: `five.wav` ... `one.wav` as the countdown passes 5 ... 1 seconds left, `airhorn.wav` when the race starts and `finallap.wav` when FINAL LAP shows (not in one-lap races, where it would play over the start). Missing files are skipped. 8 or 16-bit PCM. |
 | `AnnouncerVolume` | `100` | 0-100 | Volume of those sounds, in percent. |
 
 #### Race direction arrow

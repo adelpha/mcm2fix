@@ -218,7 +218,16 @@ void __fastcall DropStartHook(uintptr_t overlay, void* edx) {
   ++fl.starts;
   Log("final lap: drop text \"%s\" (overlay %08x) %s", t, static_cast<unsigned>(overlay),
       take ? "shown as a banner instead" : "left to the game");
-  if (GetConfig().announcer) OneShotPlay(kFinalLapWav, "final lap");
+  if (GetConfig().announcer) {
+    // A one-lap race: the final lap is the first, and FINAL LAP shows as it
+    // starts, on top of the air horn. Skip the voice then.
+    const uintptr_t game = Rd<uintptr_t>(kGame);
+    const int laps = game ? Rd<int>(game + kLaps) : 0;
+    if (laps == 1)
+      Log("announcer: %s skipped, one-lap race (it would play over the start)", kFinalLapWav);
+    else
+      OneShotPlay(kFinalLapWav, "final lap");
+  }
   if (!take) {
     reinterpret_cast<InitFn>(kDropStart)(overlay, edx);
     return;
