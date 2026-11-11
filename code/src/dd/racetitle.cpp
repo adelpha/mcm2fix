@@ -27,7 +27,8 @@
 // of it, they hold, and the same runs backwards so it is gone when the
 // countdown ends.
 //
-// Countdown: BikeRace (= [[game+0x558]+0x34], 0x45e300) +0x15c is the time
+// Countdown: BikeRace (the `this` of 0x421f90; [[game+0x558]+0x34] via
+// 0x45e300 can be 0 in a race, so it is not used to find it) +0x15c is the time
 // left in seconds; 0x421f90 sets it (8.2 with a start gate, 5.2 without, 0
 // in modes 0 and 4 and online). The race update (0x41ebb4) counts it down by
 // the step time and starts the race (+0x18a = 1) when it runs out. 0x421f90
@@ -75,6 +76,7 @@ struct State {
   std::string name;      // captured race name
   std::string sub;       // "3 Laps" / "3:00 Time Limit"
   uintptr_t race = 0;    // BikeRace whose countdown runs
+  uintptr_t vtable = 0;  // its vtable when the countdown was set (sanity check each frame)
   float total = 0;       // countdown length at start
   bool real_time = false;  // no countdown: play on our own clock
   double start_clock = 0;
@@ -149,6 +151,7 @@ void Start(uintptr_t race) {
   ++g.inits;
   const float left = race ? Rd<float>(race + kCountdownLeft) : 0;
   g.race = race;
+  g.vtable = race ? Rd<uintptr_t>(race) : 0;
   g.total = left;
   g.real_time = !(left > 0.5f && left < 60.0f);
   if (g.real_time) g.total = kLineTime + kSlideTime + GetConfig().race_title_hold + kLineTime + kSlideTime;
@@ -161,8 +164,8 @@ void Start(uintptr_t race) {
   const uintptr_t game = Rd<uintptr_t>(kGame);
   char why[160] = {};
   g.sub = game ? Subtitle(game, why, sizeof(why)) : std::string();
-  Log("race title: countdown set on race %08x (current %08x): %.2f s%s; title \"%s\", subtitle \"%s\" (%s)%s",
-      static_cast<unsigned>(race), static_cast<unsigned>(CurrentRace()), left,
+  Log("race title: countdown set on race %08x (vtable %08x, game+558 chain %08x): %.2f s%s; title \"%s\", subtitle \"%s\" (%s)%s",
+      static_cast<unsigned>(race), static_cast<unsigned>(g.vtable), static_cast<unsigned>(CurrentRace()), left,
       g.real_time ? " - no countdown, playing on the clock" : "", g.name.c_str(), g.sub.c_str(), why,
       g.name.empty() ? " - no name captured yet" : "");
   LogGame("at countdown");
@@ -289,15 +292,21 @@ void RaceTitleDraw(Surface* rt) {
   if (g.real_time) {
     e = static_cast<float>(now - g.start_clock);
   } else {
-    const uintptr_t race = CurrentRace();
-    if (race != g.race) {
+    // The race object stays alive through the countdown; stop if it looks
+    // gone (vtable changed, countdown out of range, or frozen for a minute).
+    const uintptr_t race = g.race;
+    const uintptr_t vt = Rd<uintptr_t>(race);
+    const float left = Rd<float>(race + kCountdownLeft);
+    const bool frozen = g.last_left == left && now - g.last_change > 60.0;
+    if (vt != g.vtable || !(left >= -1.0f && left <= g.total + 0.5f) || frozen) {
       ++g.lost;
-      Log("race title: race %08x is no longer current (now %08x) after %u frames; stopped",
-          static_cast<unsigned>(g.race), static_cast<unsigned>(race), g.frames);
+      Log("race title: race %08x no longer counting down (vtable %08x was %08x, left %.3f of %.2f%s) after %u "
+          "frames; stopped",
+          static_cast<unsigned>(race), static_cast<unsigned>(vt), static_cast<unsigned>(g.vtable), left, g.total,
+          frozen ? ", unchanged for 60 s" : "", g.frames);
       g.active = false;
       return;
     }
-    const float left = Rd<float>(race + kCountdownLeft);
     if (left != g.last_left) {
       g.last_left = left;
       g.last_change = now;
