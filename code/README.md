@@ -182,3 +182,8 @@ those pixels. PNG, JPEG and BMP of any size work, at full 32-bit colour;
 mipmaps are generated on the GPU. Keep alpha where the original has it.
 Textures that change every frame (videos) are never replaced, and menu
 screens, the cursor and fonts are not textures, so they can't be replaced.
+
+Sky boxes are 48 overlapping tiles each. `tools/mcm2sky` (mcm2sky.exe, built
+by CI) extracts every sky straight from `RES\SKIES.RES` as one picture and
+cuts an edited picture back into correctly named tiles; see
+`tools/mcm2sky/README.md`.
