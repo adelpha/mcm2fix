@@ -1,0 +1,49 @@
+name: build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  msvc:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure (Win32)
+        run: cmake -S code -B build -A Win32
+      - name: Build
+        run: cmake --build build --config Release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mcm2fix-msvc
+          path: |
+            build/Release/mcm2fix.dll
+            tools/mcm2patch.py
+
+  mingw:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: sudo apt-get update && sudo apt-get install -y g++-mingw-w64-i686 cmake zip
+      - name: Cache FFmpeg
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: ffmpeg-work/install
+          key: ffmpeg-${{ hashFiles('tools/build-ffmpeg.sh') }}
+      - name: Build FFmpeg (Indeo 5 decoder only)
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        run: tools/build-ffmpeg.sh ffmpeg-work
+      - name: Configure
+        run: cmake -S code -B build -DCMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/code/toolchain-mingw32.cmake -DCMAKE_BUILD_TYPE=Release -DMCM2FIX_FFMPEG=$GITHUB_WORKSPACE/ffmpeg-work/install
+      - name: Build
+        run: cmake --build build
+      - name: Check Windows XP imports
+        run: python3 tools/check-xp-imports.py build/mcm2fix.dll
+      - name: Package
+        run: tools/package.sh build/mcm2fix.dll mcm2fix.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mcm2fix-release
+          path: mcm2fix.zip
