@@ -50,7 +50,14 @@ constexpr float kCullMargin = 1.2f;  // ratio of tan(half angle)
 struct MarginCam {
   float ratio = 1.0f;
   float p00 = 0.0f, p11 = 0.0f;  // the camera's projection after the last update, to recognise it
+  DWORD stamp = 0;               // GetTickCount() at the last update
 };
+// A camera's entry outlives the camera (the race ends, the camera is freed)
+// and its projection shape matches the next race's camera, so a stale entry
+// narrowed the next race's intro and podium views (zoom jump, arrow in the
+// corner). Entries go when a new camera of the same size appears, and ones
+// not updated for a while are ignored.
+constexpr DWORD kMarginStaleMs = 2000;
 std::map<uintptr_t, MarginCam> g_margin;
 // FovLog: last logged state per camera.
 struct FovLogState {
@@ -98,6 +105,18 @@ void __stdcall AdjustFov(uintptr_t cam) {
   // ini Fov replaces the game's default field of view on new cameras
   // (the zoom keys still step from there).
   if (fresh && cfg.fov > 0.0f && std::fabs(base - kGameFov) < 0.01f) base = cfg.fov;
+  if (!known) {
+    // A new camera: forget other cameras' cull margins (a finished race's).
+    for (auto m = g_margin.begin(); m != g_margin.end();)
+      if (m->first != cam) {
+        if (cfg.fov_log)
+          patch::Log("fov: new camera %08x: dropped the cull margin of old camera %08x (ratio %.3f)",
+                     static_cast<unsigned>(cam), static_cast<unsigned>(m->first), m->second.ratio);
+        m = g_margin.erase(m);
+      } else {
+        ++m;
+      }
+  }
   const float aspect = static_cast<float>(w) / static_cast<float>(h);
   const bool widen = cfg.wide_fov && aspect > 4.0f / 3.0f + 0.01f;
   const float target = widen ? Widen(base, aspect) : base;
@@ -112,6 +131,7 @@ void __stdcall AdjustFov(uintptr_t cam) {
     mc.ratio = std::tan(wide * 0.5f * kPi / 180.0f) / std::tan(target * 0.5f * kPi / 180.0f);
     mc.p00 = *reinterpret_cast<float*>(cam + 0x6c);
     mc.p11 = *reinterpret_cast<float*>(cam + 0x6c + 20);
+    mc.stamp = GetTickCount();
     written = wide;
     if (!g_margin_logged) {
       g_margin_logged = true;
@@ -406,8 +426,9 @@ float SmoothProjectionScale(const float* m) {
   // is often not the one seen at the last update, and drawing it unnarrowed
   // made the view jump in and out by the margin.
   if (m[11] == 0.0f || m[0] == 0.0f) return 1.0f;
+  const DWORD now = GetTickCount();
   for (const auto& c : g_margin)
-    if (c.second.p00 != 0.0f && std::fabs(m[5] / m[0] - c.second.p11 / c.second.p00) < 1e-3f * (c.second.p11 / c.second.p00)) {
+    if (c.second.p00 != 0.0f && now - c.second.stamp < kMarginStaleMs && std::fabs(m[5] / m[0] - c.second.p11 / c.second.p00) < 1e-3f * (c.second.p11 / c.second.p00)) {
       ++g_margin_hits;
       return c.second.ratio;
     }
