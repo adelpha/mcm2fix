@@ -2,6 +2,9 @@
 #include "drawlog.h"
 
 #include <windows.h>
+#ifdef _MSC_VER
+#include <intrin.h>
+#endif
 
 #include <algorithm>
 #include <cstdio>
@@ -56,7 +59,11 @@ void GameSites(uint32_t out[kSites]) {
   for (int i = 0; i < kSites; ++i) out[i] = 0;
   auto* tib = reinterpret_cast<NT_TIB*>(NtCurrentTeb());
   const uintptr_t top = reinterpret_cast<uintptr_t>(tib->StackBase);
+#ifdef _MSC_VER
+  auto* p = reinterpret_cast<const uintptr_t*>(_AddressOfReturnAddress());
+#else
   auto* p = reinterpret_cast<const uintptr_t*>(__builtin_frame_address(0));
+#endif
   int n = 0;
   for (int i = 0; i < 1024 && n < kSites && reinterpret_cast<uintptr_t>(p + i + 1) <= top; ++i) {
     const uintptr_t v = p[i];
