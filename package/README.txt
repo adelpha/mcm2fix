@@ -7,6 +7,8 @@ wrappers.
 
 - Draws with Direct3D 11 in a borderless window at your desktop
   resolution. The display mode never changes and there is no adapter picker.
+  Fullscreen=Exclusive in mcm2fix.ini gives true exclusive fullscreen
+  instead, optionally in another mode (FullscreenMode).
 - Supports widescreen resolutions, with a wider field of view to match.
 - Plays the intro, credits and menu videos itself, so the Indeo codec and
   DirectShow are not needed.
@@ -29,6 +31,9 @@ Requirements
   The original CD Mcm2.exe uses SafeDisc copy protection, which Windows 10
   and 11 cannot run.
 - A graphics card with Direct3D 11.
+- Windows XP SP3 also works: there is no Direct3D 11 there, so the
+  Direct3D 9 renderer is used, and saves go to
+  Local Settings\Application Data\Motocross Madness 2.
 
 Installing
 ----------
@@ -52,8 +57,9 @@ and saves and the log in %LOCALAPPDATA%\Motocross Madness 2.
 
 Problems
 --------
-The log is %LOCALAPPDATA%\Motocross Madness 2\mcm2fix.log. Please include
-it in any report.
+Each run writes a log to %LOCALAPPDATA%\Motocross Madness 2\logs (on
+Windows XP: Local Settings\Application Data\Motocross Madness 2\logs).
+Please include the newest one in any report.
 
 Source and licences
 -------------------

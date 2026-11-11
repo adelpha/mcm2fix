@@ -433,7 +433,7 @@ bool ResizeSwapchain() {
     // With VSync off, let frames reach the screen as soon as they are ready
     // (tearing) instead of DWM holding them for the next refresh.
     g_tearing = false;
-    if (!GetConfig().vsync) {
+    if (!GetConfig().vsync && !GetConfig().exclusive) {
       IDXGIFactory5* f5 = nullptr;
       if (SUCCEEDED(factory->QueryInterface(__uuidof(IDXGIFactory5), reinterpret_cast<void**>(&f5)))) {
         BOOL allow = FALSE;
@@ -480,6 +480,86 @@ bool ResizeSwapchain() {
   return b.swap_rtv != nullptr;
 }
 
+// ---- Exclusive fullscreen (ini Fullscreen=Exclusive) ----------------------
+// The swap chain owns the screen: DXGI changes the display mode if
+// FullscreenMode asks for one, and leaves fullscreen by itself when the game
+// loses focus (alt-tab); Present puts it back once the window is in front.
+DWORD g_fs_last_try = 0;
+bool g_fs_logged_mode = false;
+unsigned g_fs_enters = 0, g_fs_failures = 0;
+
+void EnterExclusive11() {
+  Backend& b = g_backend;
+  if (!GetConfig().exclusive || !b.swapchain || !b.hwnd) return;
+  BOOL fs = FALSE;
+  if (SUCCEEDED(b.swapchain->GetFullscreenState(&fs, nullptr)) && fs) return;
+  if (IsIconic(b.hwnd) || GetForegroundWindow() != b.hwnd) return;
+  const DWORD now = GetTickCount();
+  if (g_fs_last_try && now - g_fs_last_try < 1000) return;  // retry at most once a second
+  g_fs_last_try = now;
+  const Config& c = GetConfig();
+  IDXGIOutput* out = nullptr;
+  b.swapchain->GetContainingOutput(&out);
+  if (c.fs_width && out) {
+    DXGI_MODE_DESC want{};
+    want.Width = c.fs_width;
+    want.Height = c.fs_height;
+    want.RefreshRate.Numerator = c.fs_hz;
+    want.RefreshRate.Denominator = c.fs_hz ? 1 : 0;
+    want.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    DXGI_MODE_DESC got{};
+    HRESULT hr = out->FindClosestMatchingMode(&want, &got, b.device);
+    if (SUCCEEDED(hr)) {
+      hr = b.swapchain->ResizeTarget(&got);
+      if (!g_fs_logged_mode)
+        Log("exclusive: FullscreenMode %dx%d@%d -> closest mode %ux%u@%.2f Hz (ResizeTarget %08lx)", c.fs_width,
+            c.fs_height, c.fs_hz, got.Width, got.Height,
+            got.RefreshRate.Denominator ? static_cast<double>(got.RefreshRate.Numerator) / got.RefreshRate.Denominator
+                                        : 0.0,
+            hr);
+    } else if (!g_fs_logged_mode) {
+      Log("exclusive: no mode close to %dx%d@%d (%08lx); using the desktop's", c.fs_width, c.fs_height, c.fs_hz,
+          hr);
+    }
+    g_fs_logged_mode = true;
+  }
+  HRESULT hr = b.swapchain->SetFullscreenState(TRUE, out);
+  SafeRelease(out);
+  if (FAILED(hr)) {
+    ++g_fs_failures;
+    if (g_fs_failures <= 5 || g_fs_failures % 100 == 0)
+      Log("exclusive: SetFullscreenState failed %08lx (attempt %u); staying borderless for now", hr, g_fs_failures);
+    return;
+  }
+  ++g_fs_enters;
+  // The buffers must be resized after a mode switch; ResizeSwapchain does
+  // that on the next frame from the new client size.
+  b.swap_w = b.swap_h = 0;
+  RECT rc{};
+  GetClientRect(b.hwnd, &rc);
+  Log("exclusive: entered fullscreen (#%u), window client %ldx%ld", g_fs_enters, rc.right, rc.bottom);
+}
+
+void TrackExclusive11() {
+  Backend& b = g_backend;
+  if (!GetConfig().exclusive || !b.swapchain) return;
+  static BOOL was = FALSE;
+  BOOL fs = FALSE;
+  b.swapchain->GetFullscreenState(&fs, nullptr);
+  if (was && !fs) Log("exclusive: left fullscreen (focus lost or alt-tab)");
+  was = fs;
+  if (!fs) EnterExclusive11();
+}
+
+void LeaveExclusive11() {
+  Backend& b = g_backend;
+  BOOL fs = FALSE;
+  if (b.swapchain && SUCCEEDED(b.swapchain->GetFullscreenState(&fs, nullptr)) && fs) {
+    b.swapchain->SetFullscreenState(FALSE, nullptr);
+    Log("exclusive: left fullscreen (swap chain released)");
+  }
+}
+
 }  // namespace
 
 bool AttachWindow(HWND hwnd) {
@@ -489,12 +569,18 @@ bool AttachWindow(HWND hwnd) {
   Backend& b = g_backend;
   if (b.hwnd != hwnd) {
     SafeRelease(b.swap_rtv);
+    LeaveExclusive11();
     SafeRelease(b.swapchain);
     b.swap_w = b.swap_h = 0;
     b.hwnd = hwnd;
   }
   ApplyBorderless(hwnd);
-  return ResizeSwapchain();
+  if (!ResizeSwapchain()) return false;
+  if (GetConfig().exclusive) {
+    EnterExclusive11();
+    ResizeSwapchain();
+  }
+  return true;
 }
 
 void KeepBorderless() {
@@ -773,6 +859,7 @@ void Present(const GpuTexture& src_tex, UINT src_w, UINT src_h, UINT interval) {
   ReportStats();
   if (!b.hwnd || IsIconic(b.hwnd)) return;
   KeepBorderless();
+  TrackExclusive11();
   if (!ResizeSwapchain()) return;
   const float clear[4] = {0, 0, 0, 1};
   b.ctx->ClearRenderTargetView(b.swap_rtv, clear);

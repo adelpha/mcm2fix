@@ -14,6 +14,7 @@
 #include <string>
 
 #include "patch.h"
+#include "xp_compat.h"
 
 namespace {
 
@@ -96,7 +97,7 @@ void SeedUserKey() {
   if (!HasValue(key, "mcm2fixImported")) {
     HKEY old;
     if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, kGameKey, 0, KEY_READ, &old) == ERROR_SUCCESS) {
-      LONG r = RegCopyTreeA(old, nullptr, key);
+      LONG r = xp::CopyRegTree(old, key);
       patch::Log("registry: imported HKLM\\%s (result %ld)", kGameKey, r);
       RegCloseKey(old);
     } else {
@@ -134,7 +135,7 @@ void SeedUserKey() {
   if (RegQueryValueExA(key, "mcm2fixModeList", nullptr, nullptr,
                        reinterpret_cast<BYTE*>(old_stamp), &stamp_size) != ERROR_SUCCESS ||
       std::strcmp(old_stamp, stamp) != 0) {
-    LONG r = RegDeleteTreeA(key, "DriverInfo");
+    LONG r = xp::DeleteRegTree(key, "DriverInfo");
     patch::Log("registry: display modes changed (%s), video card will be re-tested (%ld)", stamp, r);
     SetString(key, "mcm2fixModeList", stamp);
   }

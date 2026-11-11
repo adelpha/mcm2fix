@@ -13,6 +13,7 @@
 #include "backend9.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -54,6 +55,11 @@ struct Chains {
   IDirect3DSwapChain9* now = nullptr;
   bool failed = false;
 } g_sc;
+IDirect3DQuery9* g_vsync_done = nullptr;  // event query for manual VSync (Present9)
+// Exclusive fullscreen (ini Fullscreen=Exclusive): the device is recreated on
+// the game window and presents through its own (implicit) swap chain.
+bool g_exclusive = false;
+bool g_exclusive_tried = false;
 
 // Cached device state.
 struct StateCache {
@@ -106,6 +112,7 @@ IDirect3DSurface9* Staging(UINT w, UINT h, D3DFORMAT fmt) {
 
 void ReleaseChains() {
   SafeRelease(g_sc.vsync);
+  SafeRelease(g_vsync_done);
   SafeRelease(g_sc.now);
   g_sc.w = g_sc.h = 0;
 }
@@ -151,13 +158,15 @@ void LogCaps(const D3DCAPS9& c) {
       (c.PixelShaderVersion >> 8) & 0xff, c.PixelShaderVersion & 0xff);
 }
 
-bool CreateDevice9(DWORD vp) {
+bool CreateDevice9(DWORD vp, HWND focus = nullptr) {
   Backend& b = B();
   g_behavior = vp | D3DCREATE_FPU_PRESERVE | D3DCREATE_MULTITHREADED;
-  HRESULT hr = b.d3d9->CreateDevice(b.adapter9, D3DDEVTYPE_HAL, DummyWindow(), g_behavior, &g_pp, &b.dev9);
+  HRESULT hr = b.d3d9->CreateDevice(b.adapter9, D3DDEVTYPE_HAL, focus ? focus : DummyWindow(), g_behavior, &g_pp,
+                                    &b.dev9);
   if (FAILED(hr)) {
-    Log("CreateDevice (%s vertex processing) failed %08lx",
-        vp == D3DCREATE_HARDWARE_VERTEXPROCESSING ? "hardware" : "software", hr);
+    Log("CreateDevice (%s vertex processing, %s) failed %08lx",
+        vp == D3DCREATE_HARDWARE_VERTEXPROCESSING ? "hardware" : "software",
+        g_pp.Windowed ? "windowed" : "exclusive fullscreen", hr);
     b.dev9 = nullptr;
     return false;
   }
@@ -211,6 +220,21 @@ bool TryRecover() {
 bool EnsureChains() {
   Backend& b = B();
   if (!b.hwnd) return false;
+  if (g_exclusive) {
+    if (g_sc.vsync) return true;
+    if (FAILED(b.dev9->GetSwapChain(0, &g_sc.vsync)) || !g_sc.vsync) {
+      LogOnce("exclusive: GetSwapChain failed");
+      return false;
+    }
+    g_sc.now = g_sc.vsync;
+    g_sc.now->AddRef();
+    g_sc.hwnd = b.hwnd;
+    g_sc.w = g_pp.BackBufferWidth;
+    g_sc.h = g_pp.BackBufferHeight;
+    Log("exclusive: presenting on the device's own swap chain %ux%u, interval %s", g_sc.w, g_sc.h,
+        g_pp.PresentationInterval == D3DPRESENT_INTERVAL_ONE ? "ONE (VSync)" : "IMMEDIATE");
+    return true;
+  }
   RECT rc{};
   GetClientRect(b.hwnd, &rc);
   UINT w = rc.right > 0 ? rc.right : 1, h = rc.bottom > 0 ? rc.bottom : 1;
@@ -431,6 +455,101 @@ bool InitDevice9() {
   return true;
 }
 
+namespace {
+
+// Picks the fullscreen mode: FullscreenMode if the card has it (closest
+// refresh rate), else the desktop's.
+D3DDISPLAYMODE PickMode9() {
+  Backend& b = B();
+  const Config& c = GetConfig();
+  D3DDISPLAYMODE desk{};
+  b.d3d9->GetAdapterDisplayMode(b.adapter9, &desk);
+  D3DDISPLAYMODE pick = desk;
+  pick.Format = D3DFMT_X8R8G8B8;
+  if (c.fs_width) {
+    const UINT n = b.d3d9->GetAdapterModeCount(b.adapter9, D3DFMT_X8R8G8B8);
+    bool found = false;
+    for (UINT i = 0; i < n; ++i) {
+      D3DDISPLAYMODE m{};
+      if (FAILED(b.d3d9->EnumAdapterModes(b.adapter9, D3DFMT_X8R8G8B8, i, &m))) continue;
+      if (m.Width != static_cast<UINT>(c.fs_width) || m.Height != static_cast<UINT>(c.fs_height)) continue;
+      // Wanted refresh rate, or else the highest.
+      const int want = c.fs_hz ? c.fs_hz : 100000;
+      if (!found || std::abs(static_cast<int>(m.RefreshRate) - want) <
+                        std::abs(static_cast<int>(pick.RefreshRate) - want)) {
+        pick = m;
+        found = true;
+      }
+    }
+    Log("exclusive: FullscreenMode %dx%d@%d -> %s %ux%u@%u", c.fs_width, c.fs_height, c.fs_hz,
+        found ? "mode" : "not available, desktop", pick.Width, pick.Height, pick.RefreshRate);
+  }
+  return pick;
+}
+
+D3DPRESENT_PARAMETERS FullscreenParams9(HWND hwnd, const D3DDISPLAYMODE& m) {
+  D3DPRESENT_PARAMETERS pp{};
+  pp.BackBufferWidth = m.Width;
+  pp.BackBufferHeight = m.Height;
+  pp.BackBufferFormat = D3DFMT_X8R8G8B8;
+  pp.BackBufferCount = 1;
+  pp.SwapEffect = D3DSWAPEFFECT_DISCARD;
+  pp.hDeviceWindow = hwnd;
+  pp.Windowed = FALSE;
+  pp.FullScreen_RefreshRateInHz = m.RefreshRate;
+  pp.PresentationInterval = GetConfig().vsync ? D3DPRESENT_INTERVAL_ONE : D3DPRESENT_INTERVAL_IMMEDIATE;
+  return pp;
+}
+
+// A Direct3D 9 device can only go fullscreen on the window it was created
+// for (its focus window), and the device is made before the game has a
+// window. So, the first time the game window is attached and before the
+// game has made any textures, the device is made again on that window.
+void SwitchToExclusive9(HWND hwnd) {
+  Backend& b = B();
+  if (g_exclusive || g_exclusive_tried) return;
+  g_exclusive_tried = true;
+  if (g_stats.tex_managed || g_stats.tex_rt || g_stats.depth) {
+    Log("exclusive: textures already exist (%u managed, %u render targets, %u depth); staying borderless",
+        g_stats.tex_managed, g_stats.tex_rt, g_stats.depth);
+    return;
+  }
+  const D3DDISPLAYMODE mode = PickMode9();
+  Log("exclusive: recreating the device on the game window %p, %ux%u@%u Hz, VSync %d", static_cast<void*>(hwnd),
+      mode.Width, mode.Height, mode.RefreshRate, GetConfig().vsync ? 1 : 0);
+  ReleaseChains();
+  MsaaDeviceLost();
+  ReleaseGdi9();
+  GpuTextDeviceLost();
+  GpuTimerRelease9();
+  EndScene9();
+  for (auto& kv : g_depth_clear_rt) SafeRelease(kv.second);
+  g_depth_clear_rt.clear();
+  for (auto& kv : g_upload_tex) SafeRelease(kv.second);
+  g_upload_tex.clear();
+  for (auto& kv : g_staging) SafeRelease(kv.second);
+  g_staging.clear();
+  SafeRelease(g_white);
+  const D3DPRESENT_PARAMETERS windowed = g_pp;
+  const DWORD vp = g_behavior & (D3DCREATE_HARDWARE_VERTEXPROCESSING | D3DCREATE_SOFTWARE_VERTEXPROCESSING);
+  ULONG left = b.dev9->Release();
+  b.dev9 = nullptr;
+  if (left) Log("exclusive: old device still has %lu references", left);
+  g_pp = FullscreenParams9(hwnd, mode);
+  if (CreateDevice9(vp, hwnd)) {
+    g_exclusive = true;
+    ResetState();
+    Log("exclusive: fullscreen device made (behaviour %08lx)", g_behavior);
+    return;
+  }
+  g_pp = windowed;
+  if (!CreateDevice9(vp)) Log("exclusive: could not make the windowed device again either");
+  else Log("exclusive: fullscreen failed; back to borderless");
+  ResetState();
+}
+
+}  // namespace
+
 bool AttachWindow9(HWND hwnd) {
   Backend& b = B();
   if (b.hwnd != hwnd) {
@@ -438,6 +557,8 @@ bool AttachWindow9(HWND hwnd) {
     b.hwnd = hwnd;
   }
   ApplyBorderless(hwnd);
+  if (GetConfig().exclusive) SwitchToExclusive9(hwnd);
+  if (!b.dev9) return false;
   if (g_lost && !TryRecover()) return true;
   return EnsureChains();
 }
@@ -1122,6 +1243,153 @@ void GpuTimerMark9() {
   g_gpu9[g_gpu9_i % 6].begin->Issue(D3DISSUE_END);
 }
 
+
+namespace {
+
+// ---- VSync without a desktop compositor ------------------------------------
+// With the DWM (Vista/7 Aero, 8+), presenting on the D3DPRESENT_INTERVAL_ONE
+// chain is enough. Without it (Windows XP, Vista/7 basic theme) a windowed
+// Present is a plain blit to the desktop: XP drivers often ignore the
+// interval (the frame rate is not capped) or blit at any scan line (tearing).
+// There mcm2fix waits for the vertical blank itself and presents on the
+// immediate chain right as it starts; if the driver cannot report the scan
+// line, frames are paced to the refresh rate with the precise timer.
+enum class VsyncMode { kSwapChain, kRasterPoll, kTimer };
+
+struct ManualVsync {
+  bool decided = false;
+  VsyncMode mode = VsyncMode::kSwapChain;
+  LARGE_INTEGER freq{}, next{};
+  double period = 0;  // QPC ticks per refresh
+  unsigned waits = 0, timeouts = 0, frames = 0;
+  double wait_ms = 0, flush_ms = 0;
+  DWORD last_log = 0;
+} g_mv;
+
+bool CompositorOn() {
+  OSVERSIONINFOA v{};
+  v.dwOSVersionInfoSize = sizeof(v);
+#if defined(_MSC_VER)
+#pragma warning(suppress : 4996)
+#elif defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+  GetVersionExA(&v);
+#if defined(__GNUC__) && !defined(_MSC_VER)
+#pragma GCC diagnostic pop
+#endif
+  if (v.dwMajorVersion < 6) return false;  // XP / Server 2003: never
+  if (v.dwMajorVersion > 6 || v.dwMinorVersion >= 2) return true;  // 8+: always
+  HMODULE dwm = LoadLibraryA("dwmapi.dll");
+  using Fn = HRESULT(WINAPI*)(BOOL*);
+  auto fn = dwm ? reinterpret_cast<Fn>(reinterpret_cast<void*>(GetProcAddress(dwm, "DwmIsCompositionEnabled")))
+                : nullptr;
+  BOOL on = FALSE;
+  return fn && SUCCEEDED(fn(&on)) && on;
+}
+
+void DecideVsync(IDirect3DSwapChain9* sc) {
+  if (g_mv.decided) return;
+  g_mv.decided = true;
+  QueryPerformanceFrequency(&g_mv.freq);
+  DEVMODEA dm{};
+  dm.dmSize = sizeof(dm);
+  DWORD hz = EnumDisplaySettingsA(nullptr, ENUM_CURRENT_SETTINGS, &dm) ? dm.dmDisplayFrequency : 0;
+  if (hz <= 1 || hz > 500) hz = 60;  // 0/1 = "hardware default"
+  g_mv.period = static_cast<double>(g_mv.freq.QuadPart) / hz;
+  const bool comp = CompositorOn();
+  const bool scanline = (g_caps.Caps & D3DCAPS_READ_SCANLINE) != 0;
+  D3DRASTER_STATUS rs{};
+  const bool raster_ok = scanline && sc && SUCCEEDED(sc->GetRasterStatus(&rs));
+  if (comp || g_exclusive) g_mv.mode = VsyncMode::kSwapChain;
+  else if (raster_ok) g_mv.mode = VsyncMode::kRasterPoll;
+  else g_mv.mode = VsyncMode::kTimer;
+  if (g_exclusive) Log("vsync: exclusive fullscreen, the swap chain waits for the refresh itself");
+  Log("vsync: compositor %s, refresh %lu Hz, READ_SCANLINE cap %d, GetRasterStatus %s (line %u) -> %s",
+      comp ? "on" : "off", hz, scanline ? 1 : 0, raster_ok ? "ok" : "failed", rs.ScanLine,
+      g_mv.mode == VsyncMode::kSwapChain ? "swap chain interval ONE"
+      : g_mv.mode == VsyncMode::kRasterPoll ? "own wait for vertical blank, then immediate present"
+                                            : "paced to the refresh rate by timer, then immediate present");
+}
+
+// Waits until the vertical blank starts (or, by timer, until the next
+// refresh is due). Returns false when it gave up.
+bool WaitForBlank(IDirect3DSwapChain9* sc) {
+  LARGE_INTEGER t0, t;
+  // Let the GPU finish the frame first, so the blit queued by Present runs
+  // straight away instead of whenever the GPU gets to it.
+  QueryPerformanceCounter(&t0);
+  if (!g_vsync_done) B().dev9->CreateQuery(D3DQUERYTYPE_EVENT, &g_vsync_done);
+  if (g_vsync_done && SUCCEEDED(g_vsync_done->Issue(D3DISSUE_END))) {
+    for (int i = 0; i < 100000; ++i) {
+      HRESULT q = g_vsync_done->GetData(nullptr, 0, D3DGETDATA_FLUSH);
+      if (q != S_FALSE) break;
+      QueryPerformanceCounter(&t);
+      if (t.QuadPart - t0.QuadPart > g_mv.freq.QuadPart / 20) break;  // 50 ms
+      YieldProcessor();
+    }
+  }
+  QueryPerformanceCounter(&t);
+  g_mv.flush_ms += static_cast<double>(t.QuadPart - t0.QuadPart) * 1000.0 / static_cast<double>(g_mv.freq.QuadPart);
+  t0 = t;
+  bool ok = true;
+  if (g_mv.mode == VsyncMode::kRasterPoll) {
+    D3DRASTER_STATUS rs{};
+    const LONGLONG limit = static_cast<LONGLONG>(g_mv.period * 2);
+    // If already in the blank, this frame took more than a refresh: go now.
+    if (SUCCEEDED(sc->GetRasterStatus(&rs)) && !rs.InVBlank) {
+      for (;;) {
+        if (FAILED(sc->GetRasterStatus(&rs))) { ok = false; break; }
+        if (rs.InVBlank) break;
+        QueryPerformanceCounter(&t);
+        if (t.QuadPart - t0.QuadPart > limit) { ok = false; break; }
+        // Sleep while the beam is far from the bottom, spin near it.
+        const double left = static_cast<double>(g_mv.period) *
+                            (1.0 - static_cast<double>(rs.ScanLine) / static_cast<double>(g_sc.h ? g_sc.h : 600));
+        if (left > g_mv.freq.QuadPart / 500.0) Sleep(1);
+        else YieldProcessor();
+      }
+    }
+  } else {
+    const LONGLONG period = static_cast<LONGLONG>(g_mv.period);
+    if (g_mv.next.QuadPart == 0 || t0.QuadPart - g_mv.next.QuadPart > period) g_mv.next.QuadPart = t0.QuadPart;
+    for (;;) {
+      QueryPerformanceCounter(&t);
+      const LONGLONG left = g_mv.next.QuadPart - t.QuadPart;
+      if (left <= 0) break;
+      if (left > g_mv.freq.QuadPart / 500) Sleep(1);
+      else YieldProcessor();
+    }
+    g_mv.next.QuadPart += period;
+  }
+  QueryPerformanceCounter(&t);
+  ++g_mv.waits;
+  if (!ok) ++g_mv.timeouts;
+  g_mv.wait_ms += static_cast<double>(t.QuadPart - t0.QuadPart) * 1000.0 / static_cast<double>(g_mv.freq.QuadPart);
+  return ok;
+}
+
+void LogVsync() {
+  ++g_mv.frames;
+  const DWORD now = GetTickCount();
+  if (!g_mv.last_log) g_mv.last_log = now;
+  if (now - g_mv.last_log < 5000) return;
+  const double secs = (now - g_mv.last_log) / 1000.0;
+  // Every 5 s for the first minute, then every minute.
+  static unsigned logs = 0;
+  if (logs >= 12 && now - g_mv.last_log < 60000) return;
+  ++logs;
+  Log("vsync %.0fs: %.1f fps, own waits %u (GPU finish %.2f ms + blank wait %.2f ms avg, %u gave up)", secs,
+      g_mv.frames / secs, g_mv.waits, g_mv.waits ? g_mv.flush_ms / g_mv.waits : 0.0,
+      g_mv.waits ? g_mv.wait_ms / g_mv.waits : 0.0, g_mv.timeouts);
+  g_mv.last_log = now;
+  g_mv.frames = g_mv.waits = g_mv.timeouts = 0;
+  g_mv.wait_ms = g_mv.flush_ms = 0;
+}
+
+}  // namespace
+
 void Present9(const GpuTexture& src, UINT src_w, UINT src_h, UINT interval) {
   Backend& b = B();
   ++Counters().presents;
@@ -1133,7 +1401,9 @@ void Present9(const GpuTexture& src, UINT src_w, UINT src_h, UINT interval) {
   prof::Scope zone(prof::kCompose);
   KeepBorderless();
   if (!EnsureChains()) return;
-  IDirect3DSwapChain9* sc = interval ? g_sc.vsync : g_sc.now;
+  if (interval) DecideVsync(g_sc.vsync);
+  const bool own_wait = interval && g_mv.mode != VsyncMode::kSwapChain;
+  IDirect3DSwapChain9* sc = interval && !own_wait ? g_sc.vsync : g_sc.now;
   IDirect3DSurface9* back = nullptr;
   if (FAILED(sc->GetBackBuffer(0, D3DBACKBUFFER_TYPE_MONO, &back)) || !back) return;
   EndScene9();
@@ -1163,7 +1433,9 @@ void Present9(const GpuTexture& src, UINT src_w, UINT src_h, UINT interval) {
   EndScene9();
   PerfBeforePresent();
   zone.Switch(prof::kSwapPresent);
+  if (own_wait) WaitForBlank(g_sc.vsync);
   HRESULT hr = sc->Present(nullptr, nullptr, nullptr, nullptr, 0);
+  if (interval) LogVsync();
   zone.Switch(prof::kCompose);
   if (!g_lost && hr != D3DERR_DEVICELOST) GpuTimerFrame9();
   if (hr == D3DERR_DEVICELOST) {

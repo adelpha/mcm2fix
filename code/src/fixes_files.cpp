@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "patch.h"
+#include "xp_compat.h"
 
 namespace {
 
@@ -314,13 +315,12 @@ void ApplyFileFixes() {
   // Make relative paths work from any shortcut's "Start in" folder.
   SetCurrentDirectoryA(g_game.c_str());
 
-  char local[MAX_PATH] = {};
-  DWORD n = GetEnvironmentVariableA("LOCALAPPDATA", local, MAX_PATH);
-  if (n == 0 || n >= MAX_PATH) {
-    patch::Log("files: LOCALAPPDATA not set, writes stay in the game folder");
+  const std::string local = xp::LocalAppData();
+  if (local.empty()) {
+    patch::Log("files: no local app data folder, writes stay in the game folder");
     return;
   }
-  g_user = std::string(local) + "\\Motocross Madness 2";
+  g_user = local + "\\Motocross Madness 2";
   MakeDirs(g_user);
   InitializeCriticalSection(&g_finds_lock);
 

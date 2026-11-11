@@ -11,6 +11,7 @@
 
 #include "../config.h"
 #include "../patch.h"
+#include "../xp_compat.h"
 #include "backend.h"
 #include "gdihook.h"
 #include "gputext.h"
@@ -441,7 +442,7 @@ bool FontFamily(const std::vector<uint8_t>& f, char* out, size_t out_size) {
       }
     }
     if (!ascii.empty()) {
-      strncpy_s(out, out_size, ascii.c_str(), _TRUNCATE);
+      xp::Copy(out, out_size, ascii.c_str());
       return true;
     }
   }
@@ -455,11 +456,11 @@ void LoadFontFile(const char* file, char* face, size_t face_size, const char* wh
   if (!file[0]) return;
   char path[MAX_PATH] = {};
   if (file[0] == '\\' || std::strchr(file, ':')) {
-    strncpy_s(path, file, _TRUNCATE);
+    xp::Copy(path, file);
   } else {
     GetModuleFileNameA(nullptr, path, MAX_PATH);
     if (char* slash = std::strrchr(path, '\\')) slash[1] = 0;
-    strncat_s(path, file, _TRUNCATE);
+    xp::Append(path, file);
   }
   std::vector<uint8_t> data;
   if (FILE* fp = std::fopen(path, "rb")) {
@@ -504,7 +505,7 @@ HFONT ScaledFont(const LOGFONTA& lf, float kx, float ky, bool digits = false) {
   FontKey key{lf};
   const char* face = digits && g_digit_face[0] ? g_digit_face : g_face;
   if (face[0]) {  // HudFont: same size, its own face, regular weight
-    strncpy_s(key.lf.lfFaceName, face, _TRUNCATE);
+    xp::Copy(key.lf.lfFaceName, face);
     key.lf.lfCharSet = DEFAULT_CHARSET;
     key.lf.lfWeight = FW_NORMAL;
     key.lf.lfItalic = 0;

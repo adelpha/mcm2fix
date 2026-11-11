@@ -31,6 +31,7 @@ add_library(mcm2fix SHARED
   src/prof.cpp
   src/smooth.cpp
   src/smooth_parts.cpp
+  src/xp_compat.cpp
   src/dd/backend.cpp
   src/dd/backend9.cpp
   src/dd/device9.cpp
@@ -55,7 +56,7 @@ if(MCM2FIX_FFMPEG)
   target_sources(mcm2fix PRIVATE src/video/indeo5_ffmpeg.cpp)
   target_include_directories(mcm2fix PRIVATE "${MCM2FIX_FFMPEG}/include")
   target_link_libraries(mcm2fix PRIVATE "${MCM2FIX_FFMPEG}/lib/libavcodec.a"
-                                        "${MCM2FIX_FFMPEG}/lib/libavutil.a" bcrypt)
+                                        "${MCM2FIX_FFMPEG}/lib/libavutil.a")
 else()
   target_sources(mcm2fix PRIVATE src/video/indeo5_stub.cpp)
 endif()
@@ -64,7 +65,7 @@ set_target_properties(mcm2fix PROPERTIES PREFIX "" OUTPUT_NAME "mcm2fix")
 
 # d3d11.dll, dxgi.dll and d3d9.dll are loaded at run time (dd/backend*.cpp),
 # so the DLL loads where they are missing and the renderer can fall back.
-target_link_libraries(mcm2fix PRIVATE dxguid gdi32 user32 ole32 windowscodecs winmm)
+target_link_libraries(mcm2fix PRIVATE dxguid gdi32 user32 ole32 windowscodecs winmm shell32 shlwapi)
 target_compile_definitions(mcm2fix PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 
 if(MSVC)
@@ -87,9 +88,9 @@ if(MCM2FIX_TESTS)
   if(MCM2FIX_FFMPEG)
     target_include_directories(dd_smoke PRIVATE "${MCM2FIX_FFMPEG}/include")
     target_link_libraries(dd_smoke PRIVATE "${MCM2FIX_FFMPEG}/lib/libavcodec.a"
-                                           "${MCM2FIX_FFMPEG}/lib/libavutil.a" bcrypt)
+                                           "${MCM2FIX_FFMPEG}/lib/libavutil.a")
   endif()
-  target_link_libraries(dd_smoke PRIVATE dxguid gdi32 user32 ole32 windowscodecs winmm)
+  target_link_libraries(dd_smoke PRIVATE dxguid gdi32 user32 ole32 windowscodecs winmm shell32 shlwapi)
   target_compile_definitions(dd_smoke PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
   if(NOT MSVC)
     target_link_options(dd_smoke PRIVATE -static -static-libgcc -static-libstdc++ -Wl,--enable-stdcall-fixup)

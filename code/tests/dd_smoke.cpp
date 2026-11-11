@@ -4,7 +4,7 @@
 // ProcessVertices, GDI text, keyed sprite blits), reads the back buffer and
 // checks a few pixels. Runs on Windows or under Wine.
 //
-//   dd_smoke.exe [d3d9|d3d11]      (writes mcm2fix.ini next to itself)
+//   dd_smoke.exe [d3d9|d3d11] [exclusive]   (writes mcm2fix.ini next to itself)
 //
 // Exit code 0 = all checks passed. Details go to stdout and the mcm2fix log.
 #include <windows.h>
@@ -99,12 +99,15 @@ int main(int argc, char** argv) {
     if (std::strcmp(argv[i], "nosample") == 0) sample_us = 0;
   for (int i = 2; i < argc; ++i)
     if (std::strncmp(argv[i], "us=", 3) == 0) sample_us = std::atoi(argv[i] + 3);
+  bool exclusive = false;  // "exclusive": Fullscreen=Exclusive
+  for (int i = 2; i < argc; ++i) exclusive |= std::strcmp(argv[i], "exclusive") == 0;
   char ini[MAX_PATH];
   GetModuleFileNameA(nullptr, ini, MAX_PATH);
   std::strcpy(std::strrchr(ini, '\\') + 1, "mcm2fix.ini");
   FILE* f = std::fopen(ini, "w");
   std::fprintf(f, "[mcm2fix]\nRenderer=%s\nAntialiasing=4\nVSync=0\nD3D9Log=1\nDDStats=1\nGdiLog=1\nTextLog=1\nGpuText=%d\nTextureReplace=0\nProfile=%d\nProfileSampleUs=%d\n", api,
                gputext ? 1 : 0, profile ? 1 : 0, sample_us);
+  if (exclusive) std::fprintf(f, "Fullscreen=Exclusive\n");
   std::fclose(f);
   LoadConfig();
   prof::Start();

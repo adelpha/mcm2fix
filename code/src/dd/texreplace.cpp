@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "../config.h"
+#include "../xp_compat.h"
 
 namespace dd {
 
@@ -40,10 +41,9 @@ IWICImagingFactory* Wic() {
 }
 
 std::wstring UserDir() {
-  wchar_t buf[MAX_PATH] = {};
-  DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", buf, MAX_PATH);
-  if (!n || n >= MAX_PATH) return L"";
-  return std::wstring(buf) + L"\\Motocross Madness 2";
+  const std::wstring local = xp::LocalAppDataW();
+  if (local.empty()) return L"";
+  return local + L"\\Motocross Madness 2";
 }
 
 std::wstring GameDir() {

@@ -1,4 +1,5 @@
 #include "patch.h"
+#include "xp_compat.h"
 
 #include "config.h"
 
@@ -101,13 +102,14 @@ void Log(const char* fmt, ...) {
   if (!tried) {
     tried = true;
     char path[MAX_PATH] = {};
-    DWORD len = GetEnvironmentVariableA("LOCALAPPDATA", path, MAX_PATH);
-    if (len > 0 && len < MAX_PATH - 40) {
-      strncat_s(path, "\\Motocross Madness 2", _TRUNCATE);
+    const std::string local = xp::LocalAppData();
+    if (!local.empty() && local.size() < MAX_PATH - 60) {
+      xp::Append(path, local.c_str());
+      xp::Append(path, "\\Motocross Madness 2");
       CreateDirectoryA(path, nullptr);
       // One file per run: logs\mcm2fix-YYYYMMDD-HHMMSS.log, keeping the
       // newest kKeepLogs.
-      strncat_s(path, "\\logs", _TRUNCATE);
+      xp::Append(path, "\\logs");
       CreateDirectoryA(path, nullptr);
       PruneLogs(path);
       SYSTEMTIME st;
@@ -115,7 +117,7 @@ void Log(const char* fmt, ...) {
       char name[64];
       std::snprintf(name, sizeof(name), "\\mcm2fix-%04u%02u%02u-%02u%02u%02u.log", st.wYear, st.wMonth,
                     st.wDay, st.wHour, st.wMinute, st.wSecond);
-      strncat_s(path, name, _TRUNCATE);
+      xp::Append(path, name);
       file = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS,
                          FILE_ATTRIBUTE_NORMAL, nullptr);
     }
