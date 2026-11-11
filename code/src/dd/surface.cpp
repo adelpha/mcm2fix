@@ -1,5 +1,6 @@
 #include "../smooth.h"
 #include "surface.h"
+#include "drawlog.h"
 #include "../prof.h"
 #include "gdihook.h"
 #include "gputext.h"
@@ -1261,6 +1262,7 @@ HRESULT Surface::Flip(LPDIRECTDRAWSURFACE7 s, DWORD flags) {
     hr = FlipImpl(s, flags);
   }
   prof::FrameEnd();
+  DrawLogFrameEnd();
   return hr;
 }
 

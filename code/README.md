@@ -141,6 +141,7 @@ HudDigitFont=FONTS\DSEG7Classic-BoldItalic.ttf ; .ttf for the numbers in the sta
 HudDigitSize=0.7 ; size of those numbers relative to the words beside them
 HudStuntTextSize=0.8 ; stunt events: size of the score panel's text (1 = as big as the race panel's)
 TextLog=0      ; debugging: log GPU text drawing and what erases it
+DrawLog=0      ; debugging: log which draw calls in a race could be merged into fewer (per call site, plus a few whole frames)
 GdiLog=0       ; debugging: log the GDI calls (text, boxes, lines) the game draws onto the screen with
 RestartLog=0   ; debugging: log the start grid at race load and on Restart Race
 TextureLog=0   ; debugging: log the format of each texture the game creates

@@ -169,6 +169,7 @@ class Device : public d3d7::IDirect3DDevice7 {
     const VertexBuffer* vb = nullptr;  // for ProcessVertices clip data
   };
   void Submit(const Draw& d);
+  void NoteDrawLog(const Draw& d);  // DrawLog=1 (drawlog.cpp)
   bool SubmitWideLine(const Draw& d);
   void SubmitDraw(const Draw& d);
   void OccludeText(const Draw& d);

@@ -1,6 +1,7 @@
 #include "../prof.h"
 #include "../smooth.h"
 #include "device.h"
+#include "drawlog.h"
 #include "gputext.h"
 #include "hudtext.h"
 
@@ -1656,6 +1657,7 @@ void Device::Submit(const Draw& d) {
     prof::Count(prof::cDrawsIndexed);
     prof::Count(prof::cIndices, d.nidx);
   }
+  if (DrawLogOn()) NoteDrawLog(d);
   if (!d.layout.tl) return SubmitDraw(d);
   if (SubmitWideLine(d)) return;
   // Race HUD text (hudtext.cpp): the name labels over the riders are drawn
@@ -1685,6 +1687,46 @@ void Device::Submit(const Draw& d) {
   SubmitDraw(d);
   // A race HUD text panel: its text goes over it.
   HudTextAfterDraw(rt_, tex_[0], d.verts, d.first, d.count, d.layout.stride, uv);
+}
+
+namespace {
+uint64_t Fnv(const void* p, size_t n, uint64_t h = 1469598103934665603ull) {
+  const auto* b = static_cast<const uint8_t*>(p);
+  for (size_t i = 0; i < n; ++i) h = (h ^ b[i]) * 1099511628211ull;
+  return h;
+}
+}  // namespace
+
+void Device::NoteDrawLog(const Draw& d) {
+  DrawLogRec r;
+  r.api = d.vb ? 3 : (d.idx ? 1 : 0);
+  r.prim = static_cast<uint8_t>(d.prim);
+  r.tl = d.layout.tl;
+  r.clip = d.layout.tl && d.vb && d.vb->HasClipData(d.first, d.count);
+  r.stride = static_cast<uint16_t>(d.layout.stride);
+  {
+    const FvfLayout& l = d.layout;
+    const int f[] = {static_cast<int>(l.stride), l.tl ? 1 : 0, l.diffuse, l.specular, l.normal, l.ntex,
+                     l.tex[0], l.tex[1], l.tex_dim[0], l.tex_dim[1]};
+    r.fvf_sig = static_cast<uint32_t>(Fnv(f, sizeof(f)));
+  }
+  r.count = d.count;
+  r.nidx = d.idx ? d.nidx : 0;
+  r.tex0 = tex_[0];
+  r.tex1 = tex_[1];
+  uint64_t m = Fnv(&world_, sizeof(world_));
+  m = Fnv(&view_, sizeof(view_), m);
+  m = Fnv(&proj_, sizeof(proj_), m);
+  m = Fnv(&viewport_, sizeof(viewport_), m);
+  r.matrices = static_cast<uint32_t>(m ^ (m >> 32));
+  uint64_t h = Fnv(rs_, sizeof(rs_));
+  h = Fnv(tss_, sizeof(tss_[0]) * kStages, h);
+  h = Fnv(tex_, sizeof(tex_[0]) * kStages, h);
+  h = Fnv(&material_, sizeof(material_), h);
+  h = Fnv(&rt_, sizeof(rt_), h);
+  h = Fnv(&m, sizeof(m), h);
+  r.state = h;
+  DrawLogNote(r);
 }
 
 void Device::SubmitDraw(const Draw& d) {
