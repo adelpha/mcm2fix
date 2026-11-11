@@ -105,7 +105,7 @@ int main(int argc, char** argv) {
   GetModuleFileNameA(nullptr, ini, MAX_PATH);
   std::strcpy(std::strrchr(ini, '\\') + 1, "mcm2fix.ini");
   FILE* f = std::fopen(ini, "w");
-  std::fprintf(f, "[mcm2fix]\nRenderer=%s\nAntialiasing=4\nVSync=0\nD3D9Log=1\nDDStats=1\nGdiLog=1\nTextLog=1\nGpuText=%d\nTextureReplace=0\nProfile=%d\nProfileSampleUs=%d\n", api,
+  std::fprintf(f, "[mcm2fix]\nRenderer=%s\nAntialiasing=4\nAlphaToCoverage=2\nAlphaLog=1\nVSync=0\nD3D9Log=1\nDDStats=1\nGdiLog=1\nTextLog=1\nGpuText=%d\nTextureReplace=0\nProfile=%d\nProfileSampleUs=%d\n", api,
                gputext ? 1 : 0, profile ? 1 : 0, sample_us);
   if (exclusive) std::fprintf(f, "Fullscreen=Exclusive\n");
   std::fclose(f);
@@ -243,6 +243,11 @@ int main(int argc, char** argv) {
     dev->SetRenderState(RS_ALPHATESTENABLE, 1);
     dev->SetRenderState(RS_ALPHAFUNC, 5);
     dev->SetRenderState(RS_ALPHAREF, 0);
+    // Blended + depth write + alpha test GREATER 0: a cut-out, which takes
+    // the alpha-to-coverage path (MSAA is on).
+    dev->SetRenderState(RS_ALPHABLENDENABLE, 1);
+    dev->SetRenderState(RS_SRCBLEND, 5);
+    dev->SetRenderState(RS_DESTBLEND, 6);
     V3 w[4] = {{0.5f, 0.5f, 5, 0xffffffff, 0, 0},
                {4.5f, 0.5f, 5, 0xffffffff, 1, 0},
                {0.5f, 4.5f, 5, 0xffffffff, 0, 1},
@@ -250,6 +255,7 @@ int main(int argc, char** argv) {
     WORD idx[6] = {0, 1, 2, 1, 3, 2};
     dev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, fvf_3d, w, 4, idx, 6, 0);
     dev->SetRenderState(RS_ALPHATESTENABLE, 0);
+    dev->SetRenderState(RS_ALPHABLENDENABLE, 0);
 
     // 3. ProcessVertices + DrawIndexedPrimitiveVB: a white-ish (vertex colour
     //    yellow) quad bottom left, untextured (colour op select diffuse).

@@ -57,6 +57,7 @@ struct Config {
   bool restart_log = false;  // RestartLog: log the start grid at race load and Restart Race
   bool alpha_log = false;    // AlphaLog: log each blended/alpha-tested draw combination and whether AlphaCut applied
   int alpha_cut = 128;        // AlphaCut: alpha-tested blended pixels below this (0-255) are dropped
+  int alpha_to_coverage = 2;  // AlphaToCoverage: cut-out edges via MSAA coverage (0 off, 1 sharp, 2 soft)
   // Graphics options.
   float fov = 0.0f;           // Fov: camera field of view in degrees at 4:3 (0 = game's own, 77)
   int anisotropy = 16;        // Anisotropy: anisotropic filtering level (0/1 = off, up to 16)

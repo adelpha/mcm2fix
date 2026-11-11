@@ -205,6 +205,13 @@ void Device::ApplyState9(int mode, bool has_depth) {
   if (caps.RasterCaps & D3DPRASTERCAPS_SLOPESCALEDEPTHBIAS)
     RS9(D3DRS_SLOPESCALEDEPTHBIAS, AsDword(-static_cast<float>(bias) * 0.5f));
 
+  // Cut-outs get AlphaCut. No alpha-to-coverage on Direct3D 9: it has none of
+  // its own, and NVIDIA's ATOC extension was accepted but had no effect on an
+  // RTX 3070 Ti (tested 2026-11-11).
+  const Cutout cutout = CutoutDraw();
+  if (cutout == kBlendedCutout && cfg.alpha_to_coverage && cur_msaa_)
+    LogOnce("alpha-to-coverage is Direct3D 11 only: cut-outs use AlphaCut %d", cfg.alpha_cut);
+
   // Blending (D3DBLEND numbers are the same, BOTHSRCALPHA included).
   const bool blend = rs_[d3d7::RS_ALPHABLENDENABLE] != 0;
   RS9(D3DRS_ALPHABLENDENABLE, blend ? TRUE : FALSE);
@@ -257,10 +264,7 @@ void Device::ApplyState9(int mode, bool has_depth) {
   DWORD afunc = rs_[d3d7::RS_ALPHAFUNC];
   if (afunc < 1 || afunc > 8) afunc = D3DCMP_ALWAYS;
   DWORD aref = rs_[d3d7::RS_ALPHAREF] & 0xff;
-  if (blend && rs_[d3d7::RS_ZWRITEENABLE] && rs_[d3d7::RS_ZENABLE] &&
-      (rs_[d3d7::RS_SRCBLEND] == 5 || rs_[d3d7::RS_SRCBLEND] == 12) && atest &&
-      (afunc == D3DCMP_GREATER || afunc == D3DCMP_GREATEREQUAL) && cfg.alpha_cut > 0 &&
-      !(tex_[0] && tex_[0]->SoftAlpha())) {
+  if (cutout == kBlendedCutout && cfg.alpha_cut > 0) {
     DWORD lo = afunc == D3DCMP_GREATER ? aref + 1 : aref;
     DWORD cut = static_cast<DWORD>(std::min(cfg.alpha_cut, 255));
     aref = std::max(lo, cut);
