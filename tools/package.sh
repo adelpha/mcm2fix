@@ -1,6 +1,6 @@
 #!/bin/sh
 # Makes the release zip: d3drm.dll (mcm2fix, drop-in next to Mcm2.exe),
-# mcm2fix.ini with every setting at its default, README.txt, licences and the
+# mcm2fix.ini with every setting at its default, README.txt, README.md, licences and the
 # HUD fonts (FONTS\, SIL Open Font License).
 #
 #   tools/package.sh <mcm2fix.dll> <output zip> [MCM2HELP.HLP]
@@ -25,6 +25,8 @@ awk '/^```ini$/{on=1; next} /^```$/{if(on) exit} on' "$ROOT/code/README.md" |
   sed 's/$/\r/' > "$STAGE/mcm2fix.ini"
 grep -q '^\[mcm2fix\]' "$STAGE/mcm2fix.ini"
 sed 's/$/\r/' "$ROOT/package/README.txt" > "$STAGE/README.txt"
+# The full project README (every fix, feature and setting).
+sed 's/$/\r/' "$ROOT/README.md" > "$STAGE/README.md"
 mkdir "$STAGE/licenses"
 for f in "$ROOT"/package/licenses/*.txt; do
   sed 's/$/\r/' "$f" > "$STAGE/licenses/$(basename "$f")"
@@ -38,7 +40,7 @@ if [ -n "$HLP" ]; then
 else
   cp "$ROOT/package/MCM2HELP.html" "$STAGE/MCM2HELP.html"
 fi
-FILES="d3drm.dll mcm2fix.ini README.txt licenses MCM2HELP.html FONTS"
+FILES="d3drm.dll mcm2fix.ini README.txt README.md licenses MCM2HELP.html FONTS"
 
 rm -f "$OUT"
 OUT_ABS=$(cd "$(dirname "$OUT")" && pwd)/$(basename "$OUT")

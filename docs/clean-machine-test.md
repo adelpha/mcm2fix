@@ -25,7 +25,7 @@ Check that none of these exist. If any do, remove them or use another machine.
    the CD, with the supported `Mcm2.exe` (see `package/README.txt`).
    Record which method was used.
 2. Unzip the release into that folder: `d3drm.dll`, `mcm2fix.ini`,
-   `MCM2HELP.html`, `README.txt`, `FONTS\`, `licenses\`.
+   `MCM2HELP.html`, `README.txt`, `README.md`, `FONTS\`, `licenses\`.
 3. Do not change any compatibility settings. Run as a standard
    (non-administrator) user.
 

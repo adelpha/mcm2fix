@@ -157,6 +157,7 @@ Windows 10 and 11.
    | `MCM2HELP.html` | the converted in-game help |
    | `FONTS\` | the HUD fonts (Contrail One, DSEG7 Classic) |
    | `README.txt` | short player notes |
+| `README.md` | this document |
    | `licenses\` | FFmpeg and font licences |
 
 3. Double-click `Mcm2.exe`.
@@ -200,8 +201,8 @@ On Windows XP, `%LOCALAPPDATA%` means
 
 ## Uninstalling
 
-Delete `d3drm.dll`, `mcm2fix.ini`, `MCM2HELP.html`, `FONTS\`, `README.txt`
-and `licenses\` from the game folder. To also remove your settings and saves,
+Delete `d3drm.dll`, `mcm2fix.ini`, `MCM2HELP.html`, `FONTS\`, `README.txt`,
+`README.md` and `licenses\` from the game folder. To also remove your settings and saves,
 delete `HKCU\Software\mcm2fix` and `%LOCALAPPDATA%\Motocross Madness 2`.
 
 ## Renderers and fullscreen
