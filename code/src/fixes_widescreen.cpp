@@ -43,6 +43,13 @@ struct MarginCam {
   float p00 = 0.0f, p11 = 0.0f;  // the camera's projection after the last update, to recognise it
 };
 std::map<uintptr_t, MarginCam> g_margin;
+// FovLog: last logged state per camera.
+struct FovLogState {
+  bool seen;
+  float in, written, ratio;
+};
+std::map<uintptr_t, FovLogState> g_fov_log;
+unsigned g_fov_lines = 0;
 unsigned g_margin_hits = 0;
 bool g_margin_logged = false;
 
@@ -98,6 +105,22 @@ void __stdcall AdjustFov(uintptr_t cam) {
     }
   } else {
     g_margin.erase(cam);
+  }
+  if (cfg.fov_log) {
+    // One line whenever something about this camera's field of view changes.
+    FovLogState& L = g_fov_log[cam];
+    const float in = fov;
+    const float ratio = g_margin.count(cam) ? g_margin[cam].ratio : 1.0f;
+    if (!L.seen || in != L.in || written != L.written || ratio != L.ratio) {
+      if (g_fov_lines < 20000) {
+        ++g_fov_lines;
+        patch::Log("fov: cam %08x %dx%d in %.3f -> base %.3f (%s%s%.3f) drawn %.3f culls %.3f margin %.3f%s",
+                   static_cast<unsigned>(cam), w, h, in, base, it == g_fov.end() ? "new camera" : fresh ? "game set it" : "kept",
+                   fresh ? "" : ", delta ", fresh ? 0.0f : in - (it != g_fov.end() ? it->second.written : in), target,
+                   written, ratio, SimDrawPoint(&tick, &alpha) ? " racing" : "");
+      }
+      L = {true, in, written, ratio};
+    }
   }
   fov = written;
   g_fov[cam] = {base, written};
@@ -214,6 +237,68 @@ struct Thunk {
   void done() { FlushInstructionCache(GetCurrentProcess(), p, n); }
 };
 
+// FovLog: the game's own field-of-view setter (0x42f850, thiscall, one
+// float). Logged with its caller so we can tell the bike camera's zoom
+// smoothing, the zoom keys and camera mode switches apart.
+constexpr uintptr_t kSetFov = 0x42F850;
+const uint8_t kSetFovEntry[] = {0xD9, 0x44, 0x24, 0x04,               // fld dword [esp+4]
+                                0xDC, 0x1D, 0xA0, 0x58, 0x55, 0x00};  // fcomp qword [5558a0h]
+struct SetFovLog {
+  float last = 0.0f;
+  uintptr_t from = 0;
+  unsigned same = 0;
+};
+std::map<uintptr_t, SetFovLog> g_setfov;
+
+void __stdcall LogSetFov(uintptr_t cam, uintptr_t from, float value) {
+  SetFovLog& L = g_setfov[cam];
+  if (value == L.last && from == L.from) {
+    ++L.same;
+    return;
+  }
+  if (g_fov_lines < 20000) {
+    ++g_fov_lines;
+    const auto it = g_fov.find(cam);
+    patch::Log("fov: SetFov cam %08x from %08x value %.3f (camera holds %.3f, our base %.3f drawn-with-margin %.3f; "
+               "%u repeats of the last call)",
+               static_cast<unsigned>(cam), static_cast<unsigned>(from), value, *reinterpret_cast<float*>(cam + 0x16c),
+               it != g_fov.end() ? it->second.base : 0.0f, it != g_fov.end() ? it->second.written : 0.0f, L.same);
+  }
+  L = {value, from, 0};
+}
+
+void InstallSetFovLog() {
+  if (!patch::Matches(kSetFov, kSetFovEntry, sizeof(kSetFovEntry))) {
+    patch::Log("fov log: SetFov code differs, not hooked");
+    return;
+  }
+  auto* t = static_cast<uint8_t*>(VirtualAlloc(nullptr, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+  if (!t) return;
+  size_t n = 0;
+  auto put = [&](std::initializer_list<uint8_t> b) {
+    for (uint8_t x : b) t[n++] = x;
+  };
+  auto put32 = [&](uint32_t v) {
+    std::memcpy(t + n, &v, 4);
+    n += 4;
+  };
+  put({0x60});                    // pushad
+  put({0xFF, 0x74, 0x24, 0x24});  // push [esp+24h]  (value)
+  put({0xFF, 0x74, 0x24, 0x24});  // push [esp+24h]  (return address, now one slot further)
+  put({0x51});                    // push ecx        (camera)
+  put({0xB8});
+  put32(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&LogSetFov)));
+  put({0xFF, 0xD0});  // call eax
+  put({0x61});        // popad
+  for (uint8_t b : kSetFovEntry) put({b});
+  put({0x68});
+  put32(static_cast<uint32_t>(kSetFov + sizeof(kSetFovEntry)));
+  put({0xC3});
+  FlushInstructionCache(GetCurrentProcess(), t, n);
+  patch::Jump(kSetFov, reinterpret_cast<uintptr_t>(t), sizeof(kSetFovEntry));
+  patch::Log("fov log: SetFov 0x42f850 logged");
+}
+
 }  // namespace
 
 float SmoothProjectionScale(const float* m) {
@@ -267,6 +352,7 @@ void InstallOverlayLayoutHook() {
 
 void ApplyWidescreenFov() {
   InstallOverlayLayoutHook();
+  if (GetConfig().fov_log) InstallSetFovLog();
   if (!GetConfig().wide_fov && GetConfig().fov <= 0.0f) return;
   if (!patch::Matches(kCameraUpdate, kCameraUpdateEntry, sizeof(kCameraUpdateEntry))) {
     patch::Log("widescreen fov: camera update code differs, not applied");

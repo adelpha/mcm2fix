@@ -46,6 +46,7 @@ struct Config {
   int ref_rate = 30;          // RefRate: frame rate those per-frame steps were tuned for
   bool arrow_heading = true;  // ArrowFix: draw the race direction arrow without perspective lean
   float arrow_turn = 0.8f;    // ArrowTurn: how much of that correction to apply (1 = full)
+  bool fov_log = false;       // FovLog: every camera field-of-view change (who set it, what we widened it to)
   bool arrow_log = false;     // ArrowLog: trace the direction arrow and camera for 4 s after each race start
   float arrow_tilt = 10.0f;   // ArrowTilt: degrees the arrow's nose is raised, to see it more from above
   float arrow_scale = 2.0f;   // ArrowScale: size of the race direction arrow (1 = original)

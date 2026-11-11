@@ -122,8 +122,14 @@ void __stdcall AdjustCue(uintptr_t cue, float* dir) {
       SmoothArrowTrace(pos, 120);
     }
     g_last_call = now;
-    if (g_log_steps) {
-      --g_log_steps;
+    // After the start window, keep logging the steps where the game worked
+    // the arrow's spot out again (a field-of-view change), which is when it
+    // can jump.
+    static unsigned s_fresh_lines = 0;
+    const bool late = !g_log_steps && fresh && s_fresh_lines < 3000;
+    if (late) ++s_fresh_lines;
+    if (g_log_steps || late) {
+      if (g_log_steps) --g_log_steps;
       patch::Log("arrow: step %u fov %.4f cached %.4f %s h %.4f->%.4f v %.4f->%.4f margin %.4f %s dist %.3f "
                  "cam (%.2f %.2f %.2f) pos (%.2f %.2f %.2f)",
                  g_step++, cf[0x16c / 4], *reinterpret_cast<float*>(cue + 0xb0), fresh ? "NEW" : "same", raw_h, h,

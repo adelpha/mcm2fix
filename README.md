@@ -396,6 +396,7 @@ only when asked to. Logs go to `%LOCALAPPDATA%\Motocross Madness 2\logs`.
 | `SoundLog` | `0` | 3D sound buffers, and when `SoundMaxDistanceMute` mutes or unmutes them. |
 | `RestartLog` | `0` | The start grid when a race loads and on Restart Race. |
 | `ArrowLog` | `0` | The direction arrow's placement for a few seconds after each race start. |
+| `FovLog` | `0` | Every change to a camera's field of view: who set it and what mcm2fix widened it to. |
 | `AlphaLog` | `0` | Each kind of see-through draw, and whether `AlphaCut` applied to it. |
 | `SmoothLog` | `0` | `SimSmooth` tracing: `1` = matrices and draws for a few frames, `2` = camera only (120 frames), `3` = rider shadows, `4` = camera and projection after each race start. |
 
