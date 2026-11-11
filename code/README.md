@@ -264,6 +264,27 @@ HudDigitSize=0.7
 ; to the race panel's, 0.5 to 1.5. Default 0.8.
 HudStuntTextSize=0.8
 
+; RaceTitle: 1 = during the countdown the event's name and lap count (stunt
+; events: time limit) open out of a white line in the middle of the screen
+; and close back into it as the countdown ends, instead of the game's small
+; green name in the bottom-left corner (default). FINAL LAP is shown the same
+; way (held 2 seconds) instead of dropping down the screen. Needs GpuText=1.
+; 0 = the game's corner text and drop text.
+RaceTitle=1
+
+; RaceTitleSize: size of that title, 0.5 to 2. Default 1.
+RaceTitleSize=1
+
+; Announcer: 1 = play WAV files from the game's SOUNDS\ folder, if they are
+; there: five.wav, four.wav, three.wav, two.wav and one.wav as the countdown
+; passes 5, 4, 3, 2 and 1 seconds left, airhorn.wav when the race starts and
+; finallap.wav when FINAL LAP shows (not in one-lap races) (default). Missing files are skipped.
+; 8 or 16-bit PCM WAV. 0 = off.
+Announcer=1
+
+; AnnouncerVolume: volume of those sounds in percent, 0 to 100. Default 100.
+AnnouncerVolume=100
+
 ; --------------------------------------------------- Race direction arrow ----
 
 ; ArrowFix: 1 = the green race direction arrow (bottom left) points at the
@@ -459,6 +480,10 @@ TextureLog=0
 ; SoundLog: 3D sound buffers, and when they are muted or unmuted by
 ; SoundMaxDistanceMute. Default 0.
 SoundLog=0
+
+; RaceTitleLog: the countdown race title: name and lap count found, timing
+; and placement. Default 0.
+RaceTitleLog=0
 
 ; RestartLog: the start grid when a race loads and on Restart Race. Default 0.
 RestartLog=0

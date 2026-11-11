@@ -6,6 +6,7 @@
 #include "gdihook.h"
 #include "gputext.h"
 #include "hudtext.h"
+#include "racetitle.h"
 
 #include <algorithm>
 #include <cstring>
@@ -1283,6 +1284,7 @@ HRESULT Surface::FlipImpl(LPDIRECTDRAWSURFACE7, DWORD flags) {
   }
   if (!back_) return DDERR_NOTFLIPPABLE;
   ++Counters().flips;
+  RaceTitleNewFrame();
   Surface* cur = this;
   while (cur->back_) {
     cur->SwapContents(cur->back_);

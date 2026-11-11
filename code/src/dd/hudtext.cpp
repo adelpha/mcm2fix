@@ -998,6 +998,11 @@ void HudTextFlush() {
   }
 }
 
+const char* HudFontFace() {
+  EnsureFonts();
+  return g_face;
+}
+
 void HudPanelLayout(uintptr_t inst) {
   if (!Active() || Scale() == 1.0f) return;
   auto it = g_panels.find(inst);

@@ -124,6 +124,14 @@ void LoadConfig() {
   if (!(g_config.hud_stunt_text_size >= 0.5f && g_config.hud_stunt_text_size <= 1.5f)) g_config.hud_stunt_text_size = 0.8f;
   g_config.hud_digit_size = ReadFloat("HudDigitSize", 0.7f, ini);
   if (!(g_config.hud_digit_size >= 0.5f && g_config.hud_digit_size <= 2.0f)) g_config.hud_digit_size = 0.7f;
+  g_config.race_title = GetPrivateProfileIntA("mcm2fix", "RaceTitle", 1, ini) != 0;
+  g_config.race_title_size = ReadFloat("RaceTitleSize", 1.0f, ini);
+  if (!(g_config.race_title_size >= 0.5f && g_config.race_title_size <= 2.0f)) g_config.race_title_size = 1.0f;
+  g_config.announcer = GetPrivateProfileIntA("mcm2fix", "Announcer", 1, ini) != 0;
+  g_config.announcer_volume = GetPrivateProfileIntA("mcm2fix", "AnnouncerVolume", 100, ini);
+  if (g_config.announcer_volume < 0) g_config.announcer_volume = 0;
+  if (g_config.announcer_volume > 100) g_config.announcer_volume = 100;
+  g_config.race_title_log = GetPrivateProfileIntA("mcm2fix", "RaceTitleLog", 0, ini) != 0;
   g_config.text_log = GetPrivateProfileIntA("mcm2fix", "TextLog", 0, ini) != 0;
   g_config.gdi_log = GetPrivateProfileIntA("mcm2fix", "GdiLog", 0, ini) != 0;
   g_config.d3d9_log = GetPrivateProfileIntA("mcm2fix", "D3D9Log", 0, ini) != 0;
