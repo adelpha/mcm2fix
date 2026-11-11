@@ -116,6 +116,7 @@ struct State {
 const char* const kCountWav[] = {"one.wav", "two.wav", "three.wav", "four.wav", "five.wav"};
 constexpr const char* kGoWav = "airhorn.wav";
 constexpr const char* kFinalLapWav = "finallap.wav";
+constexpr const char* kPodiumWav = "podium.wav";
 
 // FINAL LAP banner.
 struct FinalLap {
@@ -218,6 +219,7 @@ void Start(uintptr_t race) {
     for (const char* w : kCountWav) OneShotPreload(w);
     OneShotPreload(kGoWav);
     OneShotPreload(kFinalLapWav);
+    OneShotPreload(kPodiumWav);
   }
   const uintptr_t game = Rd<uintptr_t>(kGame);
   char why[160] = {};
@@ -651,6 +653,16 @@ void PodiumBanner(Surface* rt) {
   DrawBanner(rt, pd.text, std::string(), p, kPodiumLineY, "podium", pd.frames, e, kPodiumLength, t, pd.last_trace);
 }
 
+// Announcer: podium.wav as the podium cutscene starts (game+0x3430 0 -> 1).
+void PodiumSoundTick() {
+  static int last = 0;
+  const uintptr_t game = Rd<uintptr_t>(kGame);
+  const int on = game ? Rd<int>(game + kPodium) : 0;
+  if (on == last) return;
+  last = on;
+  if (on == 1 && GetConfig().announcer) OneShotPlay(kPodiumWav, "podium cutscene started");
+}
+
 // Once per frame: a voice as the countdown passes 5, 4, 3, 2 and 1 seconds
 // left (only those within the countdown), the air horn when it runs out.
 void AnnouncerTick() {
@@ -689,6 +701,7 @@ void RaceTitleDraw(Surface* rt) {
   g.drawn_this_frame = true;
   PodiumWatch();
   AnnouncerTick();
+  PodiumSoundTick();
   if (!g.active && !fl.active && !pd.pending && !pd.active) return;
   const Config& cfg = GetConfig();
   if (!cfg.race_title || !GpuTextActive()) return;

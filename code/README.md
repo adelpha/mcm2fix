@@ -279,8 +279,9 @@ RaceTitleSize=1
 
 ; Announcer: 1 = play WAV files from the game's SOUNDS\ folder, if they are
 ; there: five.wav, four.wav, three.wav, two.wav and one.wav as the countdown
-; passes 5, 4, 3, 2 and 1 seconds left, airhorn.wav when the race starts and
-; finallap.wav when FINAL LAP shows (not in one-lap races) (default). Missing files are skipped.
+; passes 5, 4, 3, 2 and 1 seconds left, airhorn.wav when the race starts,
+; finallap.wav when FINAL LAP shows (not in one-lap races) and podium.wav
+; when the podium cutscene starts (default). Missing files are skipped.
 ; 8 or 16-bit PCM WAV. 0 = off.
 Announcer=1
 
