@@ -440,6 +440,10 @@ RestartLog=0
 ; start. Default 0.
 ArrowLog=0
 
+; FovLog: every change to a camera's field of view: who set it, what mcm2fix
+; widened it to for the screen shape and the smoothing cull margin. Default 0.
+FovLog=0
+
 ; AlphaLog: each kind of see-through draw and whether AlphaCut applied to it.
 ; Default 0.
 AlphaLog=0
