@@ -145,6 +145,36 @@ void LogFloats(const char* tag, uintptr_t a, int from, int to) {
   patch::Log("%s", buf);
 }
 
+// Raw dwords, 64 per line, for diffing a fresh start against a restart.
+void LogHex(const char* tag, uintptr_t a, int from, int to) {
+  for (int off = from; off < to; off += 64 * 4) {
+    char buf[1024];
+    int n = std::snprintf(buf, sizeof(buf), "restart:   hex %s %08x +%x:", tag, static_cast<unsigned>(a), off);
+    for (int k = 0; k < 64 && off + 4 * k < to && n > 0 && n < static_cast<int>(sizeof(buf)) - 12; ++k)
+      n += std::snprintf(buf + n, sizeof(buf) - n, " %08x", Rd<unsigned>(a + off + 4 * k));
+    patch::Log("%s", buf);
+  }
+}
+
+// Deep dump at chosen frames: the first two bikes and the engine sound
+// manager's voice records.
+void LogDeep(uintptr_t race) {
+  auto next = reinterpret_cast<NextBikeFn>(kNextBike);
+  int idx = 0;
+  for (int i = 0; i < 2; ++i) {
+    uintptr_t bike = next(race, nullptr, &idx);
+    if (!bike) break;
+    LogHex(i == 0 ? "bike0" : "bike1", bike, 0x13c, 0x1440);
+  }
+  const uintptr_t mgr = Rd<uintptr_t>(race + 0x44);
+  if (mgr && Rd<uintptr_t>(mgr) == 0x55C990) {
+    LogHex("sndmgr", mgr, 0x0, 0x98);
+    LogHex("voices", mgr, 0x98, 0x98 + 11 * 0x54);
+    LogHex("sndmgr2", mgr, 0x434, 0x460);
+    LogHex("sndmgr3", mgr, 0x1200, 0x12b0);
+  }
+}
+
 void LogBikes(uintptr_t race, bool full) {
   auto next = reinterpret_cast<NextBikeFn>(kNextBike);
   int idx = 0;
@@ -488,6 +518,7 @@ void __fastcall UpdateHook(uintptr_t self, void*, int arg) {
   if (watch && (f == 0 || f == 1 || f == 5 || f == 30 || f == 90 || f == 200)) {
     patch::Log("restart: %s frame %d (after update)", g_phase, f);
     LogBikes(self, f <= 1);
+    if (f == 1 || f == 30 || f == 90) LogDeep(self);
   }
   if (watch) {
     if (++g_frame > 200) g_frame = -1;
