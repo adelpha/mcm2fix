@@ -50,13 +50,16 @@ Windows no longer ships, and Windows looks in the game folder first.
 
 Settings
 --------
-Edit mcm2fix.ini. Every setting is explained there, and a missing setting
-uses its default.
+Edit mcm2fix.ini (README.md has the full list too). Every setting is explained there, and a missing setting
+uses its default. The file has three parts: preferences to change to taste;
+advanced settings that keep the game working and playing correctly (physics
+and timing, compatibility, sound), which are best left alone; and logging,
+where only the main log is on.
 
 Uninstalling
 ------------
-Delete d3drm.dll, mcm2fix.ini, MCM2HELP.html and the FONTS folder from the
-game folder.
+Delete d3drm.dll, mcm2fix.ini, MCM2HELP.html, README.txt, README.md and the
+FONTS and licenses folders from the game folder.
 Settings are kept in HKEY_CURRENT_USER\Software\mcm2fix\Motocross Madness 2,
 and saves and the log in %LOCALAPPDATA%\Motocross Madness 2.
 
