@@ -121,6 +121,9 @@ FastCrt=1      ; the game's millisecond clock reads QueryPerformanceCounter (no 
                ; call) and its case-insensitive name compares use a table (0 = the game's own code)
 AsyncSound=2   ; the 3D sound listener update the game makes every physics step runs on a worker thread,
                ; started while the frame waits for VSync (1 = started at once, 0 = on the game thread)
+SoundMaxDistanceMute=1 ; 3D sounds further away than their max distance are muted by mcm2fix, as Windows'
+               ; DirectSound does (DSOAL doesn't, which left quiet looping bits of old sounds)
+SoundLog=0     ; debugging: log 3D sound buffers and when they are muted / unmuted
 StateCache=1   ; Direct3D 11: state the renderer already has bound is not sent again for every draw
 D3D9Log=1      ; debugging: extra Direct3D 9 renderer logging (device caps, first frames, fallbacks)
 GpuText=1      ; draw the game's menu and HUD text (GDI) on the GPU, antialiased, at screen resolution
