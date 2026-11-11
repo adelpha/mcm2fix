@@ -225,7 +225,23 @@ constexpr int kPlaceSlot = 0x84 / 4;
 
 bool IsKnownPlace(uintptr_t fn) { return fn == 0x48F0E0 || fn == 0x407870 || fn == 0x52CA80; }
 
+// Grid spots handed out at the last restart, checked after the game's first
+// update: the game's own reset (bike+0x109) runs a respawn search
+// (KrustyBike 0x492cc0 -> 0x4b5640) from the grid spot that moves a bike
+// off it when the spot touches scenery (enduro: the boxes by the start), and
+// turns it to face the track there. At race load no search runs, so the
+// bikes stay where the grid put them; after a restart we put them back.
+struct GridSpot {
+  uintptr_t bike;
+  float pos[3], fwd[3];
+};
+GridSpot g_spots[64];
+int g_nspots = 0;
+uintptr_t g_spot_race = 0;
+
 void PlaceBikesOnGrid(uintptr_t race) {
+  g_nspots = 0;
+  g_spot_race = race;
   auto next = reinterpret_cast<NextBikeFn>(kNextBike);
   int idx = 0;
   int placed = 0, skipped = 0;
@@ -252,6 +268,12 @@ void PlaceBikesOnGrid(uintptr_t race) {
     const float up[3] = {0.0f, 1.0f, 0.0f};
     const float vel[3] = {0.0f, 0.0f, 0.0f};
     reinterpret_cast<PlaceFn>(place)(bike, nullptr, pos, fwd, up, vel, 0, 0);
+    if (g_nspots < 64) {
+      GridSpot& g = g_spots[g_nspots++];
+      g.bike = bike;
+      std::memcpy(g.pos, reinterpret_cast<void*>(bike + 0x0c), sizeof(g.pos));  // settled on the ground
+      std::memcpy(g.fwd, fwd, sizeof(g.fwd));
+    }
     // Place settles the bike on the ground and clears the pending reset.
     // Hand the settled spot back to the game's own reset (bike+0x109), which
     // also resets the rider and the camera on the next update.
@@ -260,6 +282,35 @@ void PlaceBikesOnGrid(uintptr_t race) {
     ++placed;
   }
   patch::Log("restart: placed %d bikes on the grid (%d skipped)", placed, skipped);
+}
+
+// After the game's first update following a restart: bikes its respawn
+// search moved off their grid spot go back, facing the grid direction.
+void KeepBikesOnGrid(uintptr_t race) {
+  if (race != g_spot_race || !g_nspots) return;
+  int moved = 0;
+  for (int i = 0; i < g_nspots; ++i) {
+    const GridSpot& g = g_spots[i];
+    const uintptr_t bike = g.bike;
+    const uintptr_t place = Rd<uintptr_t>(Rd<uintptr_t>(bike) + 4 * kPlaceSlot);
+    if (!IsKnownPlace(place)) continue;
+    const float dx = Rd<float>(bike + 0x0c) - g.pos[0], dz = Rd<float>(bike + 0x14) - g.pos[2];
+    const float hx = Rd<float>(bike + 0x88), hz = Rd<float>(bike + 0x90);
+    const float hl = std::sqrt(hx * hx + hz * hz);
+    const float dot = hl > 1e-4f ? (hx * g.fwd[0] + hz * g.fwd[2]) / hl : 0.0f;
+    if (dx * dx + dz * dz < 0.25f * 0.25f && dot > 0.996f) continue;
+    if (GetConfig().restart_log)
+      patch::Log("restart: bike %08x moved by the game's respawn search to (%.2f %.2f %.2f) heading (%.2f %.2f), "
+                 "%.2f m from its grid spot; put back", static_cast<unsigned>(bike), Rd<float>(bike + 0x0c),
+                 Rd<float>(bike + 0x10), Rd<float>(bike + 0x14), hx, hz, std::sqrt(dx * dx + dz * dz));
+    const float up[3] = {0.0f, 1.0f, 0.0f};
+    const float vel[3] = {0.0f, 0.0f, 0.0f};
+    reinterpret_cast<PlaceFn>(place)(bike, nullptr, g.pos, g.fwd, up, vel, 0, 0);
+    ++moved;
+  }
+  patch::Log("restart: after the first update %d of %d bikes were off their grid spot and were put back", moved,
+             g_nspots);
+  g_nspots = 0;
 }
 
 void __fastcall RestartHook(uintptr_t self, void*, int a, int b, int c) {
@@ -381,6 +432,12 @@ void ArmWatch(uintptr_t race, bool on) {
 }
 
 void __fastcall UpdateHook(uintptr_t self, void*, int arg) {
+  if (!GetConfig().restart_log) {
+    const bool check = g_nspots > 0 && self == g_spot_race;
+    g_update(self, nullptr, arg);
+    if (check) KeepBikesOnGrid(self);
+    return;
+  }
   bool watch = g_frame >= 0 && self == g_race;
   int f = watch ? g_frame : -1;
   if (watch && (f == 0 || f == 1 || f == 2 || f == 5 || f == 30)) {
@@ -389,7 +446,13 @@ void __fastcall UpdateHook(uintptr_t self, void*, int arg) {
     LogBikes(self, f <= 1);
   }
   if (watch && f == 0) ArmWatch(self, true);
+  const bool check = g_nspots > 0 && self == g_spot_race;
   g_update(self, nullptr, arg);
+  if (check) {
+    patch::Log("restart: bikes after the game's first update");
+    LogBikes(self, false);
+    KeepBikesOnGrid(self);
+  }
   if (watch && f == 3) ArmWatch(self, false);
   if (watch && (f == 0 || f == 1 || f == 5 || f == 30 || f == 90 || f == 200)) {
     patch::Log("restart: %s frame %d (after update)", g_phase, f);
@@ -441,18 +504,22 @@ void ApplyRestartFixes() {
     }
     patch::Log("restart: FINAL LAP text re-armed after restarts (%d HUD slots hooked)", hooked);
   }
-  if (!c.restart_log) return;
-
   uintptr_t slot = kBikeRaceVtable + 4 * kUpdateSlot;
-  if (!patch::Matches(kGridSlot, kGridSlotEntry, sizeof(kGridSlotEntry)) || Rd<uintptr_t>(slot) != 0x41E0B0) {
-    patch::Log("restart: grid code differs, logging not applied");
+  if (Rd<uintptr_t>(slot) != 0x41E0B0) {
+    patch::Log("restart: race update slot differs, grid check and logging not applied");
     return;
   }
-  g_grid_slot = reinterpret_cast<GridSlotFn>(MakeTrampoline(kGridSlot, kGridSlotEntry, sizeof(kGridSlotEntry)));
-  if (!g_grid_slot) return;
   g_update = reinterpret_cast<UpdateFn>(Rd<uintptr_t>(slot));
-  patch::Jump(kGridSlot, reinterpret_cast<uintptr_t>(&GridSlotHook), sizeof(kGridSlotEntry));
   uintptr_t hook = reinterpret_cast<uintptr_t>(&UpdateHook);
   patch::Write(slot, &hook, sizeof(hook));
+  if (c.restart_fix) patch::Log("restart: bikes moved off the grid by the game's respawn search are put back");
+  if (!c.restart_log) return;
+
+  if (!patch::Matches(kGridSlot, kGridSlotEntry, sizeof(kGridSlotEntry))) {
+    patch::Log("restart: grid code differs, grid logging not applied");
+  } else {
+    g_grid_slot = reinterpret_cast<GridSlotFn>(MakeTrampoline(kGridSlot, kGridSlotEntry, sizeof(kGridSlotEntry)));
+    if (g_grid_slot) patch::Jump(kGridSlot, reinterpret_cast<uintptr_t>(&GridSlotHook), sizeof(kGridSlotEntry));
+  }
   patch::Log("restart: logging applied");
 }
