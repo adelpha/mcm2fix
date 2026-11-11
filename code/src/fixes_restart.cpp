@@ -19,6 +19,8 @@
 #include "config.h"
 #include "patch.h"
 
+void SoundTraceStart(const char* tag, DWORD ms);
+
 namespace {
 
 constexpr uintptr_t kGame = 0x5743AC;           // global game object pointer
@@ -445,7 +447,10 @@ void __fastcall UpdateHook(uintptr_t self, void*, int arg) {
     if (f == 0) LogGameMode(g_phase);
     LogBikes(self, f <= 1);
   }
-  if (watch && f == 0) ArmWatch(self, true);
+  if (watch && f == 0) {
+    ArmWatch(self, true);
+    SoundTraceStart(g_phase, 4000);
+  }
   const bool check = g_nspots > 0 && self == g_spot_race;
   g_update(self, nullptr, arg);
   if (check) {
