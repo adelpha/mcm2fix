@@ -144,6 +144,9 @@ TextLog=0      ; debugging: log GPU text drawing and what erases it
 GdiLog=0       ; debugging: log the GDI calls (text, boxes, lines) the game draws onto the screen with
 RestartLog=0   ; debugging: log the start grid at race load and on Restart Race
 TextureLog=0   ; debugging: log the format of each texture the game creates
+AlphaLog=0     ; debugging: log each blended/alpha-tested draw combination and whether AlphaCut applied
+SmoothLog=0    ; debugging: trace SimSmooth (1 = matrices and draws, 2 = camera, 3 = rider shadows,
+               ; 4 = camera and projection after each race start)
 ```
 
 ## True-colour textures

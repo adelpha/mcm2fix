@@ -25,7 +25,7 @@ Check that none of these exist. If any do, remove them or use another machine.
    the CD, with the supported `Mcm2.exe` (see `package/README.txt`).
    Record which method was used.
 2. Unzip the release into that folder: `d3drm.dll`, `mcm2fix.ini`,
-   `README.txt`, `licenses\`.
+   `MCM2HELP.html`, `README.txt`, `FONTS\`, `licenses\`.
 3. Do not change any compatibility settings. Run as a standard
    (non-administrator) user.
 
@@ -50,7 +50,7 @@ Double-click `Mcm2.exe` and check each item:
 
 ## After
 
-- [ ] `%LOCALAPPDATA%\Motocross Madness 2\mcm2fix.log` exists. It starts with
+- [ ] The newest `%LOCALAPPDATA%\Motocross Madness 2\logs\mcm2fix-*.log` exists. It starts with
       "mcm2fix loaded" and has no "not applied" or "skipped" lines.
 - [ ] Nothing new in the game folder except what the zip added. Profiles and
       saves are under `%LOCALAPPDATA%\Motocross Madness 2`.
