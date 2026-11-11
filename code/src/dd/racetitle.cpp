@@ -49,11 +49,15 @@ constexpr uintptr_t kRaceStarted = 0x18A;    // byte
 constexpr uintptr_t kMode = 0x2D70, kEvent = 0x2D74, kLaps = 0x2D90, kStuntEvent = 0x55C, kBaja = 0x560;
 constexpr uintptr_t kTimeLimitMinutes = 0x2EB0;  // float (stunt panel 0x51f460: limit * 60 - elapsed)
 constexpr uintptr_t kOnline = 0x3428;
+constexpr uintptr_t kDropStart = 0x520840;  // DropTextOverlay start (thiscall)
+constexpr uintptr_t kDropStartCalls[] = {0x405C76, 0x50A7B6};
+constexpr uintptr_t kDropText = 0x48;
 
 // Timing (seconds).
 constexpr float kLineTime = 0.30f;   // dot -> full line
 constexpr float kSlideTime = 0.40f;  // text out of the line
 constexpr float kNoCountdownHold = 2.0f;  // hold when there is no countdown to fill
+constexpr float kFinalLapHold = 2.0f;     // FINAL LAP held open
 
 template <typename T>
 T Rd(uintptr_t a) {
@@ -90,6 +94,16 @@ struct State {
   double last_trace = 0;
   bool drawn_this_frame = false;
 } g;
+
+// FINAL LAP banner.
+struct FinalLap {
+  std::string text;
+  double start = 0;
+  bool active = false;
+  int phase = -1;
+  unsigned frames = 0, starts = 0;
+  double last_trace = 0;
+} fl;
 
 uintptr_t CurrentRace() {
   const uintptr_t game = Rd<uintptr_t>(kGame);
@@ -177,6 +191,29 @@ void __fastcall CountdownInitHook(uintptr_t race, void* edx) {
   if (GetConfig().race_title) Start(race);
 }
 
+// FINAL LAP: the HUD update (0x405c10 / 0x50a750) starts its DropTextOverlay
+// (start 0x520840: +0x30 time = 0, +0x34 running = 1; text char[] at +0x48,
+// dropped down the screen by update 0x5206c0, drawn with GDI by 0x520740).
+// Instead of starting it, show the text as a banner.
+void __fastcall DropStartHook(uintptr_t overlay, void* edx) {
+  const char* text = overlay ? reinterpret_cast<const char*>(overlay + kDropText) : "";
+  char t[0x80] = {};
+  std::snprintf(t, sizeof(t), "%s", text);
+  const bool take = GetConfig().race_title && GpuTextActive() && t[0];
+  ++fl.starts;
+  Log("final lap: drop text \"%s\" (overlay %08x) %s", t, static_cast<unsigned>(overlay),
+      take ? "shown as a banner instead" : "left to the game");
+  if (!take) {
+    reinterpret_cast<InitFn>(kDropStart)(overlay, edx);
+    return;
+  }
+  fl.text = t;
+  fl.start = Now();
+  fl.active = true;
+  fl.phase = -1;
+  fl.frames = 0;
+}
+
 bool PatchCall(uintptr_t site, uintptr_t original, const void* hook) {
   const uint8_t* p = reinterpret_cast<const uint8_t*>(site);
   if (p[0] != 0xE8 || site + 5 + Rd<int32_t>(site + 1) != original) {
@@ -259,6 +296,79 @@ void Fill(HDC dc, const RECT& r, HBRUSH b) {
   GpuTextRun(call);
 }
 
+// One banner: the line, `name` above it and `sub` below it, as far open as `p` says.
+void DrawBanner(Surface* rt, const std::string& name, const std::string& sub, const Pose& p, const char* tag,
+                unsigned frames, float e, float total, float left, double& last_trace) {
+  if (p.line <= 0.001f) return;
+  const UINT W = rt->Width(), H = rt->Height();
+  const Config& cfg = GetConfig();
+  const double now = Now();
+
+  HDC dc = rt->BeginGpuText();
+  if (!dc) {
+    if (++g.no_dc <= 5) Log("%s: no GPU text DC for the %ux%u render target", tag, W, H);
+    return;
+  }
+  const float k = cfg.race_title_size;
+  const LONG font_h = std::max<LONG>(12, std::lround(H * 0.062f * k));
+  GpuTextSelectFont(dc, TitleFont(font_h));
+  SetBkMode(dc, TRANSPARENT);
+  SetTextCharacterExtra(dc, 0);
+  TEXTMETRICA tm{};
+  GpuTextMetrics(dc, &tm);
+  const SIZE tw = GpuTextExtent(dc, name.c_str(), static_cast<int>(name.size()));
+  const SIZE sw = GpuTextExtent(dc, sub.c_str(), static_cast<int>(sub.size()));
+  const LONG cx = static_cast<LONG>(W / 2);
+  const LONG line_y = std::lround(H * 0.352f);
+  const LONG thick = std::max<LONG>(2, std::lround(H * 0.0045f * k));
+  const LONG shadow = std::max<LONG>(1, std::lround(H * 0.0028f * k));
+  const LONG gap = std::lround(H * 0.016f * k);
+  const LONG full = std::lround(std::max(tw.cx, sw.cx) * 1.3f);
+  const LONG half = std::max<LONG>(1, std::lround(full * 0.5f * p.line));
+  const LONG cap = tm.tmAscent - tm.tmInternalLeading;  // height of capitals above the baseline
+  // Final baselines: name just above the line, subtitle's capitals just below.
+  const LONG name_base = line_y - gap - tm.tmDescent / 2;
+  const LONG sub_base = line_y + thick + gap + cap;
+  // Out of the line: the name starts with its top under the line, the subtitle above it.
+  const LONG sub_travel = sub_base - (line_y + thick) + tm.tmDescent;
+  const LONG nb = name_base + std::lround((1 - p.text) * (line_y - name_base + tm.tmAscent));
+  const LONG sb = sub_base - std::lround((1 - p.text) * sub_travel);
+
+  static HBRUSH white = CreateSolidBrush(RGB(255, 255, 255));
+  static HBRUSH black = CreateSolidBrush(RGB(0, 0, 0));
+  const COLORREF shade = RGB(0, 0, 0), ink = RGB(255, 255, 255);
+  SetTextAlign(dc, TA_CENTER | TA_BASELINE | TA_NOUPDATECP);
+  if (p.text > 0.001f) {
+    // Name: only above the line; subtitle: only below it.
+    const RECT above{0, 0, static_cast<LONG>(W), line_y};
+    const RECT below{0, line_y + thick, static_cast<LONG>(W), static_cast<LONG>(H)};
+    GpuTextSetClip(dc, &above);
+    if (!name.empty()) {
+      Text(dc, name, cx + shadow, nb + shadow, shade);
+      Text(dc, name, cx, nb, ink);
+    }
+    GpuTextSetClip(dc, &below);
+    if (!sub.empty()) {
+      Text(dc, sub, cx + shadow, sb + shadow, shade);
+      Text(dc, sub, cx, sb, ink);
+    }
+  }
+  GpuTextSetClip(dc, nullptr);
+  Fill(dc, RECT{cx - half + shadow, line_y + shadow, cx + half + shadow, line_y + thick + shadow}, black);
+  Fill(dc, RECT{cx - half, line_y, cx + half, line_y + thick}, white);
+  GpuTextSelectFont(dc, GetStockObject(SYSTEM_FONT));
+  GpuTextEndDC(dc);
+
+  if (Logging() && (frames <= 3 || now - last_trace >= 0.25)) {
+    last_trace = now;
+    Log("%s: frame %u e=%.3f/%.2f left=%.3f phase %d line %.2f text %.2f; screen %ux%u font %ld (asc %ld "
+        "desc %ld cap %ld) name %ld px sub %ld px, line y %ld x %ld..%ld thick %ld, name base %ld (final %ld), "
+        "sub base %ld (final %ld)",
+        tag, frames, e, total, left, p.phase, p.line, p.text, W, H, font_h, tm.tmAscent, tm.tmDescent, cap,
+        tw.cx, sw.cx, line_y, cx - half, cx + half, thick, nb, name_base, sb, sub_base);
+  }
+}
+
 }  // namespace
 
 void InstallRaceTitleHooks() {
@@ -271,20 +381,24 @@ void InstallRaceTitleHooks() {
   int calls = 0;
   for (uintptr_t site : kCountdownCalls)
     calls += PatchCall(site, kCountdownInit, reinterpret_cast<const void*>(&CountdownInitHook)) ? 1 : 0;
-  Log("race title: on (size %.2f); race name hook %s, %d of %d countdown calls hooked",
+  int drops = 0;
+  for (uintptr_t site : kDropStartCalls)
+    drops += PatchCall(site, kDropStart, reinterpret_cast<const void*>(&DropStartHook)) ? 1 : 0;
+  Log("race title: on (size %.2f); race name hook %s, %d of %d countdown calls hooked, %d of %d FINAL LAP starts "
+      "hooked",
       c.race_title_size, ok ? "applied" : "MISSING", calls,
-      static_cast<int>(sizeof(kCountdownCalls) / sizeof(kCountdownCalls[0])));
+      static_cast<int>(sizeof(kCountdownCalls) / sizeof(kCountdownCalls[0])), drops,
+      static_cast<int>(sizeof(kDropStartCalls) / sizeof(kDropStartCalls[0])));
 }
 
 void RaceTitleNewFrame() { g.drawn_this_frame = false; }
 
-void RaceTitleDraw(Surface* rt) {
-  if (!g.active || !rt || g.drawn_this_frame || g.name.empty()) return;
+namespace {
+
+void CountdownBanner(Surface* rt) {
+  if (!g.active || g.name.empty()) return;
   const Config& cfg = GetConfig();
-  if (!cfg.race_title || !GpuTextActive()) return;
   const UINT W = rt->Width(), H = rt->Height();
-  if (W < 320 || H < 200) return;  // not the screen
-  g.drawn_this_frame = true;
   const double now = Now();
   float e = 0;
   if (g.real_time) {
@@ -329,71 +443,41 @@ void RaceTitleDraw(Surface* rt) {
     return;
   }
   ++g.frames;
-  if (p.line <= 0.001f) return;
+  DrawBanner(rt, g.name, g.sub, p, "race title", g.frames, e, g.total, g.last_left, g.last_trace);
+}
 
-  HDC dc = rt->BeginGpuText();
-  if (!dc) {
-    if (++g.no_dc <= 5) Log("race title: no GPU text DC for the %ux%u render target", W, H);
+// FINAL LAP: the same banner with only the game's text above the line, on
+// the clock (open, hold kFinalLapHold, close).
+void FinalLapBanner(Surface* rt) {
+  if (!fl.active) return;
+  const float total = 2 * (kLineTime + kSlideTime) + kFinalLapHold;
+  const float e = static_cast<float>(Now() - fl.start);
+  const Pose p = At(e, total);
+  if (p.phase != fl.phase) {
+    if (Logging())
+      Log("final lap: phase %d -> %d at %.3f s of %.2f (frame %u, screen %ux%u)", fl.phase, p.phase, e, total,
+          fl.frames, rt->Width(), rt->Height());
+    fl.phase = p.phase;
+  }
+  if (p.phase == 5) {
+    Log("final lap: done after %u frames (%.2f s)", fl.frames, e);
+    fl.active = false;
     return;
   }
-  const float k = cfg.race_title_size;
-  const LONG font_h = std::max<LONG>(12, std::lround(H * 0.062f * k));
-  GpuTextSelectFont(dc, TitleFont(font_h));
-  SetBkMode(dc, TRANSPARENT);
-  SetTextCharacterExtra(dc, 0);
-  TEXTMETRICA tm{};
-  GpuTextMetrics(dc, &tm);
-  const SIZE tw = GpuTextExtent(dc, g.name.c_str(), static_cast<int>(g.name.size()));
-  const SIZE sw = GpuTextExtent(dc, g.sub.c_str(), static_cast<int>(g.sub.size()));
-  const LONG cx = static_cast<LONG>(W / 2);
-  const LONG line_y = std::lround(H * 0.352f);
-  const LONG thick = std::max<LONG>(2, std::lround(H * 0.0045f * k));
-  const LONG shadow = std::max<LONG>(1, std::lround(H * 0.0028f * k));
-  const LONG gap = std::lround(H * 0.016f * k);
-  const LONG full = std::lround(std::max(tw.cx, sw.cx) * 1.3f);
-  const LONG half = std::max<LONG>(1, std::lround(full * 0.5f * p.line));
-  const LONG cap = tm.tmAscent - tm.tmInternalLeading;  // height of capitals above the baseline
-  // Final baselines: name just above the line, subtitle's capitals just below.
-  const LONG name_base = line_y - gap - tm.tmDescent / 2;
-  const LONG sub_base = line_y + thick + gap + cap;
-  // Out of the line: the name starts with its top under the line, the subtitle above it.
-  const LONG sub_travel = sub_base - (line_y + thick) + tm.tmDescent;
-  const LONG nb = name_base + std::lround((1 - p.text) * (line_y - name_base + tm.tmAscent));
-  const LONG sb = sub_base - std::lround((1 - p.text) * sub_travel);
+  ++fl.frames;
+  DrawBanner(rt, fl.text, std::string(), p, "final lap", fl.frames, e, total, 0, fl.last_trace);
+}
 
-  static HBRUSH white = CreateSolidBrush(RGB(255, 255, 255));
-  static HBRUSH black = CreateSolidBrush(RGB(0, 0, 0));
-  const COLORREF shade = RGB(0, 0, 0), ink = RGB(255, 255, 255);
-  SetTextAlign(dc, TA_CENTER | TA_BASELINE | TA_NOUPDATECP);
-  if (p.text > 0.001f) {
-    // Name: only above the line; subtitle: only below it.
-    const RECT above{0, 0, static_cast<LONG>(W), line_y};
-    const RECT below{0, line_y + thick, static_cast<LONG>(W), static_cast<LONG>(H)};
-    GpuTextSetClip(dc, &above);
-    if (!g.name.empty()) {
-      Text(dc, g.name, cx + shadow, nb + shadow, shade);
-      Text(dc, g.name, cx, nb, ink);
-    }
-    GpuTextSetClip(dc, &below);
-    if (!g.sub.empty()) {
-      Text(dc, g.sub, cx + shadow, sb + shadow, shade);
-      Text(dc, g.sub, cx, sb, ink);
-    }
-  }
-  GpuTextSetClip(dc, nullptr);
-  Fill(dc, RECT{cx - half + shadow, line_y + shadow, cx + half + shadow, line_y + thick + shadow}, black);
-  Fill(dc, RECT{cx - half, line_y, cx + half, line_y + thick}, white);
-  GpuTextSelectFont(dc, GetStockObject(SYSTEM_FONT));
-  GpuTextEndDC(dc);
+}  // namespace
 
-  if (Logging() && (g.frames <= 3 || now - g.last_trace >= 0.25)) {
-    g.last_trace = now;
-    Log("race title: frame %u e=%.3f/%.2f left=%.3f phase %d line %.2f text %.2f; screen %ux%u font %ld (asc %ld "
-        "desc %ld cap %ld) name %ld px sub %ld px, line y %ld x %ld..%ld thick %ld, name base %ld (final %ld), "
-        "sub base %ld (final %ld)",
-        g.frames, e, g.total, g.last_left, p.phase, p.line, p.text, W, H, font_h, tm.tmAscent, tm.tmDescent, cap,
-        tw.cx, sw.cx, line_y, cx - half, cx + half, thick, nb, name_base, sb, sub_base);
-  }
+void RaceTitleDraw(Surface* rt) {
+  if (!rt || g.drawn_this_frame || (!g.active && !fl.active)) return;
+  const Config& cfg = GetConfig();
+  if (!cfg.race_title || !GpuTextActive()) return;
+  if (rt->Width() < 320 || rt->Height() < 200) return;  // not the screen
+  g.drawn_this_frame = true;
+  CountdownBanner(rt);
+  FinalLapBanner(rt);
 }
 
 }  // namespace dd

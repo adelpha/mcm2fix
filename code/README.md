@@ -267,8 +267,9 @@ HudStuntTextSize=0.8
 ; RaceTitle: 1 = during the countdown the event's name and lap count (stunt
 ; events: time limit) open out of a white line in the middle of the screen
 ; and close back into it as the countdown ends, instead of the game's small
-; green name in the bottom-left corner (default). Needs GpuText=1.
-; 0 = the game's corner text.
+; green name in the bottom-left corner (default). FINAL LAP is shown the same
+; way (held 2 seconds) instead of dropping down the screen. Needs GpuText=1.
+; 0 = the game's corner text and drop text.
 RaceTitle=1
 
 ; RaceTitleSize: size of that title, 0.5 to 2. Default 1.
