@@ -197,7 +197,7 @@ AlphaCut=128
 ; close-up versions; edges are softer (fences and other solid models are
 ; always sharpened). 1 = sharpened: crisp edges about one pixel wide at any
 ; distance, but trees switch abruptly between versions. 0 = off.
-; Direct3D 9: only on NVIDIA and AMD cards, and only for leaves and flags.
+; Direct3D 11 only: the Direct3D 9 renderer uses AlphaCut.
 AlphaToCoverage=2
 
 ; TrueColorTextures: 1 = load textures in full colour (24-bit, or 32-bit with

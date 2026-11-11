@@ -187,61 +187,6 @@ HRESULT Device::Clear9(DWORD count, d3d7::D3DRECT* rects, DWORD flags, d3d7::D3D
   return d3d7::D3D_OK;
 }
 
-namespace {
-
-// Direct3D 9 alpha-to-coverage through driver extensions: NVIDIA's "ATOC"
-// (D3DRS_ADAPTIVETESS_Y) where the driver reports it, AMD's "A2M1"/"A2M0"
-// (D3DRS_POINTSIZE) on AMD cards. Both need alpha test on.
-enum class A2c9 { kUnknown, kNone, kNvidia, kAmd };
-A2c9 g_a2c9 = A2c9::kUnknown;
-int g_a2c9_on = -1;        // what was last set (-1 = unknown, after a reset)
-unsigned g_a2c9_reset = 0;  // ResetCount9 when it was set
-
-constexpr DWORD FourCC(char a, char b, char c, char d) {
-  return static_cast<DWORD>(static_cast<uint8_t>(a)) | (static_cast<DWORD>(static_cast<uint8_t>(b)) << 8) |
-         (static_cast<DWORD>(static_cast<uint8_t>(c)) << 16) | (static_cast<DWORD>(static_cast<uint8_t>(d)) << 24);
-}
-
-A2c9 DetectA2c9() {
-  Backend& b = B();
-  const HRESULT nv = b.d3d9->CheckDeviceFormat(b.adapter9, D3DDEVTYPE_HAL, D3DFMT_X8R8G8B8, 0, D3DRTYPE_SURFACE,
-                                               static_cast<D3DFORMAT>(FourCC('A', 'T', 'O', 'C')));
-  A2c9 kind = A2c9::kNone;
-  if (b.vendor_id == 0x1002) kind = A2c9::kAmd;
-  else if (nv == S_OK) kind = A2c9::kNvidia;
-  Log("alpha-to-coverage: vendor %04x, ATOC check %08lx -> %s", b.vendor_id, nv,
-      kind == A2c9::kNvidia ? "NVIDIA ATOC" : kind == A2c9::kAmd ? "AMD A2M1" : "not supported (AlphaCut used)");
-  return kind;
-}
-
-}  // namespace
-
-bool SetAlphaToCoverage9(bool on) {
-  if (g_a2c9 == A2c9::kUnknown) {
-    if (!on) return false;  // not asked for yet: leave the device alone
-    g_a2c9 = DetectA2c9();
-  }
-  if (g_a2c9 == A2c9::kNone) return false;
-  if (g_a2c9_reset != ResetCount9()) {
-    g_a2c9_reset = ResetCount9();
-    g_a2c9_on = -1;
-  }
-  if (g_a2c9_on == (on ? 1 : 0)) return on;
-  IDirect3DDevice9* dev = B().dev9;
-  HRESULT hr;
-  if (g_a2c9 == A2c9::kNvidia) {
-    hr = dev->SetRenderState(D3DRS_ADAPTIVETESS_Y, on ? FourCC('A', 'T', 'O', 'C') : 0);
-  } else {
-    hr = dev->SetRenderState(D3DRS_POINTSIZE, on ? FourCC('A', '2', 'M', '1') : FourCC('A', '2', 'M', '0'));
-    // The command is not a point size: put the real one back.
-    if (!on) dev->SetRenderState(D3DRS_POINTSIZE, AsDword(1.0f));
-  }
-  if (FAILED(hr)) LogOnce("alpha-to-coverage %s failed %08lx", on ? "on" : "off", hr);
-  if (GetConfig().alpha_log) LogOnce("alpha-to-coverage switched %s (Direct3D 9 extension)", on ? "on" : "off");
-  g_a2c9_on = on ? 1 : 0;
-  return on;
-}
-
 void Device::ApplyState9(int mode, bool has_depth) {
   const Config& cfg = GetConfig();
   const D3DCAPS9& caps = Caps9();
@@ -260,17 +205,15 @@ void Device::ApplyState9(int mode, bool has_depth) {
   if (caps.RasterCaps & D3DPRASTERCAPS_SLOPESCALEDEPTHBIAS)
     RS9(D3DRS_SLOPESCALEDEPTHBIAS, AsDword(-static_cast<float>(bias) * 0.5f));
 
-  // Alpha-to-coverage for cut-outs on a multisampled target, through the
-  // NVIDIA / AMD driver extensions (Direct3D 9 has none of its own).
-  // Only blended cut-outs: the extensions take coverage straight from alpha,
-  // which would make the solid parts of alpha-tested models see-through.
+  // Cut-outs get AlphaCut. No alpha-to-coverage on Direct3D 9: it has none of
+  // its own, and NVIDIA's ATOC extension was accepted but had no effect on an
+  // RTX 3070 Ti (tested 2026-11-11).
   const Cutout cutout = CutoutDraw();
-  const bool a2c = cutout == kBlendedCutout && UseAlphaToCoverage(cutout) && SetAlphaToCoverage9(true);
-  if (!a2c) SetAlphaToCoverage9(false);
+  if (cutout == kBlendedCutout && cfg.alpha_to_coverage && cur_msaa_)
+    LogOnce("alpha-to-coverage is Direct3D 11 only: cut-outs use AlphaCut %d", cfg.alpha_cut);
 
-  // Blending (D3DBLEND numbers are the same, BOTHSRCALPHA included). Not
-  // with alpha-to-coverage: alpha becomes coverage instead.
-  const bool blend = rs_[d3d7::RS_ALPHABLENDENABLE] != 0 && !a2c;
+  // Blending (D3DBLEND numbers are the same, BOTHSRCALPHA included).
+  const bool blend = rs_[d3d7::RS_ALPHABLENDENABLE] != 0;
   RS9(D3DRS_ALPHABLENDENABLE, blend ? TRUE : FALSE);
   if (blend) {
     DWORD src = rs_[d3d7::RS_SRCBLEND], dst = rs_[d3d7::RS_DESTBLEND];
@@ -321,9 +264,7 @@ void Device::ApplyState9(int mode, bool has_depth) {
   DWORD afunc = rs_[d3d7::RS_ALPHAFUNC];
   if (afunc < 1 || afunc > 8) afunc = D3DCMP_ALWAYS;
   DWORD aref = rs_[d3d7::RS_ALPHAREF] & 0xff;
-  // (With alpha-to-coverage the game's own alpha test stays: the drivers
-  // only turn alpha into coverage while alpha test is on.)
-  if (cutout == kBlendedCutout && !a2c && cfg.alpha_cut > 0) {
+  if (cutout == kBlendedCutout && cfg.alpha_cut > 0) {
     DWORD lo = afunc == D3DCMP_GREATER ? aref + 1 : aref;
     DWORD cut = static_cast<DWORD>(std::min(cfg.alpha_cut, 255));
     aref = std::max(lo, cut);
@@ -421,9 +362,9 @@ void Device::ApplyState9(int mode, bool has_depth) {
   }
   if (log)
     Log("  state: z %d write %d func %lu, blend %d %lu/%lu, alpha test %d func %lu ref %lu, cull %lu, "
-        "fog %d, specular %d, shade %lu, zbias %lu, a2c %d",
+        "fog %d, specular %d, shade %lu, zbias %lu",
         zon, zon && rs_[d3d7::RS_ZWRITEENABLE] != 0, zfunc, blend, rs_[d3d7::RS_SRCBLEND], rs_[d3d7::RS_DESTBLEND], atest,
-        afunc, aref, rs_[d3d7::RS_CULLMODE], fog, rs_[d3d7::RS_SPECULARENABLE] != 0, rs_[d3d7::RS_SHADEMODE], bias, a2c);
+        afunc, aref, rs_[d3d7::RS_CULLMODE], fog, rs_[d3d7::RS_SPECULARENABLE] != 0, rs_[d3d7::RS_SHADEMODE], bias);
 }
 
 void Device::Submit9(const Draw& d) {
