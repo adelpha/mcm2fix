@@ -123,7 +123,7 @@ void LoadConfig() {
   if (!(g_config.hud_digit_size >= 0.5f && g_config.hud_digit_size <= 2.0f)) g_config.hud_digit_size = 0.7f;
   g_config.text_log = GetPrivateProfileIntA("mcm2fix", "TextLog", 0, ini) != 0;
   g_config.gdi_log = GetPrivateProfileIntA("mcm2fix", "GdiLog", 0, ini) != 0;
-  g_config.d3d9_log = GetPrivateProfileIntA("mcm2fix", "D3D9Log", 1, ini) != 0;
+  g_config.d3d9_log = GetPrivateProfileIntA("mcm2fix", "D3D9Log", 0, ini) != 0;
   g_config.activate_log = GetPrivateProfileIntA("mcm2fix", "ActivateLog", 0, ini) != 0;
 
   float fov = ReadFloat("Fov", 0.0f, ini);

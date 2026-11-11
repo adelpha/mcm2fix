@@ -35,7 +35,7 @@ struct Config {
   bool hud_text = true;       // HudText: race HUD panel text (GDI turned into textures) drawn sharp too
   bool text_log = false;      // TextLog: log GPU text drawing (first calls, what erases it)
   bool gdi_log = false;       // GdiLog: log the GDI calls the game draws text and boxes with
-  bool d3d9_log = true;       // D3D9Log: extra logging from the Direct3D 9 renderer (first frames, fallbacks)
+  bool d3d9_log = false;      // D3D9Log: extra logging from the Direct3D 9 renderer (first frames, fallbacks)
   bool wide_fov = true;       // WideFov: wide modes show more to the sides instead of cropping
   bool vsync = true;          // VSync: wait for the monitor's refresh when showing a frame
   int frame_cap = 0;          // FrameCap: most frames per second (0 = no cap beyond VSync)
