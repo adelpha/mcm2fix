@@ -19,6 +19,10 @@ wrappers.
   the game's MCM2HELP.HLP (Windows 10 and 11 cannot open .HLP files). It
   opens in your web browser and keeps the original pages, pictures, stunt
   videos, index and search.
+- Draws menu and race HUD text sharp at your screen resolution. The HUD
+  uses the fonts in the FONTS folder (loaded by the game only, nothing is
+  installed in Windows); HudFont and HudDigitFont in mcm2fix.ini choose
+  others, or empty for the game's own.
 - Smooth frame pacing at any refresh rate, plus graphics options
   (antialiasing, anisotropic filtering, view distance, FOV) and fixes for the
   race direction arrow and Restart Race.
@@ -37,9 +41,9 @@ Requirements
 
 Installing
 ----------
-Copy d3drm.dll, mcm2fix.ini and MCM2HELP.html into the game folder, next
-to Mcm2.exe, and start Mcm2.exe. If a different Mcm2.exe is found, the fix
-does nothing and says so in the log.
+Copy d3drm.dll, mcm2fix.ini, MCM2HELP.html and the FONTS folder into the
+game folder, next to Mcm2.exe, and start Mcm2.exe. If a different Mcm2.exe
+is found, the fix does nothing and says so in the log.
 
 d3drm.dll is mcm2fix itself. The game loads a library of that name, which
 Windows no longer ships, and Windows looks in the game folder first.
@@ -51,7 +55,8 @@ uses its default.
 
 Uninstalling
 ------------
-Delete d3drm.dll, mcm2fix.ini and MCM2HELP.html from the game folder.
+Delete d3drm.dll, mcm2fix.ini, MCM2HELP.html and the FONTS folder from the
+game folder.
 Settings are kept in HKEY_CURRENT_USER\Software\mcm2fix\Motocross Madness 2,
 and saves and the log in %LOCALAPPDATA%\Motocross Madness 2.
 
@@ -71,6 +76,10 @@ General Public License 2.1 or later (see licenses\FFmpeg-LGPL-2.1.txt).
 FFmpeg's source is the n7.1 release. The build script that produces this
 DLL is tools/build-ffmpeg.sh in the mcm2fix source, so the DLL can be
 rebuilt against a modified FFmpeg.
+
+The HUD fonts in FONTS are Contrail One (c) 2011 Sorkin Type Co and DSEG7
+Classic (c) 2017 keshikan, both under the SIL Open Font License 1.1 (see
+licenses\ContrailOne-OFL.txt and licenses\DSEG-OFL.txt).
 
 Motocross Madness 2 is (c) Microsoft / Rainbow Studios. This fix contains
 no game files.

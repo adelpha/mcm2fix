@@ -1,6 +1,7 @@
 #!/bin/sh
 # Makes the release zip: d3drm.dll (mcm2fix, drop-in next to Mcm2.exe),
-# mcm2fix.ini with every setting at its default, README.txt and licences.
+# mcm2fix.ini with every setting at its default, README.txt, licences and the
+# HUD fonts (FONTS\, SIL Open Font License).
 #
 #   tools/package.sh <mcm2fix.dll> <output zip> [MCM2HELP.HLP]
 #
@@ -25,14 +26,19 @@ awk '/^```ini$/{on=1; next} /^```$/{if(on) exit} on' "$ROOT/code/README.md" |
 grep -q '^\[mcm2fix\]' "$STAGE/mcm2fix.ini"
 sed 's/$/\r/' "$ROOT/package/README.txt" > "$STAGE/README.txt"
 mkdir "$STAGE/licenses"
-sed 's/$/\r/' "$ROOT/package/licenses/FFmpeg-LGPL-2.1.txt" > "$STAGE/licenses/FFmpeg-LGPL-2.1.txt"
+for f in "$ROOT"/package/licenses/*.txt; do
+  sed 's/$/\r/' "$f" > "$STAGE/licenses/$(basename "$f")"
+done
+# HudFont / HudDigitFont defaults (see code/README.md).
+mkdir "$STAGE/FONTS"
+cp "$ROOT"/package/FONTS/*.ttf "$STAGE/FONTS/"
 
 if [ -n "$HLP" ]; then
   python3 "$ROOT/tools/hlp2html.py" "$HLP" "$STAGE/MCM2HELP.html"
 else
   cp "$ROOT/package/MCM2HELP.html" "$STAGE/MCM2HELP.html"
 fi
-FILES="d3drm.dll mcm2fix.ini README.txt licenses MCM2HELP.html"
+FILES="d3drm.dll mcm2fix.ini README.txt licenses MCM2HELP.html FONTS"
 
 rm -f "$OUT"
 OUT_ABS=$(cd "$(dirname "$OUT")" && pwd)/$(basename "$OUT")

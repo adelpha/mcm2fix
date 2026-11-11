@@ -107,10 +107,10 @@ void LoadConfig() {
   g_config.label_scale = ReadFloat("LabelScale", 1.5f, ini);
   g_config.line_width = ReadFloat("LineWidth", 3.0f, ini);
   if (!(g_config.line_width >= 1.0f && g_config.line_width <= 16.0f)) g_config.line_width = 3.0f;
-  GetPrivateProfileStringA("mcm2fix", "HudFont", "", g_config.hud_font, sizeof(g_config.hud_font), ini);
+  GetPrivateProfileStringA("mcm2fix", "HudFont", "FONTS\\ContrailOne-Regular.ttf", g_config.hud_font, sizeof(g_config.hud_font), ini);
   g_config.hud_font[std::strcspn(g_config.hud_font, "\t;")] = 0;  // drop an inline comment
   for (size_t n = std::strlen(g_config.hud_font); n && g_config.hud_font[n - 1] == ' ';) g_config.hud_font[--n] = 0;
-  GetPrivateProfileStringA("mcm2fix", "HudDigitFont", "", g_config.hud_digit_font, sizeof(g_config.hud_digit_font), ini);
+  GetPrivateProfileStringA("mcm2fix", "HudDigitFont", "FONTS\\DSEG7Classic-BoldItalic.ttf", g_config.hud_digit_font, sizeof(g_config.hud_digit_font), ini);
   g_config.hud_digit_font[std::strcspn(g_config.hud_digit_font, "\t;")] = 0;
   for (size_t n = std::strlen(g_config.hud_digit_font); n && g_config.hud_digit_font[n - 1] == ' ';)
     g_config.hud_digit_font[--n] = 0;
