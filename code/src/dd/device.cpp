@@ -4,6 +4,7 @@
 #include "drawlog.h"
 #include "gputext.h"
 #include "hudtext.h"
+#include "racetitle.h"
 
 #include <algorithm>
 #include <cmath>
@@ -948,6 +949,7 @@ HRESULT Device::BeginScene() {
 }
 HRESULT Device::EndScene() {
   FlushBatch(kBreakScene);
+  RaceTitleDraw(rt_);  // countdown race title, under the HUD panels' text
   HudTextFlush();  // race HUD text goes over everything the scene drew
   return D3D_OK;
 }

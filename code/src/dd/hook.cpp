@@ -7,6 +7,7 @@
 #include "directdraw.h"
 #include "gdihook.h"
 #include "hudtext.h"
+#include "racetitle.h"
 
 namespace {
 
@@ -45,4 +46,5 @@ void ApplyD3D11Backend() {
   patch::Log("d3d11 backend: on");
   dd::InstallGdiHooks();
   dd::InstallHudTextHooks();
+  dd::InstallRaceTitleHooks();
 }

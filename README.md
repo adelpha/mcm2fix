@@ -101,6 +101,10 @@ Windows 10 and 11.
   and nothing is installed in Windows. Rider name labels are larger too
   (`LabelScale`), and the speedometer needle is an antialiased thicker line
   (`LineWidth`).
+- **Race title intro** (`RaceTitle`). During the countdown the event's name
+  and lap count (stunt events: time limit) open out of a white line in the
+  middle of the screen and close again as the countdown ends, instead of the
+  small green name in the bottom-left corner.
 
 ### Frame pacing and smoothness
 - **Fixed-rate simulation** (`SimRate=30`). The game's physics and AI were
@@ -331,6 +335,9 @@ The file has three parts:
 | `HudDigitFont` | `FONTS\DSEG7Classic-BoldItalic.ttf` | .ttf path | Font for the numbers in the race stats panel (times, position, lap); words keep `HudFont`. Characters it lacks fall back to `HudFont`. Empty = `HudFont`. |
 | `HudDigitSize` | `0.7` | 0.5-2 | Size of those numbers relative to the words beside them. |
 | `HudStuntTextSize` | `0.8` | 0.5-1.5 | Stunt events: size of the score panel's text relative to the race panel's. |
+| `RaceTitle` | `1` | `0`, `1` | During the countdown, the event's name and lap count (stunt events: time limit) open out of a white line in the middle of the screen and close back into it as the countdown ends, replacing the game's small green name in the bottom-left corner. Needs `GpuText=1`. `0` = the game's corner text. |
+| `RaceTitleSize` | `1` | 0.5-2 | Size of that title. |
+| `RaceTitleHold` | `2` | 0-10 | Seconds the title stays fully open before closing. It always finishes closing as the countdown ends. |
 
 #### Race direction arrow
 
@@ -403,6 +410,7 @@ only when asked to. Logs go to `%LOCALAPPDATA%\Motocross Madness 2\logs`.
 | `GdiLog` | `0` | The GDI calls (text, boxes, lines) the game draws onto the screen with. |
 | `TextureLog` | `0` | The format of each texture the game creates. |
 | `SoundLog` | `0` | 3D sound buffers, and when `SoundMaxDistanceMute` mutes or unmutes them. |
+| `RaceTitleLog` | `0` | The countdown race title: name and lap count found, timing and placement. |
 | `RestartLog` | `0` | The start grid when a race loads and on Restart Race. |
 | `ArrowLog` | `0` | The direction arrow's placement for a few seconds after each race start. |
 | `FovLog` | `0` | Every change to a camera's field of view: who set it and what mcm2fix widened it to. |

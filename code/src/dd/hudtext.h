@@ -43,5 +43,7 @@ void HudTextFlush();
 // Start of every overlay layout (0x4baad0, hooked in fixes_widescreen.cpp):
 // text panels get their rectangle scaled.
 void HudPanelLayout(uintptr_t inst);
+// HudFont's family name once loaded ("" = none: use the game's fonts).
+const char* HudFontFace();
 
 }  // namespace dd

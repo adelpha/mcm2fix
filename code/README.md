@@ -264,6 +264,20 @@ HudDigitSize=0.7
 ; to the race panel's, 0.5 to 1.5. Default 0.8.
 HudStuntTextSize=0.8
 
+; RaceTitle: 1 = during the countdown the event's name and lap count (stunt
+; events: time limit) open out of a white line in the middle of the screen
+; and close back into it as the countdown ends, instead of the game's small
+; green name in the bottom-left corner (default). Needs GpuText=1.
+; 0 = the game's corner text.
+RaceTitle=1
+
+; RaceTitleSize: size of that title, 0.5 to 2. Default 1.
+RaceTitleSize=1
+
+; RaceTitleHold: seconds the title stays fully open before it starts closing,
+; 0 to 10. Default 2. It always finishes closing as the countdown ends.
+RaceTitleHold=2
+
 ; --------------------------------------------------- Race direction arrow ----
 
 ; ArrowFix: 1 = the green race direction arrow (bottom left) points at the
@@ -459,6 +473,10 @@ TextureLog=0
 ; SoundLog: 3D sound buffers, and when they are muted or unmuted by
 ; SoundMaxDistanceMute. Default 0.
 SoundLog=0
+
+; RaceTitleLog: the countdown race title: name and lap count found, timing
+; and placement. Default 0.
+RaceTitleLog=0
 
 ; RestartLog: the start grid when a race loads and on Restart Race. Default 0.
 RestartLog=0
