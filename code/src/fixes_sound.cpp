@@ -60,7 +60,8 @@ struct Ds3dBuffer {  // DS3DBUFFER
 };
 struct Ds3dListener {  // DS3DLISTENER
   DWORD size;
-  Vec pos;
+  Vec pos, vel, front, top;
+  float distance_factor, rolloff, doppler;
 };
 
 struct Buffer {
@@ -71,6 +72,8 @@ struct Buffer {
   void* buffer = nullptr;  // the IDirectSoundBuffer
   Vec pos{};
   float max_dist = 1e9f;  // DS3D_DEFAULTMAXDISTANCE
+  float min_dist = 1.0f;  // DS3D_DEFAULTMINDISTANCE
+  bool logged_min = false;
   DWORD mode = 0;
   LONG volume = 0;        // what the game asked for
   bool muted = false;
@@ -85,6 +88,7 @@ std::vector<Buffer*> g_buffers;
 void* g_listener = nullptr;
 Vec g_listener_pos{};
 bool g_listener_set = false;  // no muting until the game has placed the listener
+float g_rolloff = 1.0f, g_distance_factor = 1.0f;
 bool g_dirty = false;         // deferred 3D changes waiting for CommitDeferredSettings
 volatile LONG g_deferred = 0, g_immediate = 0, g_commit_checks = 0;
 constexpr DWORD kDeferred = 1;  // DS3D_DEFERRED
@@ -151,10 +155,17 @@ void Update(Buffer& b, const char* why) {
   b.muted = out;
   const HRESULT hr = reinterpret_cast<SetVolumeFn>(Orig(b.buffer, 0x3c / 4))(b.buffer, out ? kVolumeMin : b.volume);
   InterlockedIncrement(out ? &g_mutes : &g_unmutes);
-  if (Detail())
-    patch::Log("sound: buffer #%d %s (%s): distance %.1f, max %.1f, mode %lu, %s%s, game volume %ld, hr %08lx", b.id,
-               out ? "muted" : "unmuted", why, dist, b.max_dist, b.mode, b.playing ? "playing" : "stopped",
+  if (Detail()) {
+    // DirectSound's attenuation stops at max distance at this level, then the
+    // flag mutes: gain = min / (min + rolloff * (max - min)).
+    const float m = b.min_dist > 0 ? b.min_dist : 1.0f;
+    const float g = m / (m + g_rolloff * (b.max_dist > m ? b.max_dist - m : 0.0f));
+    patch::Log("sound: buffer #%d %s (%s): distance %.1f, min %.1f, max %.1f, rolloff %.2f (level at max %.1f dB), "
+               "mode %lu, %s%s, game volume %ld, hr %08lx",
+               b.id, out ? "muted" : "unmuted", why, dist, b.min_dist, b.max_dist, g_rolloff,
+               20.0f * std::log10(g > 1e-6f ? g : 1e-6f), b.mode, b.playing ? "playing" : "stopped",
                b.looping ? " looping" : "", b.volume, static_cast<unsigned long>(hr));
+  }
 }
 
 // Windows' DirectSound applies deferred 3D settings, and so the mute, at
@@ -328,6 +339,7 @@ HRESULT WINAPI SetAllParameters3D(void* self, const Ds3dBuffer* p, DWORD apply) 
   if (b && p && SUCCEEDED(hr)) {
     b->pos = p->pos;
     b->max_dist = p->max_dist;
+    b->min_dist = p->min_dist;
     b->mode = p->mode;
     Changed(*b, apply, "all parameters");
   }
@@ -346,6 +358,21 @@ HRESULT WINAPI SetMaxDistance(void* self, float d, DWORD apply) {
     }
     b->max_dist = d;
     Changed(*b, apply, "max distance");
+  }
+  return hr;
+}
+
+HRESULT WINAPI SetMinDistance(void* self, float d, DWORD apply) {
+  using Fn = HRESULT(WINAPI*)(void*, float, DWORD);
+  const HRESULT hr = reinterpret_cast<Fn>(Orig(self, 0x44 / 4))(self, d, apply);
+  Lock lock;
+  Buffer* b = Find(self);
+  if (b && SUCCEEDED(hr)) {
+    if (!b->logged_min && g_log && b->id < 64) {
+      b->logged_min = true;
+      patch::Log("sound: buffer #%d min distance %.1f", b->id, d);
+    }
+    b->min_dist = d;
   }
   return hr;
 }
@@ -378,6 +405,7 @@ void Hook3D(void* obj) {
   HookUnknown(obj);
   Hook(obj, 0x30 / 4, reinterpret_cast<void*>(&SetAllParameters3D));
   Hook(obj, 0x40 / 4, reinterpret_cast<void*>(&SetMaxDistance));
+  Hook(obj, 0x44 / 4, reinterpret_cast<void*>(&SetMinDistance));
   Hook(obj, 0x48 / 4, reinterpret_cast<void*>(&SetMode));
   Hook(obj, 0x4c / 4, reinterpret_cast<void*>(&SetPosition3D));
 }
@@ -416,7 +444,13 @@ HRESULT WINAPI ListenerSetAll(void* self, const Ds3dListener* p, DWORD apply) {
   using Fn = HRESULT(WINAPI*)(void*, const Ds3dListener*, DWORD);
   const HRESULT hr = reinterpret_cast<Fn>(Orig(self, 0x28 / 4))(self, p, apply);
   Lock lock;
-  if (self == g_listener && p && SUCCEEDED(hr)) ListenerMoved(p->pos, apply);
+  if (self == g_listener && p && SUCCEEDED(hr)) {
+    if (p->rolloff != g_rolloff || p->distance_factor != g_distance_factor)
+      patch::Log("sound: listener rolloff %.2f, distance factor %.4f (all parameters)", p->rolloff, p->distance_factor);
+    g_rolloff = p->rolloff;
+    g_distance_factor = p->distance_factor;
+    ListenerMoved(p->pos, apply);
+  }
   return hr;
 }
 
@@ -428,7 +462,31 @@ HRESULT WINAPI ListenerSetPosition(void* self, float x, float y, float z, DWORD 
   return hr;
 }
 
+HRESULT WINAPI ListenerSetRolloff(void* self, float f, DWORD apply) {
+  using Fn = HRESULT(WINAPI*)(void*, float, DWORD);
+  const HRESULT hr = reinterpret_cast<Fn>(Orig(self, 0x3c / 4))(self, f, apply);
+  Lock lock;
+  if (self == g_listener && SUCCEEDED(hr)) {
+    if (f != g_rolloff) patch::Log("sound: listener rolloff %.2f", f);
+    g_rolloff = f;
+  }
+  return hr;
+}
+
+HRESULT WINAPI ListenerSetDistanceFactor(void* self, float f, DWORD apply) {
+  using Fn = HRESULT(WINAPI*)(void*, float, DWORD);
+  const HRESULT hr = reinterpret_cast<Fn>(Orig(self, 0x2c / 4))(self, f, apply);
+  Lock lock;
+  if (self == g_listener && SUCCEEDED(hr)) {
+    if (f != g_distance_factor) patch::Log("sound: listener distance factor %.4f", f);
+    g_distance_factor = f;
+  }
+  return hr;
+}
+
 void HookListener(void* obj) {
+  Hook(obj, 0x2c / 4, reinterpret_cast<void*>(&ListenerSetDistanceFactor));
+  Hook(obj, 0x3c / 4, reinterpret_cast<void*>(&ListenerSetRolloff));
   Hook(obj, 0x28 / 4, reinterpret_cast<void*>(&ListenerSetAll));
   Hook(obj, 0x38 / 4, reinterpret_cast<void*>(&ListenerSetPosition));
   Hook(obj, 0x44 / 4, reinterpret_cast<void*>(&ListenerCommit));
@@ -487,6 +545,7 @@ HRESULT WINAPI DuplicateSoundBuffer(void* self, void* src, void** out) {
   if (Buffer* s = Find(src)) {
     Buffer* b = Track(*out, s->flags, s->bytes);
     b->max_dist = s->max_dist;
+    b->min_dist = s->min_dist;
     b->mode = s->mode;
     b->pos = s->pos;
     if (g_log && b->id < 64) patch::Log("sound: 3D buffer #%d %p duplicated from #%d", b->id, *out, s->id);
