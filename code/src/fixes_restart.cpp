@@ -288,6 +288,98 @@ void __fastcall RestartHook(uintptr_t self, void*, int a, int b, int c) {
   }
 }
 
+// ---- RestartLog write watch ----
+// For the first frames after a race load and after a restart, debug
+// registers watch a few bike fields (player and second bike position z and
+// heading, a third bike's +0xb8). Each write is logged once per writing
+// instruction with the value and the code addresses found on the stack, so
+// we can see which game code moves the bikes or changes their state.
+constexpr DWORD kArmCode = 0xE0DB0001;
+uintptr_t g_watch_addr[4] = {};
+const char* g_watch_name[4] = {};
+bool g_watch_on = false;
+struct WatchHit {
+  uintptr_t eip;
+  int slot;
+  unsigned count;
+};
+WatchHit g_hits[64];
+int g_nhits = 0;
+PVOID g_veh = nullptr;
+
+LONG CALLBACK WatchHandler(PEXCEPTION_POINTERS e) {
+  CONTEXT* c = e->ContextRecord;
+  if (e->ExceptionRecord->ExceptionCode == kArmCode) {
+    c->Dr0 = g_watch_on ? g_watch_addr[0] : 0;
+    c->Dr1 = g_watch_on ? g_watch_addr[1] : 0;
+    c->Dr2 = g_watch_on ? g_watch_addr[2] : 0;
+    c->Dr3 = g_watch_on ? g_watch_addr[3] : 0;
+    DWORD dr7 = 0;
+    if (g_watch_on)
+      for (int i = 0; i < 4; ++i)
+        if (g_watch_addr[i]) dr7 |= (1u << (2 * i)) | (0xDu << (16 + 4 * i));  // local enable, write, 4 bytes
+    c->Dr7 = dr7;
+    c->Dr6 = 0;
+    c->ContextFlags |= CONTEXT_DEBUG_REGISTERS;
+    return EXCEPTION_CONTINUE_EXECUTION;
+  }
+  if (e->ExceptionRecord->ExceptionCode != EXCEPTION_SINGLE_STEP) return EXCEPTION_CONTINUE_SEARCH;
+  const DWORD dr6 = static_cast<DWORD>(c->Dr6);
+  if (!(dr6 & 0xF)) return EXCEPTION_CONTINUE_SEARCH;
+  for (int i = 0; i < 4; ++i) {
+    if (!(dr6 & (1u << i))) continue;
+    const uintptr_t eip = reinterpret_cast<uintptr_t>(e->ExceptionRecord->ExceptionAddress);
+    WatchHit* h = nullptr;
+    for (int k = 0; k < g_nhits; ++k)
+      if (g_hits[k].eip == eip && g_hits[k].slot == i) h = &g_hits[k];
+    if (!h && g_nhits < 64) {
+      h = &g_hits[g_nhits++];
+      *h = {eip, i, 0};
+    }
+    if (h && h->count++ < 2) {
+      char buf[512];
+      int n = std::snprintf(buf, sizeof(buf), "restart: watch %s frame %d: %s written %.3f at %08x (after the write); stack:",
+                            g_phase, g_frame, g_watch_name[i], Rd<float>(g_watch_addr[i]), static_cast<unsigned>(eip));
+      const uintptr_t sp = c->Esp;
+      int found = 0;
+      for (int k = 0; k < 160 && found < 8 && n > 0 && n < static_cast<int>(sizeof(buf)) - 12; ++k) {
+        const uintptr_t v = Rd<uintptr_t>(sp + 4 * k);
+        if (v >= 0x401000 && v < 0x553000) {
+          n += std::snprintf(buf + n, sizeof(buf) - n, " %08x", static_cast<unsigned>(v));
+          ++found;
+        }
+      }
+      patch::Log("%s", buf);
+    }
+  }
+  c->Dr6 = 0;
+  return EXCEPTION_CONTINUE_EXECUTION;
+}
+
+void ArmWatch(uintptr_t race, bool on) {
+  if (!g_veh) g_veh = AddVectoredExceptionHandler(1, &WatchHandler);
+  if (!g_veh) return;
+  if (on) {
+    auto next = reinterpret_cast<NextBikeFn>(kNextBike);
+    int idx = 0;
+    uintptr_t b[3] = {};
+    for (int i = 0; i < 3; ++i) b[i] = next(race, nullptr, &idx);
+    if (!b[0] || !b[1] || !b[2]) return;
+    g_watch_addr[0] = b[0] + 0x14; g_watch_name[0] = "bike0 pos z";
+    g_watch_addr[1] = b[0] + 0x90; g_watch_name[1] = "bike0 heading z";
+    g_watch_addr[2] = b[1] + 0x14; g_watch_name[2] = "bike1 pos z";
+    g_watch_addr[3] = b[2] + 0xb8; g_watch_name[3] = "bike2 +b8";
+    g_nhits = 0;
+  } else {
+    for (int i = 0; i < g_nhits; ++i)
+      patch::Log("restart: watch %s summary: %s written %u times at %08x", g_phase, g_watch_name[g_hits[i].slot],
+                 g_hits[i].count, static_cast<unsigned>(g_hits[i].eip));
+  }
+  g_watch_on = on;
+  RaiseException(kArmCode, 0, 0, nullptr);
+  patch::Log("restart: write watch %s (%s)", on ? "armed" : "off", g_phase);
+}
+
 void __fastcall UpdateHook(uintptr_t self, void*, int arg) {
   bool watch = g_frame >= 0 && self == g_race;
   int f = watch ? g_frame : -1;
@@ -296,7 +388,9 @@ void __fastcall UpdateHook(uintptr_t self, void*, int arg) {
     if (f == 0) LogGameMode(g_phase);
     LogBikes(self, f <= 1);
   }
+  if (watch && f == 0) ArmWatch(self, true);
   g_update(self, nullptr, arg);
+  if (watch && f == 3) ArmWatch(self, false);
   if (watch && (f == 0 || f == 1 || f == 5 || f == 30 || f == 90 || f == 200)) {
     patch::Log("restart: %s frame %d (after update)", g_phase, f);
     LogBikes(self, f <= 1);
