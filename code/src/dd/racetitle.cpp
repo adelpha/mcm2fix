@@ -57,8 +57,16 @@ constexpr uintptr_t kDropText = 0x48;
 constexpr uintptr_t kPodium = 0x3430, kPodium4 = 0x3434, kPodium8 = 0x3438;
 // Every other text queue add, logged with RaceTitleLog (finding the podium's
 // "You have finished" text).
-constexpr uintptr_t kQueueAddCalls[] = {0x41E2B1, 0x41E717, 0x42080F, 0x420A2C, 0x420B35, 0x4607DD, 0x4608EA, 0x497287,
-                                        0x497908, 0x497B11, 0x4992D6, 0x4E54B0, 0x4E5AD2, 0x4E5BE3, 0x4E9415};
+constexpr uintptr_t kQueueAddCalls[] = {0x41E2B1, 0x41E717, 0x42080F, 0x420A2C, 0x420B35, 0x4607DD, 0x4608EA,
+                                        0x497287, 0x497908, 0x4992D6, 0x4E54B0, 0x4E5AD2, 0x4E5BE3, 0x4E9415};
+// Bike update 0x497740 queues the finish text ("Congratulations! You finished
+// 1st!", LANG.DLL 0x1481 + place) as the player crosses the line; for the top
+// three the podium cutscene starts ~0.15 s later (game+0x3430 = 1) and runs
+// while game+0x3434 (game seconds) counts up to 7.0 (constant 0x55582c).
+constexpr uintptr_t kFinishAddCall = 0x497B11;
+constexpr float kPodiumLength = 7.0f;
+constexpr double kPodiumWait = 0.6;  // real seconds to wait for the cutscene before giving the text back
+constexpr float kPodiumLineY = 0.16f;  // line height on screen (countdown/final lap: 0.352)
 
 // Timing (seconds).
 constexpr float kLineTime = 0.30f;   // dot -> full line
@@ -118,6 +126,20 @@ struct FinalLap {
   unsigned frames = 0, starts = 0;
   double last_trace = 0;
 } fl;
+
+// Podium finish banner.
+struct Podium {
+  std::string text;
+  uintptr_t queue = 0;
+  char item[0x84] = {};  // copy of the queue item, handed back if no cutscene follows
+  bool pending = false, active = false;
+  double captured = 0, started = 0;
+  float last_e = -1;
+  double last_change = 0;
+  int phase = -1;
+  unsigned frames = 0, captures = 0, given_back = 0;
+  double last_trace = 0;
+} pd;
 
 uintptr_t CurrentRace() {
   const uintptr_t game = Rd<uintptr_t>(kGame);
@@ -219,6 +241,30 @@ __attribute__((noinline)) void __fastcall QueueAddLogHook(uintptr_t queue, void*
   Log("race title: text queue %08x add from %08x: \"%s\" (%.2f s)", static_cast<unsigned>(queue),
       static_cast<unsigned>(ret - 5), text, item ? Rd<float>(reinterpret_cast<uintptr_t>(item) + 0x80) : 0.0f);
   reinterpret_cast<QueueAddFn>(kQueueAdd)(queue, edx, item);
+}
+
+// 0x497b11: the finish text. Kept back and shown as a banner over the podium
+// cutscene; if no cutscene starts (4th or lower), given back to the queue.
+void __fastcall FinishAddHook(uintptr_t queue, void* edx, const char* item) {
+  char text[0x81] = {};
+  if (item) std::memcpy(text, item, 0x80);
+  const float secs = item ? Rd<float>(reinterpret_cast<uintptr_t>(item) + 0x80) : 0;
+  const bool take = GetConfig().race_title && GpuTextActive() && text[0] && queue;
+  ++pd.captures;
+  Log("podium: finish text \"%s\" (%.2f s, text queue %08x) %s", text, secs, static_cast<unsigned>(queue),
+      take ? "kept back for the podium banner" : "left to the game");
+  if (!take) {
+    reinterpret_cast<QueueAddFn>(kQueueAdd)(queue, edx, item);
+    return;
+  }
+  if (pd.pending)
+    Log("podium: previous finish text \"%s\" was still waiting; replaced", pd.text.c_str());
+  pd.text = text;
+  pd.queue = queue;
+  std::memcpy(pd.item, item, sizeof(pd.item));
+  pd.pending = true;
+  pd.active = false;
+  pd.captured = Now();
 }
 
 // Podium cutscene watch (RaceTitleLog): when it starts and ends, and what
@@ -362,8 +408,8 @@ void Fill(HDC dc, const RECT& r, HBRUSH b) {
 }
 
 // One banner: the line, `name` above it and `sub` below it, as far open as `p` says.
-void DrawBanner(Surface* rt, const std::string& name, const std::string& sub, const Pose& p, const char* tag,
-                unsigned frames, float e, float total, float left, double& last_trace) {
+void DrawBanner(Surface* rt, const std::string& name, const std::string& sub, const Pose& p, float line_pos,
+                const char* tag, unsigned frames, float e, float total, float left, double& last_trace) {
   if (p.line <= 0.001f) return;
   const UINT W = rt->Width(), H = rt->Height();
   const Config& cfg = GetConfig();
@@ -384,7 +430,7 @@ void DrawBanner(Surface* rt, const std::string& name, const std::string& sub, co
   const SIZE tw = GpuTextExtent(dc, name.c_str(), static_cast<int>(name.size()));
   const SIZE sw = GpuTextExtent(dc, sub.c_str(), static_cast<int>(sub.size()));
   const LONG cx = static_cast<LONG>(W / 2);
-  const LONG line_y = std::lround(H * 0.352f);
+  const LONG line_y = std::lround(H * line_pos);
   const LONG thick = std::max<LONG>(2, std::lround(H * 0.0045f * k));
   const LONG shadow = std::max<LONG>(1, std::lround(H * 0.0028f * k));
   const LONG gap = std::lround(H * 0.016f * k);
@@ -451,6 +497,8 @@ void InstallRaceTitleHooks() {
     for (uintptr_t site : kQueueAddCalls)
       qlog += PatchCall(site, kQueueAdd, reinterpret_cast<const void*>(&QueueAddLogHook)) ? 1 : 0;
   if (qlog) Log("race title: %d text queue adds logged", qlog);
+  const int finish = c.race_title && PatchCall(kFinishAddCall, kQueueAdd, reinterpret_cast<const void*>(&FinishAddHook)) ? 1 : 0;
+  Log("race title: podium finish text hook %s", finish ? "applied" : (c.race_title ? "MISSING" : "off (RaceTitle=0)"));
   int drops = 0;
   for (uintptr_t site : kDropStartCalls)
     drops += PatchCall(site, kDropStart, reinterpret_cast<const void*>(&DropStartHook)) ? 1 : 0;
@@ -514,7 +562,7 @@ void CountdownBanner(Surface* rt) {
     return;
   }
   ++g.frames;
-  DrawBanner(rt, g.name, g.sub, p, "race title", g.frames, e, g.total, g.last_left, g.last_trace);
+  DrawBanner(rt, g.name, g.sub, p, 0.352f, "race title", g.frames, e, g.total, g.last_left, g.last_trace);
 }
 
 // FINAL LAP: the same banner with only the game's text above the line, on
@@ -536,7 +584,71 @@ void FinalLapBanner(Surface* rt) {
     return;
   }
   ++fl.frames;
-  DrawBanner(rt, fl.text, std::string(), p, "final lap", fl.frames, e, total, 0, fl.last_trace);
+  DrawBanner(rt, fl.text, std::string(), p, 0.352f, "final lap", fl.frames, e, total, 0, fl.last_trace);
+}
+
+// Podium: wait for the cutscene after the finish text, then draw the banner
+// near the top of the screen, open/hold/close over the cutscene's 7 s.
+void PodiumBanner(Surface* rt) {
+  if (!pd.pending && !pd.active) return;
+  const uintptr_t game = Rd<uintptr_t>(kGame);
+  const double now = Now();
+  const int on = game ? Rd<int>(game + kPodium) : 0;
+  if (pd.pending) {
+    if (on == 1) {
+      pd.pending = false;
+      pd.active = true;
+      pd.started = now;
+      pd.last_e = -1;
+      pd.last_change = now;
+      pd.phase = -1;
+      pd.frames = 0;
+      Log("podium: cutscene started %.2f s after the finish text; banner \"%s\"", now - pd.captured,
+          pd.text.c_str());
+    } else if (now - pd.captured > kPodiumWait) {
+      pd.pending = false;
+      ++pd.given_back;
+      if (game) {
+        Log("podium: no cutscene %.2f s after the finish text (flag %d); \"%s\" given back to text queue %08x",
+            now - pd.captured, on, pd.text.c_str(), static_cast<unsigned>(pd.queue));
+        reinterpret_cast<QueueAddFn>(kQueueAdd)(pd.queue, nullptr, pd.item);
+      } else {
+        Log("podium: no cutscene and no game object; \"%s\" dropped", pd.text.c_str());
+      }
+      return;
+    } else {
+      return;
+    }
+  }
+  if (on != 1) {
+    Log("podium: cutscene ended (flag %d) after %u frames, %.2f s; banner off", on, pd.frames, now - pd.started);
+    pd.active = false;
+    return;
+  }
+  const float t = Rd<float>(game + kPodium4);
+  if (!(t >= -0.5f && t <= kPodiumLength + 5.0f)) {
+    Log("podium: cutscene timer +3434 = %g out of range; banner off", t);
+    pd.active = false;
+    return;
+  }
+  if (t != pd.last_e) {
+    pd.last_e = t;
+    pd.last_change = now;
+  }
+  // Game time steps once per simulation step: move on by at most one step.
+  const Config& cfg = GetConfig();
+  const float step = cfg.sim_rate > 0 ? 1.0f / cfg.sim_rate : 0.05f;
+  const float e = std::min(kPodiumLength, t + std::min(step, static_cast<float>(now - pd.last_change)));
+  const Pose p = At(e, kPodiumLength);
+  if (p.phase != pd.phase) {
+    if (Logging())
+      Log("podium: phase %d -> %d at %.3f s of %.2f (frame %u, screen %ux%u)", pd.phase, p.phase, e, kPodiumLength,
+          pd.frames, rt->Width(), rt->Height());
+    pd.phase = p.phase;
+  }
+  if (p.phase == 5) return;  // closed; wait for the flag to clear
+  ++pd.frames;
+  DrawBanner(rt, pd.text, std::string(), p, kPodiumLineY, "podium", pd.frames, e, kPodiumLength, t, pd.last_trace);
 }
 
 // Once per frame: a voice as the countdown passes 5, 4, 3, 2 and 1 seconds
@@ -577,11 +689,12 @@ void RaceTitleDraw(Surface* rt) {
   g.drawn_this_frame = true;
   PodiumWatch();
   AnnouncerTick();
-  if (!g.active && !fl.active) return;
+  if (!g.active && !fl.active && !pd.pending && !pd.active) return;
   const Config& cfg = GetConfig();
   if (!cfg.race_title || !GpuTextActive()) return;
   CountdownBanner(rt);
   FinalLapBanner(rt);
+  PodiumBanner(rt);
 }
 
 }  // namespace dd

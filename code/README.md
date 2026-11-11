@@ -268,7 +268,9 @@ HudStuntTextSize=0.8
 ; events: time limit) open out of a white line in the middle of the screen
 ; and close back into it as the countdown ends, instead of the game's small
 ; green name in the bottom-left corner (default). FINAL LAP is shown the same
-; way (held 2 seconds) instead of dropping down the screen. Needs GpuText=1.
+; way (held 2 seconds) instead of dropping down the screen, and the finish
+; message opens near the top of the screen for the length of the podium
+; cutscene (top 3; otherwise the game shows it as usual). Needs GpuText=1.
 ; 0 = the game's corner text and drop text.
 RaceTitle=1
 
