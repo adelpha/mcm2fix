@@ -19,6 +19,30 @@ namespace dd {
 class DirectDraw;
 class Surface;
 
+// DrawBatch=1: why a batch of merged draws was sent (logged as counts).
+enum BatchBreak : int {
+  kBreakRenderState,
+  kBreakStageState,
+  kBreakTexture,
+  kBreakTransform,
+  kBreakViewport,
+  kBreakTarget,
+  kBreakLighting,
+  kBreakClear,
+  kBreakScene,
+  kBreakSurface,   // Blt, Lock, GetDC, colour key, LOD ... on any surface
+  kBreakFlip,
+  kBreakScreen,    // a screen-space draw
+  kBreakShape,     // a draw that is not merged (lines, points, processed vertices, bad indices)
+  kBreakLayout,    // a different vertex format
+  kBreakFull,
+  kBreakOther,
+  kBreakCount
+};
+// Sends the device's merged draws, if any, before something that could see
+// or change what they draw.
+void FlushPendingDraws(BatchBreak why);
+
 // Where each part of a vertex lives for a given FVF code.
 struct FvfLayout {
   UINT stride = 0;
@@ -169,6 +193,11 @@ class Device : public d3d7::IDirect3DDevice7 {
     const VertexBuffer* vb = nullptr;  // for ProcessVertices clip data
   };
   void Submit(const Draw& d);
+  bool BatchAdd(const Draw& d);
+  HRESULT SetTransformNow(DWORD type, d3d7::D3DMATRIX* m);
+ public:
+  void FlushBatch(BatchBreak why);
+ private:
   void NoteDrawLog(const Draw& d);  // DrawLog=1 (drawlog.cpp)
   bool SubmitWideLine(const Draw& d);
   void SubmitDraw(const Draw& d);
@@ -223,6 +252,16 @@ class Device : public d3d7::IDirect3DDevice7 {
   std::map<uint32_t, ID3D11DepthStencilState*> depth_cache_;
   std::map<uint32_t, ID3D11RasterizerState*> raster_cache_;
   std::map<uint32_t, ID3D11SamplerState*> sampler_cache_;
+  // DrawBatch=1: 3D triangle draws in a row with the same state, merged.
+  struct Batch {
+    std::vector<uint8_t> verts;  // the game's vertices, its own layout
+    std::vector<WORD> idx;       // triangle list
+    FvfLayout layout;
+    DWORD nverts = 0;
+    unsigned draws = 0;
+  };
+  Batch batch_, batch_out_;
+  bool flushing_ = false;
   std::vector<uint8_t> scratch_;
   std::vector<WORD> scratch_idx_;
   // Direct3D 9: what BindTarget9 bound.

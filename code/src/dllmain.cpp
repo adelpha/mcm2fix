@@ -50,9 +50,9 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
       xp::LogSystemInfo();
       ApplyStep1Fixes();
       const Config& c = GetConfig();
-      patch::Log("config: OneCore=%d Startup=%d Registry=%d Files=%d ActivateLog=%d RegLog=%d DDStats=%d DrawLog=%d "
+      patch::Log("config: OneCore=%d Startup=%d Registry=%d Files=%d ActivateLog=%d RegLog=%d DDStats=%d DrawLog=%d DrawBatch=%d BatchLog=%d "
                  "AlphaCut=%d WideFov=%d ArrowFix=%d ArrowScale=%.2f RestartFix=%d RestartLog=%d",
-                 c.one_core, c.startup, c.registry, c.files, c.activate_log, c.reg_log, c.dd_stats, c.draw_log,
+                 c.one_core, c.startup, c.registry, c.files, c.activate_log, c.reg_log, c.dd_stats, c.draw_log, c.draw_batch, c.batch_log,
                  c.alpha_cut, c.wide_fov, c.arrow_heading, static_cast<double>(c.arrow_scale),
                  c.restart_fix, c.restart_log);
       patch::Log("display: Fullscreen=%s FullscreenMode=%dx%d@%d (0 = desktop) VSync=%d",

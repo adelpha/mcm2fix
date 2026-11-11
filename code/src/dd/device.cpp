@@ -583,6 +583,185 @@ HRESULT VertexBuffer::ProcessVerticesStrided(DWORD, DWORD, DWORD, D3DDRAWPRIMITI
 
 // --------------------------------------------------------------------- Device
 
+namespace {
+Device* g_batch_owner = nullptr;  // the device with merged draws waiting (DrawBatch)
+}  // namespace
+
+// ------------------------------------------------------------ draw batching
+//
+// DrawBatch=1. The game sends many small 3D draws in a row with nothing
+// changed between them (every near tree is its own draw of a few dozen
+// vertices, already in world space). Each one costs a vertex conversion, a
+// state check and a driver call. Here they are collected, as long as nothing
+// that affects drawing changes, and sent as one triangle list. Anything that
+// could change what a waiting draw looks like, or read what it drew (a state
+// change, a texture or render target being written or read, a screen-space
+// draw, the end of the scene) sends the waiting draws first.
+
+namespace {
+
+constexpr DWORD kBatchMaxVerts = 16384;
+constexpr size_t kBatchMaxIdx = 49152;
+
+const char* const kBreakNames[kBreakCount] = {"render state", "stage state", "texture", "transform", "viewport",
+                                              "render target", "material/light", "clear", "begin/end scene",
+                                              "surface access", "flip", "screen-space draw", "not mergeable",
+                                              "vertex format", "full", "other"};
+
+struct BatchStats {
+  unsigned seen = 0;       // 3D draws from the game
+  unsigned merged = 0;     // of them, taken into a batch
+  unsigned sent = 0;       // batches drawn
+  unsigned single = 0;     // batches of one draw
+  unsigned max_draws = 0;
+  unsigned not_mergeable[6] = {};  // prim (points/lines), processed verts, index range, too big, fvf, off
+  unsigned breaks[kBreakCount] = {};
+  std::map<unsigned, unsigned> rs_breaks, tss_breaks;  // which state split batches
+} g_bs;
+
+
+bool SameLayout(const FvfLayout& a, const FvfLayout& b) {
+  if (a.stride != b.stride || a.tl != b.tl || a.diffuse != b.diffuse || a.specular != b.specular ||
+      a.normal != b.normal || a.ntex != b.ntex)
+    return false;
+  for (int i = 0; i < a.ntex && i < 8; ++i)
+    if (a.tex[i] != b.tex[i] || a.tex_dim[i] != b.tex_dim[i]) return false;
+  return true;
+}
+
+void ReportBatches() {
+  static DWORD last = GetTickCount();
+  const DWORD now = GetTickCount();
+  if (now - last < 5000) return;
+  const double secs = (now - last) / 1000.0;
+  last = now;
+  const Config& c = GetConfig();
+  if (g_bs.seen && (c.batch_log || c.profile || c.dd_stats || c.draw_log)) {
+    std::string why;
+    for (int i = 0; i < kBreakCount; ++i)
+      if (g_bs.breaks[i]) {
+        char b[64];
+        std::snprintf(b, sizeof(b), "%s%s %u", why.empty() ? "" : ", ", kBreakNames[i], g_bs.breaks[i]);
+        why += b;
+      }
+    auto top = [](const std::map<unsigned, unsigned>& m, bool tss) {
+      std::vector<std::pair<unsigned, unsigned>> v(m.begin(), m.end());
+      std::sort(v.begin(), v.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+      std::string out;
+      for (size_t i = 0; i < v.size() && i < 6; ++i) {
+        char b[48];
+        if (tss) std::snprintf(b, sizeof(b), " %u/%u x%u", v[i].first >> 5, v[i].first & 31, v[i].second);
+        else std::snprintf(b, sizeof(b), " %u x%u", v[i].first, v[i].second);
+        out += b;
+      }
+      return out.empty() ? std::string(" -") : out;
+    };
+    Log("draw batching %.1fs: %u 3D draws, %u merged into %u batches (%u of one draw, most %u draws); "
+        "%u draws drawn for them instead of %u; not mergeable: points/lines %u, processed %u, index range %u, "
+        "too big %u, fan/strip too short %u",
+        secs, g_bs.seen, g_bs.merged, g_bs.sent, g_bs.single, g_bs.max_draws,
+        g_bs.sent + (g_bs.seen - g_bs.merged), g_bs.seen, g_bs.not_mergeable[0], g_bs.not_mergeable[1],
+        g_bs.not_mergeable[2], g_bs.not_mergeable[3], g_bs.not_mergeable[4]);
+    Log("draw batching %.1fs: batches ended by %s; render states that changed:%s; stage/state that changed:%s", secs,
+        why.empty() ? "-" : why.c_str(), top(g_bs.rs_breaks, false).c_str(), top(g_bs.tss_breaks, true).c_str());
+  }
+  g_bs = BatchStats{};
+}
+
+}  // namespace
+
+void FlushPendingDraws(BatchBreak why) {
+  if (g_batch_owner) g_batch_owner->FlushBatch(why);
+}
+
+bool Device::BatchAdd(const Draw& d) {
+  if (!GetConfig().draw_batch) return false;
+  ++g_bs.seen;
+  ReportBatches();
+  auto refuse = [&](int reason) {
+    ++g_bs.not_mergeable[reason];
+    FlushBatch(kBreakShape);
+    return false;
+  };
+  if (d.prim != D3DPT_TRIANGLELIST && d.prim != D3DPT_TRIANGLEFAN && d.prim != D3DPT_TRIANGLESTRIP) return refuse(0);
+  if (d.layout.tl || !d.verts || !d.layout.stride) return refuse(1);
+  if (d.count > kBatchMaxVerts) return refuse(3);
+  const DWORD n = d.idx ? d.nidx : d.count;  // vertices of the primitive, through the indices if any
+  if (n < 3) return refuse(4);
+  if (d.idx) {
+    WORD hi = 0;
+    for (DWORD i = 0; i < d.nidx; ++i) hi = std::max(hi, d.idx[i]);
+    if (hi >= d.count) return refuse(2);
+  }
+  const size_t tris = d.prim == D3DPT_TRIANGLELIST ? n / 3 : n - 2;
+  if (tris * 3 > kBatchMaxIdx) return refuse(3);
+  if (batch_.draws) {
+    if (!SameLayout(batch_.layout, d.layout)) FlushBatch(kBreakLayout);
+    else if (batch_.nverts + d.count > kBatchMaxVerts || batch_.idx.size() + tris * 3 > kBatchMaxIdx)
+      FlushBatch(kBreakFull);
+  }
+  if (!batch_.draws) {
+    batch_.layout = d.layout;
+    batch_.verts.clear();
+    batch_.idx.clear();
+    batch_.nverts = 0;
+  }
+  const size_t stride = d.layout.stride;
+  const uint8_t* src = d.verts + static_cast<size_t>(d.first) * stride;
+  batch_.verts.insert(batch_.verts.end(), src, src + static_cast<size_t>(d.count) * stride);
+  const WORD base = static_cast<WORD>(batch_.nverts);
+  auto at = [&](DWORD i) -> WORD { return static_cast<WORD>(base + (d.idx ? d.idx[i] : static_cast<WORD>(i))); };
+  const size_t o = batch_.idx.size();
+  batch_.idx.resize(o + tris * 3);
+  WORD* out = batch_.idx.data() + o;
+  if (d.prim == D3DPT_TRIANGLELIST) {
+    for (size_t t = 0; t < tris * 3; ++t) out[t] = at(static_cast<DWORD>(t));
+  } else if (d.prim == D3DPT_TRIANGLEFAN) {
+    for (size_t t = 0; t < tris; ++t) {
+      out[t * 3] = at(0);
+      out[t * 3 + 1] = at(static_cast<DWORD>(t + 1));
+      out[t * 3 + 2] = at(static_cast<DWORD>(t + 2));
+    }
+  } else {  // strip: every other triangle turned round, as the GPU draws them
+    for (size_t t = 0; t < tris; ++t) {
+      const DWORD a = static_cast<DWORD>(t);
+      out[t * 3] = at(t & 1 ? a + 1 : a);
+      out[t * 3 + 1] = at(t & 1 ? a : a + 1);
+      out[t * 3 + 2] = at(a + 2);
+    }
+  }
+  batch_.nverts += d.count;
+  ++batch_.draws;
+  ++g_bs.merged;
+  g_batch_owner = this;
+  return true;
+}
+
+void Device::FlushBatch(BatchBreak why) {
+  if (!batch_.draws || flushing_) return;
+  DD_LOCK;
+  ++g_bs.breaks[why];
+  ++g_bs.sent;
+  if (batch_.draws == 1) ++g_bs.single;
+  g_bs.max_draws = std::max(g_bs.max_draws, batch_.draws);
+  // Drawing may come back here (a surface it touches): send from a copy.
+  std::swap(batch_, batch_out_);
+  batch_.draws = 0;
+  if (g_batch_owner == this) g_batch_owner = nullptr;
+  flushing_ = true;
+  Draw d;
+  d.prim = D3DPT_TRIANGLELIST;
+  d.verts = batch_out_.verts.data();
+  d.layout = batch_out_.layout;
+  d.first = 0;
+  d.count = batch_out_.nverts;
+  d.idx = batch_out_.idx.data();
+  d.nidx = static_cast<DWORD>(batch_out_.idx.size());
+  SubmitDraw(d);
+  flushing_ = false;
+}
+
+
 Device::Device(DirectDraw* dd, Surface* rt, REFCLSID cls) : dd_(dd), rt_(rt), guid_(cls) {
   dd_->AddRef();
   rt_->AddRef();
@@ -624,6 +803,7 @@ Device::Device(DirectDraw* dd, Surface* rt, REFCLSID cls) : dd_(dd), rt_(rt), gu
 }
 
 Device::~Device() {
+  if (g_batch_owner == this) g_batch_owner = nullptr;  // waiting draws are dropped with the device
   for (Surface*& t : tex_) SafeRelease(t);
   SafeRelease(rt_);
   for (auto& kv : blend_cache_) kv.second->Release();
@@ -751,8 +931,12 @@ HRESULT Device::EnumTextureFormats(LPD3DENUMPIXELFORMATSCALLBACK cb, void* ctx) 
   return D3D_OK;
 }
 
-HRESULT Device::BeginScene() { return D3D_OK; }
+HRESULT Device::BeginScene() {
+  FlushBatch(kBreakScene);
+  return D3D_OK;
+}
 HRESULT Device::EndScene() {
+  FlushBatch(kBreakScene);
   HudTextFlush();  // race HUD text goes over everything the scene drew
   return D3D_OK;
 }
@@ -766,6 +950,7 @@ HRESULT Device::GetDirect3D(IDirect3D7** out) {
 
 HRESULT Device::SetRenderTarget(IDirectDrawSurface7* s, DWORD) {
   DD_LOCK;
+  FlushBatch(kBreakTarget);
   Surface* t = Surface::From(s);
   if (!t) return DDERR_INVALIDPARAMS;
   t->AddRef();
@@ -785,6 +970,7 @@ HRESULT Device::GetRenderTarget(IDirectDrawSurface7** s) {
 
 HRESULT Device::Clear(DWORD count, D3DRECT* rects, DWORD flags, D3DCOLOR color, float z, DWORD) {
   DD_LOCK;
+  FlushBatch(kBreakClear);
   PROF_ZONE(kClear);
   prof::Count(prof::cClears);
   if (rt_ && (flags & D3DCLEAR_TARGET)) {
@@ -868,6 +1054,26 @@ HRESULT Device::Clear(DWORD count, D3DRECT* rects, DWORD flags, D3DCOLOR color, 
 
 HRESULT Device::SetTransform(DWORD type, D3DMATRIX* m) {
   if (!m) return DDERR_INVALIDPARAMS;
+  if (batch_.draws) {
+    // The smoothing decides the matrix actually used: work it out, and if it
+    // differs, send the waiting draws with the old one first.
+    const D3DMATRIX old_w = world_, old_v = view_, old_p = proj_;
+    const HRESULT hr = SetTransformNow(type, m);
+    if (std::memcmp(&old_w, &world_, sizeof(old_w)) || std::memcmp(&old_v, &view_, sizeof(old_v)) ||
+        std::memcmp(&old_p, &proj_, sizeof(old_p))) {
+      const D3DMATRIX new_w = world_, new_v = view_, new_p = proj_;
+      world_ = old_w, view_ = old_v, proj_ = old_p;
+      wvp_dirty_ = true;
+      FlushBatch(kBreakTransform);
+      world_ = new_w, view_ = new_v, proj_ = new_p;
+      wvp_dirty_ = true;
+    }
+    return hr;
+  }
+  return SetTransformNow(type, m);
+}
+
+HRESULT Device::SetTransformNow(DWORD type, D3DMATRIX* m) {
   switch (type) {
     case D3DTRANSFORMSTATE_WORLD:
       world_set_ = *m;
@@ -931,6 +1137,7 @@ const float* Device::Wvp() {
 
 HRESULT Device::SetViewport(D3DVIEWPORT7* vp) {
   if (!vp) return DDERR_INVALIDPARAMS;
+  if (batch_.draws && std::memcmp(vp, &viewport_, sizeof(viewport_)) != 0) FlushBatch(kBreakViewport);
   if (vp->dwWidth != viewport_.dwWidth || vp->dwHeight != viewport_.dwHeight) wvp_dirty_ = true;
   viewport_ = *vp;
   return D3D_OK;
@@ -944,6 +1151,7 @@ HRESULT Device::GetViewport(D3DVIEWPORT7* vp) {
 
 HRESULT Device::SetMaterial(D3DMATERIAL7* m) {
   if (!m) return DDERR_INVALIDPARAMS;
+  if (batch_.draws && std::memcmp(m, &material_, sizeof(material_)) != 0) FlushBatch(kBreakLighting);
   material_ = *m;
   return D3D_OK;
 }
@@ -956,6 +1164,7 @@ HRESULT Device::GetMaterial(D3DMATERIAL7* m) {
 
 HRESULT Device::SetLight(DWORD i, D3DLIGHT7* l) {
   if (!l) return DDERR_INVALIDPARAMS;
+  FlushBatch(kBreakLighting);
   lights_[i] = *l;
   return D3D_OK;
 }
@@ -970,6 +1179,10 @@ HRESULT Device::GetLight(DWORD i, D3DLIGHT7* l) {
 
 HRESULT Device::SetRenderState(DWORD state, DWORD value) {
   if (state >= 256) return DDERR_INVALIDPARAMS;
+  if (batch_.draws && rs_[state] != value) {
+    ++g_bs.rs_breaks[state];
+    FlushBatch(kBreakRenderState);
+  }
   rs_[state] = value;
   return D3D_OK;
 }
@@ -995,6 +1208,7 @@ HRESULT Device::CreateStateBlock(DWORD, DWORD*) {
 
 HRESULT Device::PreLoad(IDirectDrawSurface7* s) {
   DD_LOCK;
+  FlushBatch(kBreakSurface);
   if (Surface* t = Surface::From(s)) t->Gpu();
   return D3D_OK;
 }
@@ -1160,6 +1374,7 @@ HRESULT Device::SetTexture(DWORD stage, IDirectDrawSurface7* t) {
   if (t && !s) return DDERR_INVALIDPARAMS;
   if (s == tex_[stage]) return D3D_OK;
   DD_LOCK;
+  FlushBatch(kBreakTexture);
   if (s) s->AddRef();
   SafeRelease(tex_[stage]);
   tex_[stage] = s;
@@ -1174,6 +1389,11 @@ HRESULT Device::GetTextureStageState(DWORD stage, DWORD type, DWORD* value) {
 
 HRESULT Device::SetTextureStageState(DWORD stage, DWORD type, DWORD value) {
   if (stage >= 8 || type >= 32) return DDERR_INVALIDPARAMS;
+  if (batch_.draws && (tss_[stage][type] != value ||
+                       (type == TSS_ADDRESS && (tss_[stage][TSS_ADDRESSU] != value || tss_[stage][TSS_ADDRESSV] != value)))) {
+    ++g_bs.tss_breaks[stage * 32 + type];
+    FlushBatch(kBreakStageState);
+  }
   tss_[stage][type] = value;
   if (type == TSS_ADDRESS) tss_[stage][TSS_ADDRESSU] = tss_[stage][TSS_ADDRESSV] = value;
   return D3D_OK;
@@ -1186,6 +1406,7 @@ HRESULT Device::ValidateDevice(DWORD* passes) {
 
 HRESULT Device::Load(IDirectDrawSurface7* dst, POINT* dp, IDirectDrawSurface7* src, RECT* sr, DWORD) {
   DD_LOCK;
+  FlushBatch(kBreakSurface);
   Surface* d = Surface::From(dst);
   Surface* s = Surface::From(src);
   if (!d || !s) return DDERR_INVALIDPARAMS;
@@ -1194,6 +1415,7 @@ HRESULT Device::Load(IDirectDrawSurface7* dst, POINT* dp, IDirectDrawSurface7* s
 }
 
 HRESULT Device::LightEnable(DWORD i, BOOL on) {
+  FlushBatch(kBreakLighting);
   light_on_[i] = on;
   return D3D_OK;
 }
@@ -1658,7 +1880,11 @@ void Device::Submit(const Draw& d) {
     prof::Count(prof::cIndices, d.nidx);
   }
   if (DrawLogOn()) NoteDrawLog(d);
-  if (!d.layout.tl) return SubmitDraw(d);
+  if (!d.layout.tl) {
+    if (BatchAdd(d)) return;
+    return SubmitDraw(d);
+  }
+  FlushBatch(kBreakScreen);
   if (SubmitWideLine(d)) return;
   // Race HUD text (hudtext.cpp): the name labels over the riders are drawn
   // larger, about the middle of their bottom edge (which sits over the head).
@@ -1688,6 +1914,7 @@ void Device::Submit(const Draw& d) {
   // A race HUD text panel: its text goes over it.
   HudTextAfterDraw(rt_, tex_[0], d.verts, d.first, d.count, d.layout.stride, uv);
 }
+
 
 namespace {
 uint64_t Fnv(const void* p, size_t n, uint64_t h = 1469598103934665603ull) {

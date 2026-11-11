@@ -128,6 +128,8 @@ SoundMaxDistanceMute=1 ; 3D sounds further away than their max distance are mute
                ; DirectSound does (DSOAL doesn't, which left quiet looping bits of old sounds)
 SoundLog=0     ; debugging: log 3D sound buffers and when they are muted / unmuted
 StateCache=1   ; Direct3D 11: state the renderer already has bound is not sent again for every draw
+DrawBatch=1    ; 3D draws in a row with nothing changed between them (trees, scenery) are sent as one draw
+BatchLog=0     ; debugging: log draw batching every 5 seconds (how many draws were merged, what ended each batch)
 D3D9Log=1      ; debugging: extra Direct3D 9 renderer logging (device caps, first frames, fallbacks)
 GpuText=1      ; draw the game's menu and HUD text (GDI) on the GPU, antialiased, at screen resolution
 HudText=1      ; with GpuText: the race HUD panels' text is drawn by mcm2fix on screen, sharp

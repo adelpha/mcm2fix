@@ -1,6 +1,7 @@
 #include "../smooth.h"
 #include "surface.h"
 #include "drawlog.h"
+#include "device.h"
 #include "../prof.h"
 #include "gdihook.h"
 #include "gputext.h"
@@ -1135,6 +1136,7 @@ HRESULT Surface::AddOverlayDirtyRect(LPRECT) { return DDERR_UNSUPPORTED; }
 
 HRESULT Surface::Blt(LPRECT dr_in, LPDIRECTDRAWSURFACE7 src_in, LPRECT sr_in, DWORD flags,
                      LPDDBLTFX fx) {
+  FlushPendingDraws(kBreakSurface);
   DD_LOCK;
   PROF_ZONE(kBlt);
   prof::Count(prof::cBlts);
@@ -1207,6 +1209,7 @@ HRESULT Surface::BltBatch(LPDDBLTBATCH, DWORD, DWORD) {
 }
 
 HRESULT Surface::BltFast(DWORD x, DWORD y, LPDIRECTDRAWSURFACE7 src_in, LPRECT sr_in, DWORD flags) {
+  FlushPendingDraws(kBreakSurface);
   DD_LOCK;
   Surface* src = From(src_in);
   Surface* foreign = nullptr;
@@ -1256,6 +1259,7 @@ HRESULT Surface::EnumOverlayZOrders(DWORD, LPVOID, LPDDENUMSURFACESCALLBACK7) {
 }
 
 HRESULT Surface::Flip(LPDIRECTDRAWSURFACE7 s, DWORD flags) {
+  FlushPendingDraws(kBreakFlip);
   HRESULT hr;
   {
     PROF_ZONE(kFlip);
@@ -1334,6 +1338,7 @@ HRESULT Surface::GetColorKey(DWORD flags, LPDDCOLORKEY key) {
 }
 
 HRESULT Surface::GetDC(HDC* out) {
+  FlushPendingDraws(kBreakSurface);
   DD_LOCK;
   PROF_ZONE(kGetDC);
   prof::Count(prof::cGetDCs);
@@ -1553,6 +1558,7 @@ HRESULT Surface::Initialize(LPDIRECTDRAW, LPDDSURFACEDESC2) { return DDERR_ALREA
 HRESULT Surface::IsLost() { return DD_OK; }
 
 HRESULT Surface::Lock(LPRECT rect, LPDDSURFACEDESC2 desc, DWORD flags, HANDLE) {
+  FlushPendingDraws(kBreakSurface);
   DD_LOCK;
   PROF_ZONE(kLock);
   prof::Count(prof::cLocks);
@@ -1591,6 +1597,7 @@ HRESULT Surface::SetClipper(LPDIRECTDRAWCLIPPER c) {
 }
 
 HRESULT Surface::SetColorKey(DWORD flags, LPDDCOLORKEY key) {
+  FlushPendingDraws(kBreakSurface);
   DD_LOCK;
   if (flags & DDCKEY_SRCBLT) {
     has_key_ = key != nullptr;
@@ -1613,6 +1620,7 @@ HRESULT Surface::SetColorKey(DWORD flags, LPDDCOLORKEY key) {
 HRESULT Surface::SetOverlayPosition(LONG, LONG) { return DDERR_NOTAOVERLAYSURFACE; }
 
 HRESULT Surface::SetPalette(LPDIRECTDRAWPALETTE p) {
+  FlushPendingDraws(kBreakSurface);
   DD_LOCK;
   if (p) p->AddRef();
   SafeRelease(palette_);
@@ -1670,6 +1678,7 @@ HRESULT Surface::GetPriority(LPDWORD p) {
 }
 
 HRESULT Surface::SetLOD(DWORD l) {
+  FlushPendingDraws(kBreakSurface);
   lod_ = l;
   return DD_OK;
 }
