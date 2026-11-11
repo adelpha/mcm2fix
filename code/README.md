@@ -274,10 +274,6 @@ RaceTitle=1
 ; RaceTitleSize: size of that title, 0.5 to 2. Default 1.
 RaceTitleSize=1
 
-; RaceTitleHold: seconds the title stays fully open before it starts closing,
-; 0 to 10. Default 2. It always finishes closing as the countdown ends.
-RaceTitleHold=2
-
 ; --------------------------------------------------- Race direction arrow ----
 
 ; ArrowFix: 1 = the green race direction arrow (bottom left) points at the

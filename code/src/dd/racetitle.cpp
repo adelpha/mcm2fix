@@ -24,8 +24,8 @@
 // Instead, mcm2fix draws it in the middle of the screen with GPU text:
 // a white line grows from a dot to the text's width + 30%, the name slides
 // up out of the line and the lap count (stunts: time limit) slides down out
-// of it, they hold, and the same runs backwards so it is gone when the
-// countdown ends.
+// of it, they hold, and the same runs backwards at the same speed so it is
+// gone when the countdown ends.
 //
 // Countdown: BikeRace (the `this` of 0x421f90; [[game+0x558]+0x34] via
 // 0x45e300 can be 0 in a race, so it is not used to find it) +0x15c is the time
@@ -53,6 +53,7 @@ constexpr uintptr_t kOnline = 0x3428;
 // Timing (seconds).
 constexpr float kLineTime = 0.30f;   // dot -> full line
 constexpr float kSlideTime = 0.40f;  // text out of the line
+constexpr float kNoCountdownHold = 2.0f;  // hold when there is no countdown to fill
 
 template <typename T>
 T Rd(uintptr_t a) {
@@ -154,7 +155,7 @@ void Start(uintptr_t race) {
   g.vtable = race ? Rd<uintptr_t>(race) : 0;
   g.total = left;
   g.real_time = !(left > 0.5f && left < 60.0f);
-  if (g.real_time) g.total = kLineTime + kSlideTime + GetConfig().race_title_hold + kLineTime + kSlideTime;
+  if (g.real_time) g.total = kLineTime + kSlideTime + kNoCountdownHold + kLineTime + kSlideTime;
   g.start_clock = Now();
   g.last_left = -1;
   g.last_change = g.start_clock;
@@ -200,13 +201,10 @@ struct Pose {
 };
 
 Pose At(float e, float total) {
-  const float hold = GetConfig().race_title_hold;
   const float in_end = kLineTime + kSlideTime;
-  // Backwards: from the end of the hold to the end of the countdown, line
-  // and text in the same proportion as on the way in. A short countdown
-  // shortens the hold instead.
-  float out_len = total - in_end - hold;
-  if (out_len < in_end) out_len = std::max(0.0f, std::min(in_end, total - in_end));
+  // Backwards at the same speed as on the way in, ending with the countdown;
+  // the hold fills the time in between (a very short countdown has none).
+  const float out_len = std::max(0.0f, std::min(in_end, total - in_end));
   const float out_start = total - out_len;
   const float out_text = out_len * kSlideTime / in_end;
   if (e < 0) return {0, 0, 0};
@@ -273,8 +271,8 @@ void InstallRaceTitleHooks() {
   int calls = 0;
   for (uintptr_t site : kCountdownCalls)
     calls += PatchCall(site, kCountdownInit, reinterpret_cast<const void*>(&CountdownInitHook)) ? 1 : 0;
-  Log("race title: on (hold %.2f s, size %.2f); race name hook %s, %d of %d countdown calls hooked",
-      c.race_title_hold, c.race_title_size, ok ? "applied" : "MISSING", calls,
+  Log("race title: on (size %.2f); race name hook %s, %d of %d countdown calls hooked",
+      c.race_title_size, ok ? "applied" : "MISSING", calls,
       static_cast<int>(sizeof(kCountdownCalls) / sizeof(kCountdownCalls[0])));
 }
 

@@ -127,8 +127,6 @@ void LoadConfig() {
   g_config.race_title = GetPrivateProfileIntA("mcm2fix", "RaceTitle", 1, ini) != 0;
   g_config.race_title_size = ReadFloat("RaceTitleSize", 1.0f, ini);
   if (!(g_config.race_title_size >= 0.5f && g_config.race_title_size <= 2.0f)) g_config.race_title_size = 1.0f;
-  g_config.race_title_hold = ReadFloat("RaceTitleHold", 2.0f, ini);
-  if (!(g_config.race_title_hold >= 0.0f && g_config.race_title_hold <= 10.0f)) g_config.race_title_hold = 2.0f;
   g_config.race_title_log = GetPrivateProfileIntA("mcm2fix", "RaceTitleLog", 0, ini) != 0;
   g_config.text_log = GetPrivateProfileIntA("mcm2fix", "TextLog", 0, ini) != 0;
   g_config.gdi_log = GetPrivateProfileIntA("mcm2fix", "GdiLog", 0, ini) != 0;

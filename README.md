@@ -337,7 +337,6 @@ The file has three parts:
 | `HudStuntTextSize` | `0.8` | 0.5-1.5 | Stunt events: size of the score panel's text relative to the race panel's. |
 | `RaceTitle` | `1` | `0`, `1` | During the countdown, the event's name and lap count (stunt events: time limit) open out of a white line in the middle of the screen and close back into it as the countdown ends, replacing the game's small green name in the bottom-left corner. Needs `GpuText=1`. `0` = the game's corner text. |
 | `RaceTitleSize` | `1` | 0.5-2 | Size of that title. |
-| `RaceTitleHold` | `2` | 0-10 | Seconds the title stays fully open before closing. It always finishes closing as the countdown ends. |
 
 #### Race direction arrow
 
