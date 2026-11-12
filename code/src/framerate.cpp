@@ -441,6 +441,10 @@ void SimUpdate(uintptr_t g, float step, float raw_dt) {
 }
 
 void FixedTickBody(uintptr_t g);
+}  // namespace
+void SoundPausePoll(uintptr_t game);  // fixes_sound.cpp
+void SoundRaceRunning(bool running);
+namespace {
 
 int __stdcall FixedTick(uintptr_t g) {
   {
@@ -452,6 +456,7 @@ int __stdcall FixedTick(uintptr_t g) {
 }
 
 void FixedTickBody(uintptr_t g) {
+  SoundPausePoll(g);
   auto& now_ms = *reinterpret_cast<DWORD*>(g + 0x2d8);
   auto& last_ms = *reinterpret_cast<DWORD*>(g + 0x2dc);
   const LONGLONG now = Now();
@@ -471,6 +476,7 @@ void FixedTickBody(uintptr_t g) {
     g_sim_fixed = racing;
     g_sim_acc = 0.0;
     patch::Log("fixed-rate simulation %s", racing ? "on (race)" : "off");
+    SoundRaceRunning(racing);
   }
   if (g_sim_fixed) {
     const double step = 1.0 / rate;

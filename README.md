@@ -58,7 +58,7 @@ Windows 10 and 11.
 | The race direction arrow leans toward the screen centre instead of pointing at the next gate. | Fixed, with a slight top-down tilt and a larger size (`Arrow*`). |
 | Trees and flags show a stair-step fringe that hides things behind them. | Fixed by alpha-test threshold (`AlphaCut`) or, with MSAA, alpha-to-coverage (`AlphaToCoverage`), and transparent texels no longer bleed grey into leaf edges. |
 | Texture formats are always 16-bit, because of a bug in the game's 32-bit format description. | Fixed (`TrueColorTextures`), plus full 32-bit texture replacements. |
-| With DSOAL, distant riders leave quiet looping snippets of old sounds. | mcm2fix mutes 3D sounds past their max distance itself (`SoundMaxDistanceMute`). |
+| With DSOAL, distant riders leave quiet looping snippets of old sounds. | With a replacement DirectSound such as DSOAL, mcm2fix mutes 3D sounds past their max distance itself (`SoundMaxDistanceMute`). |
 
 ## Features
 
@@ -289,8 +289,11 @@ DSOAL ignores the `DSBCAPS_MUTE3DATMAXDISTANCE` flag that the game sets on
 all its 3D sounds. Riders who were out of earshot then kept playing quiet
 looping fragments of old sounds. `SoundMaxDistanceMute=1` (the default) has
 mcm2fix mute 3D sounds beyond their max distance itself, as Windows'
-DirectSound does. The game's own sounds fade to -20 dB at max distance and
-then cut off, so a slight snap-off at the edge is original behaviour.
+DirectSound does, when the game is using a replacement DirectSound. With
+Windows' own DirectSound mcm2fix leaves this to Windows: muting on top of it
+made the bike engines go silent after every pause. The game's own sounds fade
+to -20 dB at max distance and then cut off, so a slight snap-off at the edge
+is original behaviour.
 
 ## mcm2fix.ini reference
 
@@ -412,7 +415,7 @@ troubleshooting.
 | Setting | Default | Values | Description |
 |---|---|---|---|
 | `AsyncSound` | `2` | `0`, `1`, `2` | Where the 3D sound position update runs. The game makes it every physics step, and it's slow on Windows 10/11 because it holds the sound system's lock. `2` = a worker thread, started while the frame waits for VSync. `1` = a worker thread, started at once. `0` = the game thread, as in the original (can cause stutter). |
-| `SoundMaxDistanceMute` | `1` | `0`, `1`, `2` | mcm2fix mutes 3D sounds beyond their maximum distance, as Windows' DirectSound does. This is needed with DSOAL, which ignores that rule and otherwise leaves quiet looping fragments of distant riders' sounds. `2` changes nothing and only logs those sounds. |
+| `SoundMaxDistanceMute` | `1` | `0`, `1`, `2`, `3` | `1`: with a replacement DirectSound such as DSOAL, which ignores the rule, mcm2fix mutes 3D sounds beyond their maximum distance itself, as Windows' DirectSound does. With Windows' own DirectSound it leaves them to Windows. `3` mutes them with any DirectSound (with Windows' own, the bike engines then go silent after a pause). `0` never. `2` changes nothing and only logs those sounds. |
 | `FastCrt` | `1` | `0`, `1` | The game's millisecond clock uses `QueryPerformanceCounter` instead of changing the Windows timer period on every call, and its case-insensitive name comparisons use a lookup table. Both were measurable slowdowns. |
 | `FastGameCode` | `1` | `0`, `1` | A few of the game's own loops that its 1999 compiler built badly are rewritten in place with the same maths, so results are exactly the same, only faster. So far: the terrain texture coordinate loop, which ran every frame and stalled the CPU, and the per-frame tree cache scan, which now reads ahead instead of waiting on memory. |
 | `FastSort` | `1` | `0`, `1` | The game's sorting uses a merge sort instead of the old C library qsort, which slows to a crawl when many items are equal. On tree-heavy maps that froze the game for 35-125 ms when turning the camera. Being stable, it also stops distant riders' engine sounds retriggering as quiet looping snippets. |
@@ -445,6 +448,7 @@ only when asked to. Logs go to `%LOCALAPPDATA%\Motocross Madness 2\logs`.
 | `InputLog` | `0` | With `InputTiming`, the keyboard and joystick input each race step gets: events given out early or held for a later step, held taps, joystick samples, and a summary every 10 s. |
 | `SortLog` | `0` | The game's sorts per calling code every 10 s (count, largest, time). Sorts over 2 ms are always logged. |
 | `SoundLog` | `0` | 3D sound buffers, and when `SoundMaxDistanceMute` mutes or unmutes them. |
+| `SoundPauseLog` | `0` | When a race is paused and unpaused: every DirectSound call for a few seconds, failed calls, and the state of every sound buffer and of the window DirectSound follows. |
 | `RaceTitleLog` | `0` | The countdown race title: name and lap count found, timing and placement. |
 | `RestartLog` | `0` | The start grid when a race loads and on Restart Race. |
 | `ArrowLog` | `0` | The direction arrow's placement for a few seconds after each race start. |

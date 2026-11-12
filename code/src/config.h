@@ -16,6 +16,7 @@ struct Config {
   int async_sound = 2;        // AsyncSound: 3D sound listener commit on a worker thread; 2 = started at Present (fixes_perf.cpp)
   int sound_max_distance_mute = 1;  // SoundMaxDistanceMute: 1 = mute 3D sounds past their max distance ourselves (DSOAL ignores it), 2 = only log them (fixes_sound.cpp)
   bool sound_log = false;     // SoundLog: log 3D sound buffers, mutes and unmutes
+  bool sound_pause_log = false;  // SoundPauseLog: trace DirectSound calls and buffer states around race pause/unpause
   bool state_cache = true;    // StateCache: skip D3D11 state the device already has bound (device.cpp)       // FastCrt: QPC game clock and table-driven _stricmp (fixes_perf.cpp)
   bool draw_batch = true;     // DrawBatch: send 3D draws in a row with the same state as one draw (device.cpp)
   bool batch_log = false;     // BatchLog: log draw batching every 5 s
