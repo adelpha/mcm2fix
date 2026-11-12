@@ -62,6 +62,20 @@ void Summary() {
 
 void Sort(void* base, size_t n, size_t width, CompareFn cmp) {
   auto* p = static_cast<uint8_t*>(base);
+  // Small arrays (the scene walk at 0x4e1efb sorts ~35,000 of up to ~30
+  // elements a second): stable insertion sort in place, no allocation.
+  uint8_t tmp[256];
+  if (n <= 32 && width <= sizeof(tmp)) {
+    for (size_t i = 1; i < n; ++i) {
+      size_t j = i;
+      while (j > 0 && cmp(p + (j - 1) * width, p + i * width) > 0) --j;
+      if (j == i) continue;
+      std::memcpy(tmp, p + i * width, width);
+      std::memmove(p + (j + 1) * width, p + j * width, (i - j) * width);
+      std::memcpy(p + j * width, tmp, width);
+    }
+    return;
+  }
   const size_t bytes = n * width;
   std::vector<uint8_t> copy(p, p + bytes);
   std::vector<uint32_t> index(n);
