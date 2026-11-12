@@ -1026,4 +1026,11 @@ void InstallHudTextHooks() {
   Log("hud text: %u of %u HUD panel calls hooked; panels drawn x%.2f", ok, total, Scale());
 }
 
+void HudTextMemoryLog() {
+  Log("memory: HUD text: %u panels, %u pending, %u scratch DCs, %u panel textures, %u copies, %u fonts",
+      static_cast<unsigned>(g_panels.size()), static_cast<unsigned>(g_pending.size()),
+      static_cast<unsigned>(g_scratch_dc.size()), static_cast<unsigned>(g_panel_tex.size()),
+      static_cast<unsigned>(g_copies.size()), static_cast<unsigned>(g_fonts.size()));
+}
+
 }  // namespace dd

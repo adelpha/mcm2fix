@@ -143,6 +143,8 @@ class Surface : public IDirectDrawSurface7 {
   const GpuTexture* KeyedTex(DWORD key);
   // Direct3D 9 device reset: drop GPU copies that live in video memory.
   static void DeviceLost9();
+  // Memory report: live surfaces, CPU and GPU bytes.
+  static void MemoryLog();
 
   // Copy pixel data (all mip levels when both have them) for Device::Load.
   void CopyFrom(Surface* src, const POINT* dst_pt, const RECT* src_rect);

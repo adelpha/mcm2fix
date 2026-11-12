@@ -22,6 +22,8 @@
 #include "config.h"
 #include "patch.h"
 #include "xp_compat.h"
+#include "dd/surface.h"
+#include <malloc.h>
 
 #if defined(_MSC_VER)
 #include <intrin.h>
@@ -31,6 +33,16 @@
 #define CRASH_RET() __builtin_return_address(0)
 #define CRASH_FRAME() __builtin_frame_address(0)
 #endif
+
+void SmoothMemoryLog();
+void SmoothPartsMemoryLog();
+void TextureNamesMemoryLog();
+namespace dd {
+void GpuTextMemoryLog();
+void HudTextMemoryLog();
+void ReplacementMemoryLog();
+void GpuMemoryLog();
+}  // namespace dd
 
 namespace crash {
 namespace {
@@ -213,6 +225,8 @@ uintptr_t FindIat(const char* dll, const char* fn) {
 
 void LogMemoryNow(const char* why) {
   uintptr_t used = 0, committed = 0, largest = 0, free_total = 0;
+  uintptr_t priv = 0, mapped = 0, image = 0, reserved = 0;
+  unsigned regions = 0;
   MEMORY_BASIC_INFORMATION mbi{};
   for (uintptr_t a = 0x10000; a < 0x7FFF0000u && VirtualQuery(reinterpret_cast<void*>(a), &mbi, sizeof(mbi));) {
     const uintptr_t size = mbi.RegionSize;
@@ -221,37 +235,83 @@ void LogMemoryNow(const char* why) {
       if (size > largest) largest = size;
     } else {
       used += size;
-      if (mbi.State == MEM_COMMIT) committed += size;
+      ++regions;
+      if (mbi.State == MEM_COMMIT) {
+        committed += size;
+        if (mbi.Type == MEM_PRIVATE) priv += size;
+        else if (mbi.Type == MEM_MAPPED) mapped += size;
+        else image += size;
+      } else {
+        reserved += size;
+      }
     }
     const uintptr_t next = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + size;
     if (next <= a) break;
     a = next;
   }
-  patch::Log("memory %s: address space used %u MB (committed %u MB), free %u MB, largest free block %u MB", why,
-             static_cast<unsigned>(used >> 20), static_cast<unsigned>(committed >> 20),
-             static_cast<unsigned>(free_total >> 20), static_cast<unsigned>(largest >> 20));
+  patch::Log("memory %s: address space used %u MB (committed %u MB: private %u, mapped %u, modules %u; reserved %u; "
+             "%u regions), free %u MB, largest free block %u MB",
+             why, static_cast<unsigned>(used >> 20), static_cast<unsigned>(committed >> 20),
+             static_cast<unsigned>(priv >> 20), static_cast<unsigned>(mapped >> 20), static_cast<unsigned>(image >> 20),
+             static_cast<unsigned>(reserved >> 20), regions, static_cast<unsigned>(free_total >> 20),
+             static_cast<unsigned>(largest >> 20));
 }
 
-}  // namespace
-
-// Called at each display mode change: memory use and a check of every heap.
-void OnModeChange(DWORD w, DWORD h) {
-  if (!GetConfig().log) return;
-  char why[48];
-  std::snprintf(why, sizeof(why), "at %lux%lu", w, h);
-  LogMemoryNow(why);
+// Each heap: how much is in use, in how many blocks (whose heap grows).
+void LogHeaps() {
   HANDLE heaps[64];
   const DWORD n = GetProcessHeaps(64, heaps);
   const DWORD t0 = GetTickCount();
   DWORD bad = 0;
+  const HANDLE crt = reinterpret_cast<HANDLE>(_get_heap_handle());
   for (DWORD i = 0; i < n && i < 64; ++i) {
     if (!HeapValidate(heaps[i], 0, nullptr)) {
       ++bad;
       patch::Log("memory: heap %p FAILED its check (corrupted)", heaps[i]);
+      continue;
     }
+    uint64_t busy = 0, region = 0;
+    unsigned blocks = 0;
+    if (HeapLock(heaps[i])) {
+      PROCESS_HEAP_ENTRY e{};
+      while (HeapWalk(heaps[i], &e)) {
+        if (e.wFlags & PROCESS_HEAP_ENTRY_BUSY) {
+          busy += e.cbData;
+          ++blocks;
+        } else if (e.wFlags & PROCESS_HEAP_REGION) {
+          region += e.Region.dwCommittedSize;
+        }
+      }
+      HeapUnlock(heaps[i]);
+    }
+    if (busy >= (1u << 20) || i == 0)
+      patch::Log("memory: heap %p%s%s: %u MB in use in %u blocks (%u MB committed in regions)", heaps[i],
+                 heaps[i] == GetProcessHeap() ? " (process)" : "", heaps[i] == crt ? " (mcm2fix)" : "",
+                 static_cast<unsigned>(busy >> 20), blocks, static_cast<unsigned>(region >> 20));
   }
   patch::Log("memory: %lu heaps checked in %lu ms, %lu bad; %ld faults so far", n, GetTickCount() - t0, bad,
              g_faults);
+}
+
+}  // namespace
+
+// Called at each display mode change: memory use, every heap, and what
+// mcm2fix itself holds (to find what grows from race to race).
+void OnModeChange(DWORD w, DWORD h) {
+  if (!GetConfig().log) return;
+  static unsigned changes = 0;
+  char why[48];
+  std::snprintf(why, sizeof(why), "at %lux%lu (#%u)", w, h, ++changes);
+  LogMemoryNow(why);
+  LogHeaps();
+  dd::Surface::MemoryLog();
+  dd::GpuTextMemoryLog();
+  dd::HudTextMemoryLog();
+  dd::ReplacementMemoryLog();
+  dd::GpuMemoryLog();
+  SmoothMemoryLog();
+  SmoothPartsMemoryLog();
+  TextureNamesMemoryLog();
 }
 
 void Apply() {

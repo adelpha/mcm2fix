@@ -1116,3 +1116,18 @@ void InstallProjectedShadowSmoothing() {
   const bool b = PatchSlot(kVtable + 0x34, 0x4E0C00, reinterpret_cast<void*>(&SmoothPsDraw), "projected shadow draw");
   patch::Log("smoothing: projected shadows %s", a && b ? "re-rendered every frame from casters placed between steps" : "NOT hooked");
 }
+
+// Memory report (at each display mode change).
+void SmoothMemoryLog() {
+  size_t verts = 0;
+  for (const auto& kv : g_vrecs) verts += kv.second.prev.capacity() + kv.second.cur.capacity();
+  size_t mesh = 0;
+  for (const auto& kv : g_meshes) mesh += kv.second.prev.capacity() + kv.second.cur.capacity();
+  patch::Log("memory: smoothing records: %u matrices, %u vertex draws (%u KB), %u texts, %u centres, %u projections, "
+             "%u shadows, %u casters, %u meshes (%u KB)",
+             static_cast<unsigned>(g_recs.size()), static_cast<unsigned>(g_vrecs.size()),
+             static_cast<unsigned>(verts * 4 / 1024), static_cast<unsigned>(g_trecs.size()),
+             static_cast<unsigned>(g_crecs.size()), static_cast<unsigned>(g_projs.size()),
+             static_cast<unsigned>(g_shadows.size()), static_cast<unsigned>(g_casters.size()),
+             static_cast<unsigned>(g_meshes.size()), static_cast<unsigned>(mesh * 4 / 1024));
+}

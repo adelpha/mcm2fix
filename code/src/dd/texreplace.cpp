@@ -278,13 +278,25 @@ bool LoadReplacement(uint64_t hash, GpuTexture& out) {
   return true;
 }
 
+std::map<std::string, GpuTexture>& ReplacementCache() {
+  static std::map<std::string, GpuTexture> cache;
+  return cache;
+}
+
+void ReplacementMemoryLog() {
+  uint64_t bytes = 0;
+  for (const auto& kv : ReplacementCache()) bytes += static_cast<uint64_t>(kv.second.width) * kv.second.height * 4;
+  Log("memory: texture replacements: %u cached (%u MB)", static_cast<unsigned>(ReplacementCache().size()),
+      static_cast<unsigned>(bytes >> 20));
+}
+
 bool LoadReplacementByName(const std::string& key, GpuTexture& out) {
   if (!GetConfig().texture_replace || key.empty()) return false;
   Index();
   auto it = NameIndex().find(key);
   if (it == NameIndex().end()) return false;
   // One GPU copy per name, shared by every size the game streams in.
-  static std::map<std::string, GpuTexture> cache;
+  auto& cache = ReplacementCache();
   auto c = cache.find(key);
   if (c == cache.end()) {
     GpuTexture t;

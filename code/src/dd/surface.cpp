@@ -1818,4 +1818,43 @@ HRESULT GammaControl::SetGammaRamp(DWORD, LPDDGAMMARAMP ramp) {
   return DD_OK;
 }
 
+void Surface::MemoryLog() {
+  unsigned n = 0, tex = 0, rt = 0, mipped = 0, gpu = 0, replaced = 0, sys = 0;
+  uint64_t cpu = 0, gpu_bytes = 0;
+  std::map<std::pair<UINT, UINT>, unsigned> sizes;
+  for (Surface* s : AllSurfaces()) {
+    ++n;
+    cpu += s->mem_.capacity();
+    if (!s->mem_.empty()) ++sys;
+    if (s->Caps() & DDSCAPS_TEXTURE) ++tex;
+    if (s->rt_used_) ++rt;
+    if (!s->mips_.empty()) ++mipped;
+    if (s->gpu_.Valid()) {
+      ++gpu;
+      uint64_t b = static_cast<uint64_t>(s->gpu_.width) * s->gpu_.height * 4;
+      if (s->gpu_.levels > 1) b = b * 4 / 3;
+      gpu_bytes += b;
+    }
+    if (s->replaced_.Valid()) ++replaced;
+    if (s->level_ == 0) ++sizes[{s->Width(), s->Height()}];
+  }
+  Log("memory: surfaces: %u live (%u textures, %u with mipmaps, %u drawn into), CPU copies %u MB in %u, GPU copies "
+      "~%u MB in %u, %u with a replacement",
+      n, tex, mipped, rt, static_cast<unsigned>(cpu >> 20), sys, static_cast<unsigned>(gpu_bytes >> 20), gpu,
+      replaced);
+  // The most common sizes (a leak shows up as one size piling up).
+  std::vector<std::pair<unsigned, std::pair<UINT, UINT>>> top;
+  for (const auto& kv : sizes) top.push_back({kv.second, kv.first});
+  std::sort(top.begin(), top.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+  char line[400] = {};
+  size_t used = 0;
+  for (size_t i = 0; i < top.size() && i < 10; ++i) {
+    int m = std::snprintf(line + used, sizeof(line) - used, "%s%ux%u x%u", i ? ", " : "", top[i].second.first,
+                          top[i].second.second, top[i].first);
+    if (m < 0 || used + m >= sizeof(line)) break;
+    used += m;
+  }
+  Log("memory: surface sizes: %s", line);
+}
+
 }  // namespace dd
