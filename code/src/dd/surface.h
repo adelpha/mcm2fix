@@ -98,6 +98,10 @@ class Surface : public IDirectDrawSurface7 {
 
   // ---- backend helpers ----
   static Surface* From(IDirectDrawSurface7* s);  // nullptr if not ours
+  // mcm2fix's own reference (device render target / texture): keeps the
+  // whole chain (its root) alive, unlike a game AddRef on an attachment.
+  void Hold();
+  void Unhold();
   // A temporary copy of a surface from the system DirectDraw (caller releases).
   static Surface* CopyForeign(DirectDraw* dd, IUnknown* s);
   UINT Width() const { return desc_.dwWidth; }

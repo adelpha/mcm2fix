@@ -1110,13 +1110,32 @@ HRESULT Surface::QueryInterface(REFIID riid, void** out) {
   return E_NOINTERFACE;
 }
 
+// Implicit attachments (back buffers, mip levels) count their own
+// references, as in DirectDraw: the game AddRefs them through
+// GetAttachedSurface and may never release them, which DirectDraw shrugs off
+// because releasing the root destroys the whole chain. Forwarding those
+// references to the root (as before) kept every mipmapped texture and every
+// primary chain alive forever (refcounts in the thousands, ~1500 surfaces
+// and 30+ MB leaked per race). mcm2fix's own holds (the device's render
+// target and textures) use Hold/Unhold, which keep the root alive.
 ULONG Surface::AddRef() {
-  if (root_) return root_->AddRef();
+  if (root_) return static_cast<ULONG>(InterlockedIncrement(&refs_));
   return static_cast<ULONG>(InterlockedIncrement(&refs_));
 }
 
+void Surface::Hold() { Root()->AddRef(); }
+void Surface::Unhold() { Root()->Release(); }
+
 ULONG Surface::Release() {
-  if (root_) return root_->Release();
+  if (root_) {
+    InterlockedIncrement(&g_releases);
+    const LONG n = InterlockedDecrement(&refs_);
+    if (n < 0) {
+      InterlockedIncrement(&refs_);
+      return 0;
+    }
+    return static_cast<ULONG>(n);
+  }
   InterlockedIncrement(&g_releases);
   LONG n = InterlockedDecrement(&refs_);
   if (n == 0) {

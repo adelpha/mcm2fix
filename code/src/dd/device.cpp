@@ -778,7 +778,7 @@ void Device::FlushBatch(BatchBreak why) {
 Device::Device(DirectDraw* dd, Surface* rt, REFCLSID cls) : dd_(dd), rt_(rt), guid_(cls) {
   ++g_devices_made;
   dd_->AddRef();
-  rt_->AddRef();
+  rt_->Hold();
   rt_->SetUsedAsRenderTarget();
   world_ = view_ = proj_ = world_set_ = view_set_ = Identity();
   viewport_ = {0, 0, rt->Width(), rt->Height(), 0.0f, 1.0f};
@@ -819,8 +819,13 @@ Device::Device(DirectDraw* dd, Surface* rt, REFCLSID cls) : dd_(dd), rt_(rt), gu
 Device::~Device() {
   ++g_devices_gone;
   if (g_batch_owner == this) g_batch_owner = nullptr;  // waiting draws are dropped with the device
-  for (Surface*& t : tex_) SafeRelease(t);
-  SafeRelease(rt_);
+  for (Surface*& t : tex_)
+    if (t) {
+      t->Unhold();
+      t = nullptr;
+    }
+  if (rt_) rt_->Unhold();
+  rt_ = nullptr;
   for (auto& kv : blend_cache_) kv.second->Release();
   for (auto& kv : depth_cache_) kv.second->Release();
   for (auto& kv : raster_cache_) kv.second->Release();
@@ -969,9 +974,9 @@ HRESULT Device::SetRenderTarget(IDirectDrawSurface7* s, DWORD) {
   FlushBatch(kBreakTarget);
   Surface* t = Surface::From(s);
   if (!t) return DDERR_INVALIDPARAMS;
-  t->AddRef();
+  t->Hold();
   t->SetUsedAsRenderTarget();
-  SafeRelease(rt_);
+  if (rt_) rt_->Unhold();
   rt_ = t;
   LogOnce("SetRenderTarget %ux%u", t->Width(), t->Height());
   return D3D_OK;
@@ -1391,8 +1396,8 @@ HRESULT Device::SetTexture(DWORD stage, IDirectDrawSurface7* t) {
   if (s == tex_[stage]) return D3D_OK;
   DD_LOCK;
   FlushBatch(kBreakTexture);
-  if (s) s->AddRef();
-  SafeRelease(tex_[stage]);
+  if (s) s->Hold();
+  if (tex_[stage]) tex_[stage]->Unhold();
   tex_[stage] = s;
   return D3D_OK;
 }
