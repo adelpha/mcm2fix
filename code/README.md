@@ -433,7 +433,9 @@ DrawBatch=1
 
 ; Log: 1 = write logs\mcm2fix-<date>-<time>.log each run; the newest 50 are
 ; kept (default). It records the Windows version, these settings, the
-; renderer chosen and any problems. 0 = no log.
+; renderer chosen and any problems. If the game crashes it also records where
+; and why, and writes a crash dump (mcm2fix-<date>-<time>.dmp) next to the
+; log. 0 = no log.
 Log=1
 
 ; D3D9Log: Direct3D 9 renderer details: card capabilities, the first frames,

@@ -45,6 +45,7 @@ constexpr uintptr_t kNameAddCall = 0x4E539B;  // HUD setup: race name into the q
 constexpr uintptr_t kCountdownInit = 0x421F90;  // BikeRace countdown set (thiscall)
 constexpr uintptr_t kCountdownCalls[] = {0x41EA6F, 0x4215D7, 0x451EF1};
 constexpr uintptr_t kRaceHolder = 0x558, kHolderRace = 0x34;
+constexpr uintptr_t kCurrentQueue = 0x45E350;  // the current event's HUD text queue, or 0 (cdecl, no args)
 constexpr uintptr_t kCountdownLeft = 0x15C;  // float seconds
 constexpr uintptr_t kRaceStarted = 0x18A;    // byte
 constexpr uintptr_t kMode = 0x2D70, kEvent = 0x2D74, kLaps = 0x2D90, kStuntEvent = 0x55C, kBaja = 0x560;
@@ -610,10 +611,22 @@ void PodiumBanner(Surface* rt) {
     } else if (now - pd.captured > kPodiumWait) {
       pd.pending = false;
       ++pd.given_back;
-      if (game) {
+      // The event (and its HUD text queue) is deleted when the race ends
+      // (0x45e170: delete [game+0x558], then 0). Without a podium the game
+      // goes to the results screen ~0.2 s after the finish, so by now the
+      // queue is usually freed memory: adding to it frees a stale node and
+      // corrupts the heap (crash loading a later race). Only give the text
+      // back while the game's own lookup (0x45e350: the first of the event
+      // objects game+0x558..0x568, its +0x6c) still finds that same queue.
+      const uintptr_t live = game ? reinterpret_cast<uintptr_t (*)()>(kCurrentQueue)() : 0;
+      if (game && live && live == pd.queue) {
         Log("podium: no cutscene %.2f s after the finish text (flag %d); \"%s\" given back to text queue %08x",
             now - pd.captured, on, pd.text.c_str(), static_cast<unsigned>(pd.queue));
         reinterpret_cast<QueueAddFn>(kQueueAdd)(pd.queue, nullptr, pd.item);
+      } else if (game) {
+        Log("podium: no cutscene %.2f s after the finish text (flag %d); the race's text queue %08x is gone "
+            "(current queue %08x): \"%s\" dropped, not given back",
+            now - pd.captured, on, static_cast<unsigned>(pd.queue), static_cast<unsigned>(live), pd.text.c_str());
       } else {
         Log("podium: no cutscene and no game object; \"%s\" dropped", pd.text.c_str());
       }

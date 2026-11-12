@@ -10,6 +10,8 @@
 #include "device.h"
 #include "surface.h"
 
+namespace crash { void OnModeChange(DWORD w, DWORD h); }
+
 namespace dd {
 
 using d3d7::D3D_OK;
@@ -255,6 +257,7 @@ HRESULT DirectDraw::SetCooperativeLevel(HWND hwnd, DWORD flags) {
 HRESULT DirectDraw::SetDisplayMode(DWORD w, DWORD h, DWORD bpp, DWORD, DWORD) {
   DD_LOCK;
   Log("SetDisplayMode %lux%lux%lu (virtual)", w, h, bpp);
+  crash::OnModeChange(w, h);
   if (!w || !h) return DDERR_INVALIDMODE;
   mode_w_ = w;
   mode_h_ = h;

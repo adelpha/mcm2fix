@@ -404,7 +404,7 @@ only when asked to. Logs go to `%LOCALAPPDATA%\Motocross Madness 2\logs`.
 
 | Setting | Default | Description |
 |---|---|---|
-| `Log` | `1` | Writes `logs\mcm2fix-<date>-<time>.log` each run (the newest 50 are kept): Windows version, these settings, the renderer chosen and any problems. `0` = no log. |
+| `Log` | `1` | Writes `logs\mcm2fix-<date>-<time>.log` each run (the newest 50 are kept): Windows version, these settings, the renderer chosen and any problems. If the game crashes it also records where and why, and writes a crash dump (`.dmp`) next to the log. `0` = no log. |
 | `D3D9Log` | `0` | Direct3D 9 renderer details: card capabilities, the first frames, fallbacks. |
 | `DDStats` | `0` | Renderer activity (draws, uploads, surfaces) every 2 seconds. |
 | `Profile` | `0` | Performance profile: frame times, timed sections, GPU time and a sampling profile of the game thread, in `logs\perf-*.csv` and `logs\perf-samples-*.txt` (summarise with `tools/perf_report.py`). It costs some frame rate. |
