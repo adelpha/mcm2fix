@@ -154,20 +154,6 @@ void TrackBike(void* bike, const char* who, float dt) {
   }
 }
 
-// AiAirDrag: computer riders lose this many percent of their horizontal speed
-// per second while airborne (+0x108 = no wheel touching; velocity at +0x64).
-void AirDrag(void* bike, float dt) {
-  const int pct = GetConfig().ai_air_drag;
-  if (pct <= 0) return;
-  uint8_t* b = static_cast<uint8_t*>(bike);
-  if (b[0x108] == 0 || *reinterpret_cast<int*>(b + 0x444) != 0) return;
-  float k = 1.0f - pct / 100.0f * dt;
-  if (k < 0.0f) k = 0.0f;
-  float* vel = reinterpret_cast<float*>(b + 0x64);
-  vel[0] *= k;
-  vel[2] *= k;
-}
-
 // Called from the stub at 0x414790 for every computer rider step.
 const float* __stdcall AiTable(void* bike, int cls) {
   if (cls < 0 || cls > 2) cls = 0;
@@ -184,7 +170,6 @@ const float* __stdcall AiTable(void* bike, int cls) {
     g_last_diff = d;
   }
   const float dt = StepTime();
-  if (bike) AirDrag(bike, dt);
   if (GetConfig().ai_log && bike) {
     // The player's bike: BikeRace (bike+0x740) +0x38.
     const uintptr_t race = *reinterpret_cast<uintptr_t*>(static_cast<uint8_t*>(bike) + 0x740);
@@ -285,9 +270,8 @@ void ApplyAiFixes() {
   const bool top_changed =
       c.ai_top_speed[0] != 100 || c.ai_top_speed[1] != 100 || c.ai_top_speed[2] != 100;
   if (accel_changed) PatchMultipliers();
-  if (top_changed || c.ai_log || c.ai_air_drag > 0) PatchTablePointer();
-  patch::Log("ai: acceleration %d/%d/%d %%, top speed %d/%d/%d %% (Easy/Normal/Hard), "
-             "air drag %d %%/s%s",
+  if (top_changed || c.ai_log) PatchTablePointer();
+  patch::Log("ai: acceleration %d/%d/%d %%, top speed %d/%d/%d %% (Easy/Normal/Hard)%s",
              c.ai_accel[0], c.ai_accel[1], c.ai_accel[2], c.ai_top_speed[0],
-             c.ai_top_speed[1], c.ai_top_speed[2], c.ai_air_drag, c.ai_log ? ", AiLog on" : "");
+             c.ai_top_speed[1], c.ai_top_speed[2], c.ai_log ? ", AiLog on" : "");
 }

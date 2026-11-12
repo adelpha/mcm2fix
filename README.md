@@ -150,8 +150,8 @@ Windows 10 and 11.
 - A built-in profiler for finding hitches (`Profile`).
 
 ### Other
-- **Computer rider tuning**: acceleration and top speed per difficulty, and
-  speed lost in the air (`AiAccel*`, `AiTopSpeed*`, `AiAirDrag`).
+- **Computer rider tuning**: acceleration and top speed per difficulty
+  (`AiAccel*`, `AiTopSpeed*`).
 - **In-game Help** opens `MCM2HELP.html` in your web browser.
 - **Renderer label**: "Direct3D 11" or "Direct3D 9" in the bottom right
   corner of the menus (`RendererLabel`).
@@ -374,7 +374,6 @@ The file has three parts:
 |---|---|---|---|
 | `AiAccelEasy`, `AiAccelNormal`, `AiAccelHard` | `110`, `130`, `150` | 10-400, percent | How hard computer riders can accelerate on each difficulty, in percent of the game's base curve. The defaults are the original game's. Lower values make them pull away more slowly out of corners and after landings. |
 | `AiTopSpeedEasy`, `AiTopSpeedNormal`, `AiTopSpeedHard` | `100` | 50-150, percent | Computer riders' top speed on each difficulty. The original game doesn't change top speed with difficulty. |
-| `AiAirDrag` | `0` | 0-100, percent per second | Speed computer riders lose per second in the air. `0` = the original, where they keep their speed. |
 
 ### 2. Advanced: changing these is not recommended
 

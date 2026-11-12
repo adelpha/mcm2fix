@@ -60,8 +60,6 @@ void LoadConfig() {
       v = GetPrivateProfileIntA("mcm2fix", key, 100, ini);
       g_config.ai_top_speed[d] = v < 50 ? 50 : v > 150 ? 150 : v;
     }
-    const int drag = GetPrivateProfileIntA("mcm2fix", "AiAirDrag", 0, ini);
-    g_config.ai_air_drag = drag < 0 ? 0 : drag > 100 ? 100 : drag;
     g_config.ai_log = GetPrivateProfileIntA("mcm2fix", "AiLog", 0, ini) != 0;
   }
   g_config.ai_steer_rate = GetPrivateProfileIntA("mcm2fix", "AiSteerRate", 0, ini);

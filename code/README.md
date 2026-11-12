@@ -324,10 +324,6 @@ AiTopSpeedEasy=100
 AiTopSpeedNormal=100
 AiTopSpeedHard=100
 
-; AiAirDrag: computer riders lose this many percent of their speed per second
-; while in the air, 0 to 100. Default 0 (the original: they keep their speed).
-AiAirDrag=0
-
 ; =============================================================================
 ; 2. ADVANCED - CHANGING THESE IS NOT RECOMMENDED
 ;
