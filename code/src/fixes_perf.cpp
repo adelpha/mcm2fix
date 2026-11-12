@@ -336,9 +336,51 @@ void PerfBeforePresent() {
   if (g_at_present && g_npending) SetEvent(g_commit_event);
 }
 
+// FastGameCode: game loops the 1999 compiler built badly, rewritten in place
+// with the same x87 maths (results bit for bit the same).
+//
+// Terrain patch draw 0x481c00, loop 0x481cc7: unpacks each vertex's two
+// 16-bit texture coordinates (dword at +0xc) into floats at +0x10/+0x14,
+// times the scale in st(0). The compiler converted each through two dword
+// stores and a qword fild, which stalls the CPU (store forwarding fails):
+// ~12 ns a vertex, the hottest instruction in a race profile. Now each half
+// goes through one dword store and a dword fild: ~1 ns a vertex. ebx stays 0
+// as before (the original zeroed it in the loop); the 16 bytes at esp+0x10
+// are the function's scratch.
+void PatchTerrainUv() {
+  static const uint8_t orig[] = {
+      0x8D, 0x4F, 0x0C, 0x8B, 0xD6, 0x8B, 0x01, 0x83, 0xC1, 0x20, 0x8B, 0xD8, 0x25, 0xFF, 0xFF,
+      0x00, 0x00, 0xC1, 0xEB, 0x10, 0x89, 0x5C, 0x24, 0x10, 0x33, 0xDB, 0x89, 0x5C, 0x24, 0x14,
+      0x89, 0x44, 0x24, 0x18, 0xDF, 0x6C, 0x24, 0x10, 0x89, 0x5C, 0x24, 0x1C, 0x4A, 0xD8, 0xC9,
+      0xD9, 0x59, 0xE4, 0xDF, 0x6C, 0x24, 0x18, 0xD8, 0xC9, 0xD9, 0x59, 0xE8, 0x75, 0xCA};
+  static const uint8_t code[] = {
+      0x8D, 0x4F, 0x0C,              // lea ecx,[edi+0Ch]
+      0x8B, 0xD6,                    // mov edx,esi
+      0x0F, 0xB7, 0x41, 0x02,        // loop: movzx eax,word [ecx+2]
+      0x89, 0x44, 0x24, 0x10,        // mov [esp+10h],eax
+      0x0F, 0xB7, 0x01,              // movzx eax,word [ecx]
+      0x89, 0x44, 0x24, 0x14,        // mov [esp+14h],eax
+      0xDB, 0x44, 0x24, 0x10,        // fild dword [esp+10h]
+      0xD8, 0xC9,                    // fmul st,st(1)
+      0xD9, 0x59, 0x04,              // fstp dword [ecx+4]
+      0xDB, 0x44, 0x24, 0x14,        // fild dword [esp+14h]
+      0xD8, 0xC9,                    // fmul st,st(1)
+      0xD9, 0x59, 0x08,              // fstp dword [ecx+8]
+      0x83, 0xC1, 0x20,              // add ecx,20h
+      0x4A,                          // dec edx
+      0x75, 0xD9,                    // jnz loop
+      0xEB, 0x0D,                    // jmp 481cfd
+      0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90};
+  static_assert(sizeof(orig) == sizeof(code), "same length");
+  if (patch::Replace("perf: terrain texture coordinate loop", 0x481CC2, orig, sizeof(orig), code, sizeof(code)))
+    patch::Log("perf: FastGameCode=1, terrain texture coordinate loop at 481cc2 rewritten (same results, no store stalls)");
+}
+
 void ApplyPerfFixes() {
   if (GetConfig().async_sound) PatchSoundCommit();
   else patch::Log("perf: AsyncSound=0, 3D sound committed on the game thread");
+  if (GetConfig().fast_game_code) PatchTerrainUv();
+  else patch::Log("perf: FastGameCode=0, game loops left as they are");
   if (!GetConfig().fast_crt) {
     patch::Log("perf: FastCrt=0, game clock and _stricmp left as they are");
     return;

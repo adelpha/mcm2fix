@@ -74,6 +74,7 @@ void LoadConfig() {
   g_config.profile = GetPrivateProfileIntA("mcm2fix", "Profile", 0, ini) != 0;
   g_config.profile_sample_us = GetPrivateProfileIntA("mcm2fix", "ProfileSampleUs", 1000, ini);
   g_config.fast_crt = GetPrivateProfileIntA("mcm2fix", "FastCrt", 1, ini) != 0;
+  g_config.fast_game_code = GetPrivateProfileIntA("mcm2fix", "FastGameCode", 1, ini) != 0;
   g_config.async_sound = GetPrivateProfileIntA("mcm2fix", "AsyncSound", 2, ini);
   g_config.sound_max_distance_mute = GetPrivateProfileIntA("mcm2fix", "SoundMaxDistanceMute", 1, ini) != 0;
   g_config.fast_sort = GetPrivateProfileIntA("mcm2fix", "FastSort", 1, ini) != 0;

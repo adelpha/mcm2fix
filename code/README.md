@@ -420,6 +420,12 @@ SoundMaxDistanceMute=1
 ; measurable slowdowns. 0 = the game's own code.
 FastCrt=1
 
+; FastGameCode: 1 = a few of the game's own loops that its 1999 compiler
+; built badly are rewritten in place with the same maths, so the results are
+; exactly the same, only faster (default). So far: the loop that unpacks
+; terrain texture coordinates every frame. 0 = the game's own code.
+FastGameCode=1
+
 ; FastSort: 1 = the game's sorting uses a merge sort instead of the old C
 ; library qsort, which slows to a crawl when many items are equal (default).
 ; On maps with many trees that froze the game for 35-125 ms when turning the
