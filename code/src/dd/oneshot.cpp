@@ -130,25 +130,44 @@ void Reap() {
   }
 }
 
-}  // namespace
+// Opening a waveOut stream takes ~20 ms on Windows 10/11 (the final lap
+// voice stalled a race frame by that much), so all of the waveOut work runs
+// on a thread of its own: the game thread only queues a request.
+struct Request {
+  std::string file, why;
+  bool play = false;
+  double queued = 0;
+};
+CRITICAL_SECTION g_lock;
+HANDLE g_wake = nullptr;
+std::vector<Request> g_requests;
+bool g_started = false;
 
-void OneShotPreload(const char* file) { Load(file); }
+double NowMs() {
+  LARGE_INTEGER f, c;
+  QueryPerformanceFrequency(&f);
+  QueryPerformanceCounter(&c);
+  return c.QuadPart * 1000.0 / f.QuadPart;
+}
 
-bool OneShotPlay(const char* file, const char* why) {
+void Play(const Request& q) {
   Reap();
-  Clip& c = Load(file);
-  if (!c.ok) return false;
+  Clip& c = Load(q.file.c_str());
+  if (!c.ok) return;
+  const char* file = q.file.c_str();
   if (g_voices.size() >= 16) {
     Log("announcer: %s not played, 16 sounds still playing", file);
-    return false;
+    return;
   }
   Voice* v = new Voice;
   v->name = file;
+  const double t0 = NowMs();
   MMRESULT r = waveOutOpen(&v->h, WAVE_MAPPER, &c.fmt, 0, 0, CALLBACK_NULL);
+  const double t1 = NowMs();
   if (r != MMSYSERR_NOERROR) {
     if (++g_failed <= 10) Log("announcer: %s: waveOutOpen failed (%u)", file, r);
     delete v;
-    return false;
+    return;
   }
   v->hdr.lpData = c.data.data();
   v->hdr.dwBufferLength = static_cast<DWORD>(c.data.size());
@@ -159,17 +178,66 @@ bool OneShotPlay(const char* file, const char* why) {
     waveOutUnprepareHeader(v->h, &v->hdr, sizeof(v->hdr));
     waveOutClose(v->h);
     delete v;
-    return false;
+    return;
   }
   g_voices.push_back(v);
   ++g_played;
-  Log("announcer: playing %s (%s; %u playing, %u played)", file, why, static_cast<unsigned>(g_voices.size()),
-      g_played);
-  return true;
+  Log("announcer: playing %s (%s; %u playing, %u played; sound thread: %.1f ms after the request, "
+      "waveOutOpen %.1f ms, start %.1f ms)",
+      file, q.why.c_str(), static_cast<unsigned>(g_voices.size()), g_played, t0 - q.queued, t1 - t0,
+      NowMs() - t1);
 }
 
-void OneShotTick() {
-  if (!g_voices.empty()) Reap();
+DWORD WINAPI SoundThread(void*) {
+  for (;;) {
+    WaitForSingleObject(g_wake, g_voices.empty() ? INFINITE : 100);
+    std::vector<Request> todo;
+    EnterCriticalSection(&g_lock);
+    todo.swap(g_requests);
+    LeaveCriticalSection(&g_lock);
+    for (const Request& q : todo) {
+      if (q.play)
+        Play(q);
+      else
+        Load(q.file.c_str());
+    }
+    Reap();
+  }
 }
+
+void Queue(const char* file, const char* why, bool play) {
+  if (!g_started) {
+    g_started = true;
+    InitializeCriticalSection(&g_lock);
+    g_wake = CreateEventA(nullptr, FALSE, FALSE, nullptr);
+    HANDLE t = g_wake ? CreateThread(nullptr, 0, &SoundThread, nullptr, 0, nullptr) : nullptr;
+    if (t) {
+      CloseHandle(t);
+    } else {
+      Log("announcer: could not start the sound thread; announcer off");
+      if (g_wake) CloseHandle(g_wake);
+      g_wake = nullptr;
+    }
+  }
+  if (!g_wake) return;
+  Request q;
+  q.file = file;
+  q.why = why ? why : "";
+  q.play = play;
+  q.queued = NowMs();
+  EnterCriticalSection(&g_lock);
+  g_requests.push_back(q);
+  LeaveCriticalSection(&g_lock);
+  SetEvent(g_wake);
+}
+
+}  // namespace
+
+void OneShotPreload(const char* file) { Queue(file, nullptr, false); }
+
+void OneShotPlay(const char* file, const char* why) { Queue(file, why, true); }
+
+// Finished sounds are closed on the sound thread.
+void OneShotTick() {}
 
 }  // namespace dd

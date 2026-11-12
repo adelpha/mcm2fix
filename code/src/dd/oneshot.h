@@ -4,10 +4,11 @@
 
 namespace dd {
 
-// Load SOUNDS\<file> now, so playing it later does not stall a frame.
+// All waveOut work runs on a sound thread; these only queue a request.
+// Load SOUNDS\<file> ahead of time.
 void OneShotPreload(const char* file);
-// Play SOUNDS\<file> once (false: missing, unsupported or failed; logged).
-bool OneShotPlay(const char* file, const char* why);
+// Play SOUNDS\<file> once (missing, unsupported or failed: logged, skipped).
+void OneShotPlay(const char* file, const char* why);
 // Close finished sounds.
 void OneShotTick();
 

@@ -1116,4 +1116,25 @@ void GpuReleaseDC(GpuTexture& g, HDC dc, void* handle) {
   s->Release();
 }
 
+// Memory report: what the graphics driver says this process uses (Windows 10+).
+void GpuMemoryLog() {
+  Backend& b = B();
+  if (!b.device) return;
+  IDXGIDevice* dev = nullptr;
+  IDXGIAdapter* ad = nullptr;
+  IDXGIAdapter3* ad3 = nullptr;
+  if (SUCCEEDED(b.device->QueryInterface(__uuidof(IDXGIDevice), reinterpret_cast<void**>(&dev))) &&
+      SUCCEEDED(dev->GetAdapter(&ad)) &&
+      SUCCEEDED(ad->QueryInterface(__uuidof(IDXGIAdapter3), reinterpret_cast<void**>(&ad3)))) {
+    DXGI_QUERY_VIDEO_MEMORY_INFO local{}, shared{};
+    ad3->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &local);
+    ad3->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL, &shared);
+    Log("memory: graphics driver: %u MB in video memory, %u MB in shared system memory",
+        static_cast<unsigned>(local.CurrentUsage >> 20), static_cast<unsigned>(shared.CurrentUsage >> 20));
+  }
+  if (ad3) ad3->Release();
+  if (ad) ad->Release();
+  if (dev) dev->Release();
+}
+
 }  // namespace dd

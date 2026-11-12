@@ -574,3 +574,9 @@ void PartsFrameEnd(bool log) {
     else ++it;
   }
 }
+
+void SmoothPartsMemoryLog() {
+  patch::Log("memory: smoothing parts: %u parts, %u moving objects, %u names, %u drop texts",
+             static_cast<unsigned>(g_parts.size()), static_cast<unsigned>(g_motion.size()),
+             static_cast<unsigned>(g_names.size()), static_cast<unsigned>(g_drops.size()));
+}

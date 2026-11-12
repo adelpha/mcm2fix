@@ -26,6 +26,7 @@ void ApplyTextureFixes();
 void ApplyPerfFixes();
 void ApplySoundFixes();
 void LogTextureSummary();
+namespace crash { void Apply(); }
 
 namespace {
 
@@ -48,6 +49,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
     if (IsSupportedGame()) {
       patch::Log("mcm2fix loaded");
       xp::LogSystemInfo();
+      crash::Apply();
       ApplyStep1Fixes();
       const Config& c = GetConfig();
       patch::Log("config: OneCore=%d Startup=%d Registry=%d Files=%d ActivateLog=%d RegLog=%d DDStats=%d DrawLog=%d DrawBatch=%d BatchLog=%d "

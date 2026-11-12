@@ -1084,4 +1084,16 @@ void GpuTextDeviceLost() {
   for (GpuTexture& t : texs) t.Reset();
 }
 
+void GpuTextMemoryLog() {
+  unsigned n = 0, used = 0;
+  uint64_t bytes = 0;
+  for (const auto& kv : g_overlays) {
+    ++n;
+    if (!kv.second.empty) ++used;
+    bytes += static_cast<uint64_t>(kv.second.tex.width) * kv.second.tex.height * 4;
+  }
+  Log("memory: GPU text: %u overlays (%u with text, %u MB of textures), %u fonts, %u known GDI fonts", n, used,
+      static_cast<unsigned>(bytes >> 20), static_cast<unsigned>(g_fonts.size()), static_cast<unsigned>(g_known.size()));
+}
+
 }  // namespace dd
