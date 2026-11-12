@@ -36,6 +36,15 @@
 // is called at race start (0x41ea6f), on Restart Race (0x4215d7) and from
 // 0x451ef1.
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+#define RT_NOINLINE __declspec(noinline)
+#define RT_RETADDR() _ReturnAddress()
+#else
+#define RT_NOINLINE __attribute__((noinline))
+#define RT_RETADDR() __builtin_return_address(0)
+#endif
+
 namespace dd {
 namespace {
 
@@ -237,8 +246,8 @@ void __fastcall CountdownInitHook(uintptr_t race, void* edx) {
   if (GetConfig().race_title || GetConfig().announcer) Start(race);
 }
 
-__attribute__((noinline)) void __fastcall QueueAddLogHook(uintptr_t queue, void* edx, const char* item) {
-  const uintptr_t ret = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+RT_NOINLINE void __fastcall QueueAddLogHook(uintptr_t queue, void* edx, const char* item) {
+  const uintptr_t ret = reinterpret_cast<uintptr_t>(RT_RETADDR());
   char text[0x81] = {};
   if (item) std::memcpy(text, item, 0x80);
   Log("race title: text queue %08x add from %08x: \"%s\" (%.2f s)", static_cast<unsigned>(queue),
