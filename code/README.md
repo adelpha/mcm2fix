@@ -425,7 +425,10 @@ FastCrt=1
 ; FastSort: 1 = the game's sorting uses a merge sort instead of the old C
 ; library qsort, which slows to a crawl when many items are equal (default).
 ; On maps with many trees that froze the game for 35-125 ms when turning the
-; camera. 0 = the game's own qsort.
+; camera. The merge sort is also stable, which stops distant riders' engine
+; sounds from retriggering as quiet looping snippets (the game re-sorts its
+; engine voices every update and qsort shuffled equal entries). 0 = the
+; game's own qsort.
 FastSort=1
 
 ; TreeCacheMB: the game keeps built trees in a cache and empties the unused
