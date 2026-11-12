@@ -119,6 +119,9 @@ Windows 10 and 11.
 - **Smooth drawing between steps** (`SimSmooth`). The camera, bikes, riders,
   shadows and name labels are drawn blended between the last two simulation
   steps, so motion is smooth at any refresh rate (one step of delay).
+- **Steady controls on slow frames** (`InputTiming`). After a hitch the game
+  runs several steps at once; each now gets the keys and stick as they were
+  during its own slice of time, and quick taps always count for one step.
 - **Precise timers** (`PreciseTimer`, `FastCrt`). The game's clocks use
   `QueryPerformanceCounter` instead of whole milliseconds.
 - **Frame-rate independence** for the steps the game applies once per frame
@@ -378,6 +381,7 @@ troubleshooting.
 |---|---|---|---|
 | `SimRate` | `30` | `0`, 10-1000 | During races, the physics and AI run this many steps per second whatever the frame rate. They were tuned at low frame rates and go wrong when stepped faster, so 30 is the tested value. `0` = one step per drawn frame, the original behaviour (bikes and AI misbehave at high frame rates). Menus always step once per frame. |
 | `SimSmooth` | `1` | `0`, `1` | With `SimRate`, each frame shows the camera, bikes, riders, shadows and name labels blended between the last two steps. Motion is smooth at any refresh rate, with one step (1/30 s) of delay. `0` = motion judders at 30 steps a second. |
+| `InputTiming` | `1` | `0`, `1` | With `SimRate`, each race step gets the controls as they were during its own 1/30 s, also when a slow frame makes several steps run at once, and a key or button tapped faster than one step still counts for one step. `0` = the original reading: after a slow frame every catch-up step gets the controls as they are at that moment, and quick taps can be missed. |
 | `PreciseTimer` | `1` | `0`, `1` | Measures the game's frame time with `QueryPerformanceCounter` instead of whole milliseconds. It's only used with `SimRate=0`; with `SimRate`, the precise timer is always used. |
 | `FrameFix` | `1` | `0`, `1` | Some effects the game applies once per step rather than per second (steering and lean speed, spin damping, bodies coming to rest, camera zoom) are scaled to the real step length. With `SimRate=30` and `RefRate=30`, race steps are unchanged; it matters in menus and with `SimRate=0`. |
 | `RefRate` | `30` | 10-240 | The step rate `FrameFix` treats those effects as tuned for. |
@@ -416,6 +420,7 @@ only when asked to. Logs go to `%LOCALAPPDATA%\Motocross Madness 2\logs`.
 | `DrawLog` | `0` | During races, which draw calls could be merged into fewer (per game call site, plus a few whole frames). Costs about 1.5 ms a frame. |
 | `GdiLog` | `0` | The GDI calls (text, boxes, lines) the game draws onto the screen with. |
 | `TextureLog` | `0` | The format of each texture the game creates. |
+| `InputLog` | `0` | With `InputTiming`, the keyboard and joystick input each race step gets: events given out early or held for a later step, held taps, joystick samples, and a summary every 10 s. |
 | `SoundLog` | `0` | 3D sound buffers, and when `SoundMaxDistanceMute` mutes or unmutes them. |
 | `RaceTitleLog` | `0` | The countdown race title: name and lap count found, timing and placement. |
 | `RestartLog` | `0` | The start grid when a race loads and on Restart Race. |

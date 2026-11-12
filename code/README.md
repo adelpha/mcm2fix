@@ -359,6 +359,14 @@ SimRate=30
 ; (default). 0 = show each step as it is: motion judders at 30 steps a second.
 SimSmooth=1
 
+; InputTiming: 1 = with SimRate, each race step gets the controls as they were
+; during its own 1/30 s, also when a slow frame makes several steps run at
+; once, and a key or button tapped faster than one step still counts for one
+; step (default). 0 = the original reading: after a slow frame every catch-up
+; step gets the controls as they are at that moment, and quick taps can be
+; missed.
+InputTiming=1
+
 ; PreciseTimer: 1 = the game's frame time is measured with the precise
 ; QueryPerformanceCounter instead of whole milliseconds (default). Only used
 ; with SimRate=0; with SimRate the precise timer is always used.
@@ -481,6 +489,11 @@ GdiLog=0
 
 ; TextureLog: the format of each texture the game creates. Default 0.
 TextureLog=0
+
+; InputLog: with InputTiming, the keyboard and joystick input each race step
+; gets: events given out early or held for a later step, held taps, joystick
+; samples, plus a summary every 10 s. Default 0.
+InputLog=0
 
 ; SoundLog: 3D sound buffers, and when they are muted or unmuted by
 ; SoundMaxDistanceMute. Default 0.

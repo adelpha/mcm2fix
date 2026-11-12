@@ -49,6 +49,8 @@ struct Config {
   int ai_rate = 30;           // AiRate: computer riders re-plan this many times a second (0 = every frame)
   int smooth_log = 0;         // SmoothLog: 1 = trace a few frames of matrices and draws, 2 = camera only, 120 frames, 3 = rider shadows
   int sim_smooth = 1;         // SimSmooth: draw objects between simulation steps (needs SimRate)
+  bool input_timing = true;   // InputTiming: race steps get the input of their own time slice; taps held one step (input_timing.cpp)
+  bool input_log = false;     // InputLog: log input timing (events per step, held taps, joystick samples)
   int sim_rate = 30;          // SimRate: race simulation steps per second, drawing stays per frame (0 = one step per frame)
   int ai_steer_rate = 0;    // AiSteerRate: fastest a computer rider's front wheel turns, degrees/s (0 = no limit)
   int ref_rate = 30;          // RefRate: frame rate those per-frame steps were tuned for
