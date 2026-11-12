@@ -26,6 +26,7 @@ void ApplyTextureFixes();
 void ApplyPerfFixes();
 void ApplySoundFixes();
 void ApplySortFixes();
+void ApplyAiFixes();
 namespace input { void Apply(); }
 void LogTextureSummary();
 namespace crash { void Apply(); }
@@ -81,6 +82,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
       ApplyPerfFixes();
       ApplySoundFixes();
       ApplySortFixes();
+      ApplyAiFixes();
       input::Apply();
       video::ApplyVideoPlayer();
       if (c.activate_log) ApplyDiagnostics();

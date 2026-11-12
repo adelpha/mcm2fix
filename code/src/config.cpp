@@ -48,6 +48,22 @@ void LoadConfig() {
   if (g_config.ref_rate < 10 || g_config.ref_rate > 240) g_config.ref_rate = 30;
   g_config.ai_rate = GetPrivateProfileIntA("mcm2fix", "AiRate", 30, ini);
   if (g_config.ai_rate < 0) g_config.ai_rate = 0;
+  {
+    static const char* kLevel[3] = {"Easy", "Normal", "Hard"};
+    static const int kAccel[3] = {110, 130, 150};
+    for (int d = 0; d < 3; ++d) {
+      char key[32];
+      std::snprintf(key, sizeof(key), "AiAccel%s", kLevel[d]);
+      int v = GetPrivateProfileIntA("mcm2fix", key, kAccel[d], ini);
+      g_config.ai_accel[d] = v < 10 ? 10 : v > 400 ? 400 : v;
+      std::snprintf(key, sizeof(key), "AiTopSpeed%s", kLevel[d]);
+      v = GetPrivateProfileIntA("mcm2fix", key, 100, ini);
+      g_config.ai_top_speed[d] = v < 50 ? 50 : v > 150 ? 150 : v;
+    }
+    const int drag = GetPrivateProfileIntA("mcm2fix", "AiAirDrag", 0, ini);
+    g_config.ai_air_drag = drag < 0 ? 0 : drag > 100 ? 100 : drag;
+    g_config.ai_log = GetPrivateProfileIntA("mcm2fix", "AiLog", 0, ini) != 0;
+  }
   g_config.ai_steer_rate = GetPrivateProfileIntA("mcm2fix", "AiSteerRate", 0, ini);
   if (g_config.ai_steer_rate < 0) g_config.ai_steer_rate = 0;
   g_config.smooth_log = GetPrivateProfileIntA("mcm2fix", "SmoothLog", 0, ini);
