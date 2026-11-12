@@ -441,6 +441,9 @@ void SimUpdate(uintptr_t g, float step, float raw_dt) {
 }
 
 void FixedTickBody(uintptr_t g);
+}  // namespace
+void SoundPausePoll(uintptr_t game);  // fixes_sound.cpp
+namespace {
 
 int __stdcall FixedTick(uintptr_t g) {
   {
@@ -452,6 +455,7 @@ int __stdcall FixedTick(uintptr_t g) {
 }
 
 void FixedTickBody(uintptr_t g) {
+  SoundPausePoll(g);
   auto& now_ms = *reinterpret_cast<DWORD*>(g + 0x2d8);
   auto& last_ms = *reinterpret_cast<DWORD*>(g + 0x2dc);
   const LONGLONG now = Now();

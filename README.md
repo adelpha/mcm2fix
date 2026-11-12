@@ -434,6 +434,7 @@ only when asked to. Logs go to `%LOCALAPPDATA%\Motocross Madness 2\logs`.
 | `InputLog` | `0` | With `InputTiming`, the keyboard and joystick input each race step gets: events given out early or held for a later step, held taps, joystick samples, and a summary every 10 s. |
 | `SortLog` | `0` | The game's sorts per calling code every 10 s (count, largest, time). Sorts over 2 ms are always logged. |
 | `SoundLog` | `0` | 3D sound buffers, and when `SoundMaxDistanceMute` mutes or unmutes them. |
+| `SoundPauseLog` | `0` | When a race is paused and unpaused: every DirectSound call for a few seconds, failed calls, and the state of every sound buffer and of the window DirectSound follows. |
 | `RaceTitleLog` | `0` | The countdown race title: name and lap count found, timing and placement. |
 | `RestartLog` | `0` | The start grid when a race loads and on Restart Race. |
 | `ArrowLog` | `0` | The direction arrow's placement for a few seconds after each race start. |

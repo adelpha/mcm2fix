@@ -85,6 +85,7 @@ void LoadConfig() {
   g_config.input_timing = GetPrivateProfileIntA("mcm2fix", "InputTiming", 1, ini) != 0;
   g_config.input_log = GetPrivateProfileIntA("mcm2fix", "InputLog", 0, ini) != 0;
   g_config.sound_log = GetPrivateProfileIntA("mcm2fix", "SoundLog", 0, ini) != 0;
+  g_config.sound_pause_log = GetPrivateProfileIntA("mcm2fix", "SoundPauseLog", 0, ini) != 0;
   g_config.state_cache = GetPrivateProfileIntA("mcm2fix", "StateCache", 1, ini) != 0;
   g_config.dd_stats = GetPrivateProfileIntA("mcm2fix", "DDStats", 0, ini) != 0;
   g_config.draw_batch = GetPrivateProfileIntA("mcm2fix", "DrawBatch", 1, ini) != 0;

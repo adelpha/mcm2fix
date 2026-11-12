@@ -25,6 +25,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <map>
 #include <vector>
@@ -97,6 +98,7 @@ constexpr DWORD kDeferred = 1;  // DS3D_DEFERRED
 constexpr float kUnmuteFraction = 0.98f;  // back in range only below 98% of max distance
 CRITICAL_SECTION g_cs;
 int g_next_id = 0;
+int g_next_any = 0;  // 2D and primary buffers, numbered from 1000 in the logs
 bool g_log = false;
 bool g_watch = false;  // SoundMaxDistanceMute=2: track and log out-of-range sounds, change nothing
 volatile LONG g_restarts = 0, g_restarts_out = 0, g_plays = 0;
@@ -104,6 +106,21 @@ bool g_cs_ready = false;
 int g_log_left = 200;  // detailed lines per run
 volatile LONG g_mutes = 0, g_unmutes = 0, g_plays_out = 0, g_vol_held = 0;
 DWORD g_last_summary = 0;
+
+// SoundPauseLog: every buffer the game creates (2D, 3D and the primary), so
+// their state can be logged when a race is paused and unpaused.
+struct AnyBuf {
+  int id = 0;
+  DWORD flags = 0, bytes = 0;
+};
+std::map<void*, AnyBuf> g_all;
+bool g_pause_log = false;
+int g_mode = 1;  // SoundMaxDistanceMute: 0 = no muting, 1 = mute, 2 = watch only
+void* g_device = nullptr;
+HWND g_coop_hwnd = nullptr;
+DWORD g_coop_level = 0;
+int g_fail_logs = 60;  // failed DirectSound calls logged per run
+volatile LONG g_fails = 0;
 
 using CreateFn = HRESULT(WINAPI*)(const GUID*, void**, void*);
 CreateFn g_create = nullptr;
@@ -138,6 +155,32 @@ Buffer* Find(void* iface) {
 
 using SetVolumeFn = HRESULT(WINAPI*)(void*, LONG);
 
+// Number of any buffer (SoundPauseLog), -1 if unknown. Called under g_cs.
+int AnyId(void* iface) {
+  if (Buffer* b = Find(iface)) return b->id;
+  auto it = g_all.find(iface);
+  return it == g_all.end() ? -1 : it->second.id;
+}
+
+// A DirectSound call that failed: the first few are logged with the buffer
+// and the game code that made the call. Called under g_cs.
+void Failed(void* self, const char* op, HRESULT hr) {
+  InterlockedIncrement(&g_fails);
+  if (g_fail_logs <= 0) return;
+  --g_fail_logs;
+  volatile uintptr_t marker = 0;
+  const uintptr_t* sp = reinterpret_cast<const uintptr_t*>(const_cast<uintptr_t*>(&marker));
+  uintptr_t chain[3] = {};
+  int n = 0;
+  for (int i = 0; i < 96 && n < 3; ++i) {
+    if (IsBadReadPtr(sp + i, 4)) break;
+    if (sp[i] >= 0x401000 && sp[i] < 0x553000) chain[n++] = sp[i];
+  }
+  patch::Log("sound: %s on buffer #%d %p failed %08lx (via %08x %08x %08x)%s", op, AnyId(self), self,
+             static_cast<unsigned long>(hr), static_cast<unsigned>(chain[0]), static_cast<unsigned>(chain[1]),
+             static_cast<unsigned>(chain[2]), hr == static_cast<HRESULT>(0x88780096) ? " - buffer lost" : "");
+}
+
 float Distance(const Buffer& b) {
   Vec d = b.pos;
   if (b.mode != kModeHeadRelative) {
@@ -150,7 +193,7 @@ float Distance(const Buffer& b) {
 
 // Mute or unmute b to match its distance. Called under g_cs.
 void Update(Buffer& b, const char* why) {
-  if (!(b.flags & kCapsMuteMax) || !b.buffer || !g_listener_set) return;
+  if (g_mode == 0 || !(b.flags & kCapsMuteMax) || !b.buffer || !g_listener_set) return;
   const float dist = Distance(b);
   // A muted sound must come a little closer than max distance to be heard
   // again, so one sitting right on the edge doesn't flip every frame.
@@ -220,6 +263,7 @@ void Forget(Buffer* b) {
       break;
     }
   if (g_log && b->id < 64) patch::Log("sound: buffer #%d released by the game", b->id);
+  g_all.erase(b->buffer);
   delete b;
 }
 
@@ -273,6 +317,12 @@ ULONG WINAPI Release(void* self) {
   const ULONG n = reinterpret_cast<Fn>(orig)(self);
   if (b && --b->refs <= 0) Forget(b);
   if (self == g_listener && n == 0) g_listener = nullptr;
+  if (n == 0 && self == g_device) {
+    g_device = nullptr;
+    g_all.clear();
+  }
+  if (n == 0 && g_all.erase(self) && g_pause_log && g_fail_logs > 0 && g_all.size() < 4)
+    patch::Log("sound: buffer %p released, %u buffers left", self, static_cast<unsigned>(g_all.size()));
   return n;
 }
 
@@ -310,7 +360,7 @@ struct TraceKey {
   }
 };
 struct TraceVal {
-  unsigned count = 0;
+  unsigned count = 0, fails = 0;
   long first = 0, lo = 0, hi = 0, last = 0;
   DWORD bytes = 0;
 };
@@ -322,8 +372,8 @@ void TraceFlush() {
   if (!g_trace_tag) return;
   patch::Log("sound trace (%s): %u call sites", g_trace_tag, static_cast<unsigned>(g_trace.size()));
   for (const auto& t : g_trace)
-    patch::Log("sound trace (%s): #%d %u bytes %c x%u first %ld min %ld max %ld last %ld via %08x %08x %08x %08x",
-               g_trace_tag, t.first.id, static_cast<unsigned>(t.second.bytes), t.first.op, t.second.count,
+    patch::Log("sound trace (%s): #%d %u bytes %c x%u (%u failed) first %ld min %ld max %ld last %ld via %08x %08x %08x %08x",
+               g_trace_tag, t.first.id, static_cast<unsigned>(t.second.bytes), t.first.op, t.second.count, t.second.fails,
                t.second.first, t.second.lo, t.second.hi, t.second.last, static_cast<unsigned>(t.first.chain[0]),
                static_cast<unsigned>(t.first.chain[1]), static_cast<unsigned>(t.first.chain[2]),
                static_cast<unsigned>(t.first.chain[3]));
@@ -332,7 +382,7 @@ void TraceFlush() {
 }
 
 // Called under g_cs.
-__declspec(noinline) void Trace(void* self, char op, long v) {
+__declspec(noinline) void Trace(void* self, char op, long v, HRESULT hr = S_OK) {
   if (!g_trace_tag) return;
   if (static_cast<LONG>(GetTickCount() - g_trace_end) >= 0) {
     TraceFlush();
@@ -340,7 +390,7 @@ __declspec(noinline) void Trace(void* self, char op, long v) {
   }
   Buffer* b = Find(self);
   TraceKey k{};
-  k.id = b ? b->id : -1;
+  k.id = AnyId(self);
   k.op = op;
   // Game code addresses on the stack above us: the call site and its callers.
   volatile uintptr_t marker = 0;
@@ -358,37 +408,41 @@ __declspec(noinline) void Trace(void* self, char op, long v) {
   if (v < t.lo) t.lo = v;
   if (v > t.hi) t.hi = v;
   t.last = v;
-  t.bytes = b ? b->bytes : 0;
+  if (FAILED(hr)) ++t.fails;
+  auto it = g_all.find(self);
+  t.bytes = b ? b->bytes : it != g_all.end() ? it->second.bytes : 0;
 }
 
 HRESULT WINAPI SetFrequency(void* self, DWORD f) {
   using Fn = HRESULT(WINAPI*)(void*, DWORD);
-  {
-    Lock lock;
-    Trace(self, 'F', static_cast<long>(f));
-  }
-  return reinterpret_cast<Fn>(Orig(self, 0x44 / 4))(self, f);
+  const HRESULT hr = reinterpret_cast<Fn>(Orig(self, 0x44 / 4))(self, f);
+  Lock lock;
+  Trace(self, 'F', static_cast<long>(f), hr);
+  if (FAILED(hr)) Failed(self, "SetFrequency", hr);
+  return hr;
 }
 
 HRESULT WINAPI SetVolume(void* self, LONG v) {
   Lock lock;
-  Trace(self, 'V', v);
   Buffer* b = Find(self);
   if (b) {
     b->volume = v;
     if (b->muted && !g_watch) {
+      Trace(self, 'V', v);
       InterlockedIncrement(&g_vol_held);
       return S_OK;
     }
   }
-  return reinterpret_cast<SetVolumeFn>(Orig(self, 0x3c / 4))(self, v);
+  const HRESULT hr = reinterpret_cast<SetVolumeFn>(Orig(self, 0x3c / 4))(self, v);
+  Trace(self, 'V', v, hr);
+  if (FAILED(hr)) Failed(self, "SetVolume", hr);
+  return hr;
 }
 
 HRESULT WINAPI Play(void* self, DWORD r1, DWORD prio, DWORD flags) {
   using Fn = HRESULT(WINAPI*)(void*, DWORD, DWORD, DWORD);
   {
     Lock lock;
-    Trace(self, 'P', static_cast<long>(flags));
     if (Buffer* b = Find(self)) {
       // Started again while still sounding: the game restarts the sample
       // from wherever its play cursor is (DirectSound doesn't rewind on Play).
@@ -406,17 +460,59 @@ HRESULT WINAPI Play(void* self, DWORD r1, DWORD prio, DWORD flags) {
       Summary();
     }
   }
-  return reinterpret_cast<Fn>(Orig(self, 0x30 / 4))(self, r1, prio, flags);
+  const HRESULT hr = reinterpret_cast<Fn>(Orig(self, 0x30 / 4))(self, r1, prio, flags);
+  Lock lock;
+  Trace(self, 'P', static_cast<long>(flags), hr);
+  if (FAILED(hr)) Failed(self, "Play", hr);
+  return hr;
 }
 
 HRESULT WINAPI Stop(void* self) {
   using Fn = HRESULT(WINAPI*)(void*);
   {
     Lock lock;
-    Trace(self, 'S', 0);
     if (Buffer* b = Find(self)) b->playing = false;
   }
-  return reinterpret_cast<Fn>(Orig(self, 0x48 / 4))(self);
+  const HRESULT hr = reinterpret_cast<Fn>(Orig(self, 0x48 / 4))(self);
+  Lock lock;
+  Trace(self, 'S', 0, hr);
+  if (FAILED(hr)) Failed(self, "Stop", hr);
+  return hr;
+}
+
+// SoundPauseLog only: the remaining calls that can start, stop or lose sound.
+HRESULT WINAPI SetCurrentPosition(void* self, DWORD pos) {
+  using Fn = HRESULT(WINAPI*)(void*, DWORD);
+  const HRESULT hr = reinterpret_cast<Fn>(Orig(self, 0x34 / 4))(self, pos);
+  Lock lock;
+  Trace(self, 'C', static_cast<long>(pos), hr);
+  if (FAILED(hr)) Failed(self, "SetCurrentPosition", hr);
+  return hr;
+}
+
+HRESULT WINAPI Restore(void* self) {
+  using Fn = HRESULT(WINAPI*)(void*);
+  const HRESULT hr = reinterpret_cast<Fn>(Orig(self, 0x50 / 4))(self);
+  Lock lock;
+  Trace(self, 'R', 0, hr);
+  if (g_fail_logs > 0) patch::Log("sound: Restore on buffer #%d %p: %08lx", AnyId(self), self, static_cast<unsigned long>(hr));
+  return hr;
+}
+
+volatile LONG g_lost_seen = 0;
+HRESULT WINAPI GetStatus(void* self, DWORD* st) {
+  using Fn = HRESULT(WINAPI*)(void*, DWORD*);
+  const HRESULT hr = reinterpret_cast<Fn>(Orig(self, 0x24 / 4))(self, st);
+  if (SUCCEEDED(hr) && st && (*st & 2)) {  // DSBSTATUS_BUFFERLOST
+    Lock lock;
+    if (InterlockedIncrement(&g_lost_seen) <= 20)
+      patch::Log("sound: game's GetStatus on buffer #%d %p says the buffer is lost (status %08lx)", AnyId(self), self,
+                 static_cast<unsigned long>(*st));
+  } else if (FAILED(hr)) {
+    Lock lock;
+    Failed(self, "GetStatus", hr);
+  }
+  return hr;
 }
 
 void HookBuffer(void* obj) {
@@ -424,8 +520,13 @@ void HookBuffer(void* obj) {
   Hook(obj, 0x18 / 4, reinterpret_cast<void*>(&GetVolume));
   Hook(obj, 0x30 / 4, reinterpret_cast<void*>(&Play));
   Hook(obj, 0x3c / 4, reinterpret_cast<void*>(&SetVolume));
-  if (GetConfig().restart_log) Hook(obj, 0x44 / 4, reinterpret_cast<void*>(&SetFrequency));
+  if (GetConfig().restart_log || g_pause_log) Hook(obj, 0x44 / 4, reinterpret_cast<void*>(&SetFrequency));
   Hook(obj, 0x48 / 4, reinterpret_cast<void*>(&Stop));
+  if (g_pause_log) {
+    Hook(obj, 0x24 / 4, reinterpret_cast<void*>(&GetStatus));
+    Hook(obj, 0x34 / 4, reinterpret_cast<void*>(&SetCurrentPosition));
+    Hook(obj, 0x50 / 4, reinterpret_cast<void*>(&Restore));
+  }
 }
 
 // ----------------------------------------------------- IDirectSound3DBuffer
@@ -613,7 +714,7 @@ HRESULT WINAPI CreateSoundBuffer(void* self, BufferDesc* desc, void** out, void*
   DWORD flags = desc ? desc->flags : 0;
   const bool track = (flags & kCapsCtrl3D) && !(flags & kCapsPrimary);
   BufferDesc copy;
-  if (track && !g_watch && (flags & kCapsMuteMax) && !(flags & kCapsCtrlVolume)) {
+  if (track && g_mode == 1 && (flags & kCapsMuteMax) && !(flags & kCapsCtrlVolume)) {
     copy = *desc;  // we need volume control to mute it
     copy.flags |= kCapsCtrlVolume;
     desc = &copy;
@@ -621,14 +722,26 @@ HRESULT WINAPI CreateSoundBuffer(void* self, BufferDesc* desc, void** out, void*
   const HRESULT hr = reinterpret_cast<Fn>(Orig(self, 0xc / 4))(self, desc, out, outer);
   if (FAILED(hr) || !out || !*out) {
     if (g_log && track) patch::Log("sound: 3D buffer creation (flags %08lx) failed %08lx", desc ? desc->flags : 0, static_cast<unsigned long>(hr));
+    if (g_pause_log) patch::Log("sound: CreateSoundBuffer (flags %08lx) failed %08lx", flags, static_cast<unsigned long>(hr));
     return hr;
   }
   Lock lock;
+  if (g_pause_log) {
+    AnyBuf& a = g_all[*out];
+    a.id = track ? g_next_id : 1000 + g_next_any++;  // 3D buffers keep their 3D number
+    a.flags = desc->flags;
+    a.bytes = desc->bytes;
+    if (flags & kCapsPrimary)
+      patch::Log("sound: primary buffer %p created (flags %08lx)", *out, a.flags);
+  }
   if (flags & kCapsPrimary) {
     HookBuffer(*out);  // the listener comes from its QueryInterface
     return hr;
   }
-  if (!track) return hr;
+  if (!track) {
+    if (g_pause_log) HookBuffer(*out);  // 2D sounds: only watched
+    return hr;
+  }
   Buffer* b = Track(*out, desc->flags, desc->bytes);
   if (g_log && b->id < 64)
     patch::Log("sound: 3D buffer #%d %p: flags %08lx%s, %lu bytes, volume %ld", b->id, *out, b->flags,
@@ -641,6 +754,15 @@ HRESULT WINAPI DuplicateSoundBuffer(void* self, void* src, void** out) {
   const HRESULT hr = reinterpret_cast<Fn>(Orig(self, 0x14 / 4))(self, src, out);
   if (FAILED(hr) || !out || !*out) return hr;
   Lock lock;
+  if (g_pause_log) {
+    auto it = g_all.find(src);
+    AnyBuf a;
+    a.flags = it != g_all.end() ? it->second.flags : 0;
+    a.bytes = it != g_all.end() ? it->second.bytes : 0;
+    a.id = Find(src) ? g_next_id : 1000 + g_next_any++;
+    g_all[*out] = a;
+    if (!Find(src)) HookBuffer(*out);
+  }
   if (Buffer* s = Find(src)) {
     Buffer* b = Track(*out, s->flags, s->bytes);
     b->max_dist = s->max_dist;
@@ -652,12 +774,30 @@ HRESULT WINAPI DuplicateSoundBuffer(void* self, void* src, void** out) {
   return hr;
 }
 
+HRESULT WINAPI SetCooperativeLevel(void* self, HWND hwnd, DWORD level) {
+  using Fn = HRESULT(WINAPI*)(void*, HWND, DWORD);
+  const HRESULT hr = reinterpret_cast<Fn>(Orig(self, 0x18 / 4))(self, hwnd, level);
+  Lock lock;
+  if (SUCCEEDED(hr)) {
+    g_coop_hwnd = hwnd;
+    g_coop_level = level;
+  }
+  char cls[64] = {};
+  if (hwnd) GetClassNameA(hwnd, cls, sizeof(cls));
+  patch::Log("sound: SetCooperativeLevel(%p \"%s\", level %lu) -> %08lx", static_cast<void*>(hwnd), cls, level,
+             static_cast<unsigned long>(hr));
+  return hr;
+}
+
 HRESULT WINAPI MyDirectSoundCreate(const GUID* dev, void** out, void* outer) {
   const HRESULT hr = g_create(dev, out, outer);
   if (SUCCEEDED(hr) && out && *out) {
     Lock lock;
+    g_device = *out;
     Hook(*out, 0xc / 4, reinterpret_cast<void*>(&CreateSoundBuffer));
     Hook(*out, 0x14 / 4, reinterpret_cast<void*>(&DuplicateSoundBuffer));
+    Hook(*out, 0x18 / 4, reinterpret_cast<void*>(&SetCooperativeLevel));
+    if (g_pause_log) Hook(*out, 2, reinterpret_cast<void*>(&Release));  // device gone: forget its buffers
     HMODULE m = nullptr;
     char path[MAX_PATH] = {};
     if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
@@ -665,7 +805,7 @@ HRESULT WINAPI MyDirectSoundCreate(const GUID* dev, void** out, void* outer) {
       GetModuleFileNameA(m, path, MAX_PATH);
     LogCompat("DirectSoundCreate");
     patch::Log("sound: DirectSoundCreate -> %p (%s); 3D buffers beyond their max distance will be %s", *out, path,
-               g_watch ? "logged only (watch mode)" : "muted");
+               g_mode == 0 ? "left to DirectSound" : g_watch ? "logged only (watch mode)" : "muted");
   } else {
     patch::Log("sound: DirectSoundCreate failed %08lx", static_cast<unsigned long>(hr));
   }
@@ -704,14 +844,16 @@ void SoundTraceStart(const char* tag, DWORD ms) {
 
 void ApplySoundFixes() {
   LogCompat("start");
-  if (!GetConfig().sound_max_distance_mute) {
+  g_mode = GetConfig().sound_max_distance_mute;
+  g_pause_log = GetConfig().sound_pause_log;
+  if (!g_mode && !g_pause_log) {
     patch::Log("sound: SoundMaxDistanceMute=0, 3D sounds left to DirectSound");
     return;
   }
   InitializeCriticalSection(&g_cs);
   g_cs_ready = true;
-  g_watch = GetConfig().sound_max_distance_mute == 2;
-  g_log = GetConfig().sound_log || g_watch;
+  g_watch = g_mode != 1;
+  g_log = GetConfig().sound_log || g_mode == 2;
   constexpr uintptr_t kDirectSoundCreate = 0x55503c;  // DSOUND ordinal 1
   void* prev = *reinterpret_cast<void**>(kDirectSoundCreate);
   if (!prev) {
@@ -719,6 +861,141 @@ void ApplySoundFixes() {
     return;
   }
   g_create = reinterpret_cast<CreateFn>(patch::HookIat(kDirectSoundCreate, reinterpret_cast<void*>(&MyDirectSoundCreate)));
-  patch::Log("sound: DirectSoundCreate wrapped (SoundMaxDistanceMute=%d, SoundLog=%d)",
-             GetConfig().sound_max_distance_mute, g_log ? 1 : 0);
+  patch::Log("sound: DirectSoundCreate wrapped (SoundMaxDistanceMute=%d, SoundLog=%d, SoundPauseLog=%d)",
+             GetConfig().sound_max_distance_mute, g_log ? 1 : 0, g_pause_log ? 1 : 0);
+}
+
+// ---------------------------------------------------------- SoundPauseLog
+//
+// With Windows' own DirectSound all sound stopped after pausing and
+// unpausing a race. Each time the game's pause flag (Game+0x2d5 bit 0)
+// changes, every DirectSound buffer call is traced for a few seconds and
+// the state of every buffer, the cooperative window and the game's own sound
+// switch is logged at the change and a few times after it.
+namespace {
+
+int g_pause_events = 0;      // pause changes seen
+DWORD g_snap_due[4] = {};    // snapshots still to take (tick counts, 0 = none)
+const char* g_snap_tag[4] = {};
+bool g_last_paused = false;
+bool g_pause_known = false;
+
+const char* WindowInfo(HWND w, char* out, size_t n) {
+  char cls[64] = {}, title[64] = {};
+  DWORD pid = 0;
+  if (w) {
+    GetClassNameA(w, cls, sizeof(cls));
+    GetWindowTextA(w, title, sizeof(title));
+    GetWindowThreadProcessId(w, &pid);
+  }
+  std::snprintf(out, n, "%p \"%s\" \"%s\" pid %lu%s%s%s", static_cast<void*>(w), cls, title, pid,
+            pid == GetCurrentProcessId() ? " (ours)" : "", w && IsIconic(w) ? " minimised" : "",
+            w && !IsWindowVisible(w) ? " hidden" : "");
+  out[n - 1] = 0;
+  return out;
+}
+
+// The game's sound switch tested by every sound call: [[0x5743ac]+4]+0x2c
+// (the sound object of 0x4c32d0; bit 0 = sound on).
+int GameSoundSwitch() {
+  const auto* app = reinterpret_cast<const uintptr_t*>(0x5743ac);
+  if (IsBadReadPtr(app, 4) || !*app || IsBadReadPtr(reinterpret_cast<void*>(*app + 4), 4)) return -1;
+  const uintptr_t snd = *reinterpret_cast<const uintptr_t*>(*app + 4);
+  if (!snd || IsBadReadPtr(reinterpret_cast<void*>(snd + 0x2c), 1)) return -1;
+  return *reinterpret_cast<const uint8_t*>(snd + 0x2c);
+}
+
+void Snapshot(const char* tag) {
+  Lock lock;
+  char a[256], b[256];
+  const HWND fg = GetForegroundWindow();
+  const HWND root = g_coop_hwnd ? GetAncestor(g_coop_hwnd, GA_ROOTOWNER) : nullptr;
+  patch::Log("sound pause (%s): game sound switch %d (bit 0 = sound on); cooperative window %s level %lu; "
+             "foreground %s%s; active %p, focus %p", tag, GameSoundSwitch(), WindowInfo(g_coop_hwnd, a, sizeof(a)),
+             g_coop_level, WindowInfo(fg, b, sizeof(b)),
+             fg == g_coop_hwnd ? " = cooperative window" : fg == root ? " = its root window" : " - NOT the cooperative window",
+             static_cast<void*>(GetActiveWindow()), static_cast<void*>(GetFocus()));
+  using StatusFn = HRESULT(WINAPI*)(void*, DWORD*);
+  using VolFn = HRESULT(WINAPI*)(void*, LONG*);
+  int playing = 0, looping = 0, lost = 0, failed = 0;
+  for (const auto& e : g_all) {
+    void* buf = e.first;
+    const Buffer* t = Find(buf);
+    if ((e.second.flags & kCapsCtrl3D) && !(e.second.flags & kCapsPrimary) && !t) continue;  // let go of
+    DWORD st = 0;
+    LONG vol = 0, freq = 0;
+    const HRESULT hs = reinterpret_cast<StatusFn>(Orig(buf, 0x24 / 4))(buf, &st);
+    const HRESULT hv = reinterpret_cast<VolFn>(Orig(buf, 0x18 / 4))(buf, &vol);
+    const HRESULT hf = reinterpret_cast<VolFn>(Orig(buf, 0x20 / 4))(buf, &freq);
+    if (FAILED(hs)) ++failed;
+    playing += (st & 1) != 0;
+    looping += (st & 4) != 0;
+    lost += (st & 2) != 0;
+    const bool primary = e.second.flags & kCapsPrimary;
+    // Every buffer that is playing, lost or failed, plus the primary; the
+    // rest are counted only.
+    if (primary || (st & 3) || FAILED(hs) || g_pause_events <= 2)
+      patch::Log("sound pause (%s):   #%d %p %s %lu bytes: status %08lx%s%s%s (hr %08lx), volume %ld (hr %08lx)%s, "
+                 "frequency %ld (hr %08lx)%s",
+                 tag, e.second.id, buf, primary ? "PRIMARY" : (e.second.flags & kCapsCtrl3D) ? "3D" : "2D",
+                 e.second.bytes, st, (st & 1) ? " playing" : "", (st & 4) ? " looping" : "", (st & 2) ? " LOST" : "",
+                 static_cast<unsigned long>(hs), vol, static_cast<unsigned long>(hv),
+                 t ? (t->muted ? " [muted by mcm2fix]" : "") : "", freq, static_cast<unsigned long>(hf),
+                 t ? (t->playing ? " [game started it]" : " [game stopped it]") : "");
+  }
+  patch::Log("sound pause (%s): %u buffers, %d playing, %d looping, %d lost, %d status calls failed; %ld failed "
+             "DirectSound calls so far",
+             tag, static_cast<unsigned>(g_all.size()), playing, looping, lost, failed, g_fails);
+}
+
+void PauseChanged(bool paused) {
+  ++g_pause_events;
+  if (g_pause_events > 12) return;  // first six pause/unpause pairs
+  const char* tag = paused ? "paused" : "unpaused";
+  patch::Log("sound pause: race %s (change %d)", tag, g_pause_events);
+  {
+    Lock lock;
+    TraceFlush();
+    g_trace_tag = paused ? "after pause" : "after unpause";
+    g_trace_end = GetTickCount() + (paused ? 3000 : 6000);
+  }
+  Snapshot(tag);
+  const DWORD now = GetTickCount();
+  for (auto& d : g_snap_due) d = 0;
+  if (paused) {
+    g_snap_due[0] = now + 1000;
+    g_snap_tag[0] = "1 s after pause";
+  } else {
+    const DWORD at[] = {300, 1500, 4000};
+    const char* names[] = {"0.3 s after unpause", "1.5 s after unpause", "4 s after unpause"};
+    for (int i = 0; i < 3; ++i) {
+      g_snap_due[i] = now + at[i];
+      g_snap_tag[i] = names[i];
+    }
+  }
+}
+
+}  // namespace
+
+// Called by the game tick (framerate.cpp) with the Game object.
+void SoundPausePoll(uintptr_t game) {
+  if (!g_pause_log || !g_cs_ready || !game) return;
+  const bool paused = *reinterpret_cast<uint8_t*>(game + 0x2d5) & 1;
+  if (!g_pause_known) {
+    g_pause_known = true;
+    g_last_paused = paused;
+  } else if (paused != g_last_paused) {
+    g_last_paused = paused;
+    PauseChanged(paused);
+  }
+  const DWORD now = GetTickCount();
+  for (int i = 0; i < 4; ++i)
+    if (g_snap_due[i] && static_cast<LONG>(now - g_snap_due[i]) >= 0) {
+      g_snap_due[i] = 0;
+      Snapshot(g_snap_tag[i]);
+    }
+  if (g_trace_tag && static_cast<LONG>(now - g_trace_end) >= 0) {
+    Lock lock;
+    TraceFlush();  // also when no sound calls come any more
+  }
 }

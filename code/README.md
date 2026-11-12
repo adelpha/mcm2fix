@@ -528,6 +528,11 @@ SortLog=0
 ; SoundMaxDistanceMute. Default 0.
 SoundLog=0
 
+; SoundPauseLog: when a race is paused and unpaused, every DirectSound call for
+; a few seconds, any call that fails, and the state of every sound buffer and
+; of the game window DirectSound follows. Default 0.
+SoundPauseLog=0
+
 ; RaceTitleLog: the countdown race title: name and lap count found, timing
 ; and placement. Default 0.
 RaceTitleLog=0
