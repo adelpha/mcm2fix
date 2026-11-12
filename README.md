@@ -133,6 +133,9 @@ Windows 10 and 11.
   (`AsyncSound`).
 - The game's case-insensitive name compares use a lookup table instead of
   the slow CRT locale path (`FastCrt`).
+- **No freezes on tree-heavy maps** (`FastSort`, `TreeCacheMB`). The game's
+  old qsort went quadratic sorting its tree cache, freezing for up to 125 ms
+  while turning; it now uses a merge sort and trims that cache far less often.
 - Direct3D 11 state caching (`StateCache`), batched GPU text and cheaper
   texture uploads.
 - Draw batching: runs of 3D draws with nothing changed between them (trees,
@@ -396,6 +399,8 @@ troubleshooting.
 | `AsyncSound` | `2` | `0`, `1`, `2` | Where the 3D sound position update runs. The game makes it every physics step, and it's slow on Windows 10/11 because it holds the sound system's lock. `2` = a worker thread, started while the frame waits for VSync. `1` = a worker thread, started at once. `0` = the game thread, as in the original (can cause stutter). |
 | `SoundMaxDistanceMute` | `1` | `0`, `1` | mcm2fix mutes 3D sounds beyond their maximum distance, as Windows' DirectSound does. This is needed with DSOAL, which ignores that rule and otherwise leaves quiet looping fragments of distant riders' sounds. |
 | `FastCrt` | `1` | `0`, `1` | The game's millisecond clock uses `QueryPerformanceCounter` instead of changing the Windows timer period on every call, and its case-insensitive name comparisons use a lookup table. Both were measurable slowdowns. |
+| `FastSort` | `1` | `0`, `1` | The game's sorting uses a merge sort instead of the old C library qsort, which slows to a crawl when many items are equal. On tree-heavy maps that froze the game for 35-125 ms when turning the camera. |
+| `TreeCacheMB` | `32` | `0`, 1-512 | The game's cache of built trees is only emptied when more than this many MB of it are unused (the original 256 KB emptied it constantly while turning, and the trees were then rebuilt). `0` = the original. |
 | `StateCache` | `1` | `0`, `1` | Direct3D 11 only: renderer state that's already set isn't sent again for every draw. `0` is slower and is for troubleshooting rendering problems. |
 | `DrawBatch` | `1` | `0`, `1` | 3D draws in a row with nothing changed between them (trees, terrain, scenery) are sent as one draw. `0` sends each draw on its own, for troubleshooting. |
 
@@ -421,6 +426,7 @@ only when asked to. Logs go to `%LOCALAPPDATA%\Motocross Madness 2\logs`.
 | `GdiLog` | `0` | The GDI calls (text, boxes, lines) the game draws onto the screen with. |
 | `TextureLog` | `0` | The format of each texture the game creates. |
 | `InputLog` | `0` | With `InputTiming`, the keyboard and joystick input each race step gets: events given out early or held for a later step, held taps, joystick samples, and a summary every 10 s. |
+| `SortLog` | `0` | The game's sorts per calling code every 10 s (count, largest, time). Sorts over 2 ms are always logged. |
 | `SoundLog` | `0` | 3D sound buffers, and when `SoundMaxDistanceMute` mutes or unmutes them. |
 | `RaceTitleLog` | `0` | The countdown race title: name and lap count found, timing and placement. |
 | `RestartLog` | `0` | The start grid when a race loads and on Restart Race. |

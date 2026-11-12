@@ -420,6 +420,19 @@ SoundMaxDistanceMute=1
 ; measurable slowdowns. 0 = the game's own code.
 FastCrt=1
 
+; FastSort: 1 = the game's sorting uses a merge sort instead of the old C
+; library qsort, which slows to a crawl when many items are equal (default).
+; On maps with many trees that froze the game for 35-125 ms when turning the
+; camera. 0 = the game's own qsort.
+FastSort=1
+
+; TreeCacheMB: the game keeps built trees in a cache and empties the unused
+; part whenever more than 256 KB of it is unused, which happens constantly
+; while turning on tree-heavy maps (and the trees are then built again when
+; they come back into view). It is now only emptied when more than this many
+; MB are unused, 1 to 512. Default 32. 0 = the original 256 KB.
+TreeCacheMB=32
+
 ; StateCache: Direct3D 11 only. 1 = renderer state that is already set is not
 ; sent to the graphics card again for every draw (default). 0 = send it every
 ; draw (slower; for troubleshooting rendering problems).
@@ -494,6 +507,10 @@ TextureLog=0
 ; gets: events given out early or held for a later step, held taps, joystick
 ; samples, plus a summary every 10 s. Default 0.
 InputLog=0
+
+; SortLog: the game's sorts per calling code every 10 s (count, largest,
+; time). Sorts over 2 ms are always logged. Default 0.
+SortLog=0
 
 ; SoundLog: 3D sound buffers, and when they are muted or unmuted by
 ; SoundMaxDistanceMute. Default 0.
