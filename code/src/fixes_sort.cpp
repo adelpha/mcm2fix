@@ -29,6 +29,13 @@
 #include "config.h"
 #include "patch.h"
 
+#ifdef _MSC_VER
+#include <intrin.h>
+#define SORT_CALLER() _ReturnAddress()
+#else
+#define SORT_CALLER() __builtin_return_address(0)
+#endif
+
 namespace {
 
 using CompareFn = int(__cdecl*)(const void*, const void*);
@@ -88,7 +95,7 @@ void Sort(void* base, size_t n, size_t width, CompareFn cmp) {
 }
 
 void __cdecl FastQsort(void* base, size_t n, size_t width, CompareFn cmp) {
-  const uintptr_t caller = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+  const uintptr_t caller = reinterpret_cast<uintptr_t>(SORT_CALLER());
   if (n < 2 || width == 0 || !base || !cmp) return;
   LARGE_INTEGER t0, t1;
   QueryPerformanceCounter(&t0);
