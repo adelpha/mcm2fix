@@ -12,6 +12,7 @@
 // operand at a value of our own, recomputed every tick so that it does per
 // frame what the original constant did per frame at RefRate (30 by default).
 #include "framerate.h"
+#include "input_timing.h"
 #include "prof.h"
 #include "smooth.h"
 
@@ -475,14 +476,20 @@ void FixedTickBody(uintptr_t g) {
     const double step = 1.0 / rate;
     g_sim_acc += dt;
     if (g_sim_acc > 0.25) g_sim_acc = 0.25;  // after a stall, don't try to catch up
-    while (g_sim_acc >= step) {
+    const int count = static_cast<int>(g_sim_acc / step);
+    for (int i = 0; g_sim_acc >= step; ++i) {
+      // Real time from the end of this step to now: its input stops there.
+      const double behind = g_sim_acc - step;
+      input::BeginStep(now, i + 1 >= count ? 0.0 : behind, i, count > i ? count : i + 1, true);
       SimUpdate(g, static_cast<float>(step), static_cast<float>(step));
       g_sim_acc -= step;
     }
   } else {
     const float raw = static_cast<float>(dt);
+    input::BeginStep(now, 0.0, 0, 1, false);
     SimUpdate(g, raw > 0.2f ? 0.2f : raw, raw);
   }
+  input::EndSteps();
 
   if (!(*reinterpret_cast<uint8_t*>(g + 0x2d5) & 1)) {
     kProfilerFrame(*reinterpret_cast<void**>(0x5724F0));

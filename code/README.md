@@ -359,6 +359,14 @@ SimRate=30
 ; (default). 0 = show each step as it is: motion judders at 30 steps a second.
 SimSmooth=1
 
+; InputTiming: 1 = with SimRate, each race step gets the controls as they were
+; during its own 1/30 s, also when a slow frame makes several steps run at
+; once, and a key or button tapped faster than one step still counts for one
+; step (default). 0 = the original reading: after a slow frame every catch-up
+; step gets the controls as they are at that moment, and quick taps can be
+; missed.
+InputTiming=1
+
 ; PreciseTimer: 1 = the game's frame time is measured with the precise
 ; QueryPerformanceCounter instead of whole milliseconds (default). Only used
 ; with SimRate=0; with SimRate the precise timer is always used.
@@ -411,6 +419,19 @@ SoundMaxDistanceMute=1
 ; case-insensitive name comparisons use a lookup table (default). Both were
 ; measurable slowdowns. 0 = the game's own code.
 FastCrt=1
+
+; FastSort: 1 = the game's sorting uses a merge sort instead of the old C
+; library qsort, which slows to a crawl when many items are equal (default).
+; On maps with many trees that froze the game for 35-125 ms when turning the
+; camera. 0 = the game's own qsort.
+FastSort=1
+
+; TreeCacheMB: the game keeps built trees in a cache and empties the unused
+; part whenever more than 256 KB of it is unused, which happens constantly
+; while turning on tree-heavy maps (and the trees are then built again when
+; they come back into view). It is now only emptied when more than this many
+; MB are unused, 1 to 512. Default 32. 0 = the original 256 KB.
+TreeCacheMB=32
 
 ; StateCache: Direct3D 11 only. 1 = renderer state that is already set is not
 ; sent to the graphics card again for every draw (default). 0 = send it every
@@ -481,6 +502,15 @@ GdiLog=0
 
 ; TextureLog: the format of each texture the game creates. Default 0.
 TextureLog=0
+
+; InputLog: with InputTiming, the keyboard and joystick input each race step
+; gets: events given out early or held for a later step, held taps, joystick
+; samples, plus a summary every 10 s. Default 0.
+InputLog=0
+
+; SortLog: the game's sorts per calling code every 10 s (count, largest,
+; time). Sorts over 2 ms are always logged. Default 0.
+SortLog=0
 
 ; SoundLog: 3D sound buffers, and when they are muted or unmuted by
 ; SoundMaxDistanceMute. Default 0.
