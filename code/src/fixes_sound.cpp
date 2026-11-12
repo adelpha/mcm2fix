@@ -146,7 +146,8 @@ void Hook(void* obj, int slot, void* fn) {
   }
 }
 
-bool Detail() { return g_log && g_log_left > 0 && g_log_left--; }
+const char* g_trace_tag = nullptr;  // sound trace running (RestartLog, SoundPauseLog)
+bool Detail() { return (g_log || (g_pause_log && g_trace_tag)) && g_log_left > 0 && g_log_left--; }
 
 Buffer* Find(void* iface) {
   auto it = g_iface.find(iface);
@@ -366,7 +367,6 @@ struct TraceVal {
 };
 std::map<TraceKey, TraceVal> g_trace;
 DWORD g_trace_end = 0;
-const char* g_trace_tag = nullptr;
 
 void TraceFlush() {
   if (!g_trace_tag) return;
@@ -942,7 +942,12 @@ void Snapshot(const char* tag) {
                  static_cast<unsigned long>(hs), vol, static_cast<unsigned long>(hv),
                  t ? (t->muted ? " [muted by mcm2fix]" : "") : "", freq, static_cast<unsigned long>(hf),
                  t ? (t->playing ? " [game started it]" : " [game stopped it]") : "");
+    if (t && (primary || (st & 3) || t->muted || g_pause_events <= 2))
+      patch::Log("sound pause (%s):     3D #%d: distance %.1f, max %.1f, mode %lu, %s, game volume %ld", tag, t->id,
+                 Distance(*t), t->max_dist, t->mode, t->muted ? "MUTED by mcm2fix" : "not muted", t->volume);
   }
+  patch::Log("sound pause (%s): listener %p at %.1f %.1f %.1f (placed %d), 3D changes waiting for a commit %d", tag,
+             g_listener, g_listener_pos.x, g_listener_pos.y, g_listener_pos.z, g_listener_set ? 1 : 0, g_dirty ? 1 : 0);
   patch::Log("sound pause (%s): %u buffers, %d playing, %d looping, %d lost, %d status calls failed; %ld failed "
              "DirectSound calls so far",
              tag, static_cast<unsigned>(g_all.size()), playing, looping, lost, failed, g_fails);
@@ -950,9 +955,9 @@ void Snapshot(const char* tag) {
 
 void PauseChanged(bool paused) {
   ++g_pause_events;
-  if (g_pause_events > 12) return;  // first six pause/unpause pairs
+  if (g_pause_events > 16) return;  // race start plus the first pause/unpause pairs
   const char* tag = paused ? "paused" : "unpaused";
-  patch::Log("sound pause: race %s (change %d)", tag, g_pause_events);
+  patch::Log("sound pause: race %s (change %d; race simulation stopped or started)", tag, g_pause_events);
   {
     Lock lock;
     TraceFlush();
@@ -976,6 +981,13 @@ void PauseChanged(bool paused) {
 }
 
 }  // namespace
+
+// Called by the game tick (framerate.cpp) when the race simulation stops or
+// starts again (the pause menu stops the bikes).
+void SoundRaceRunning(bool running) {
+  if (!g_pause_log || !g_cs_ready) return;
+  PauseChanged(!running);
+}
 
 // Called by the game tick (framerate.cpp) with the Game object.
 void SoundPausePoll(uintptr_t game) {
