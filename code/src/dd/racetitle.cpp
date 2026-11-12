@@ -55,6 +55,9 @@ constexpr uintptr_t kCountdownInit = 0x421F90;  // BikeRace countdown set (thisc
 constexpr uintptr_t kCountdownCalls[] = {0x41EA6F, 0x4215D7, 0x451EF1};
 constexpr uintptr_t kRaceHolder = 0x558, kHolderRace = 0x34;
 constexpr uintptr_t kCurrentQueue = 0x45E350;  // the current event's HUD text queue, or 0 (cdecl, no args)
+// BikeRace teardown: its only deleting destructor (vtable slot 0, 0x418cb0)
+// calls the destructor body 0x41dd30 from 0x418cb3, then frees the object.
+constexpr uintptr_t kRaceDtor = 0x41DD30, kRaceDtorCall = 0x418CB3;
 constexpr uintptr_t kCountdownLeft = 0x15C;  // float seconds
 constexpr uintptr_t kRaceStarted = 0x18A;    // byte
 constexpr uintptr_t kMode = 0x2D70, kEvent = 0x2D74, kLaps = 0x2D90, kStuntEvent = 0x55C, kBaja = 0x560;
@@ -92,6 +95,22 @@ T Rd(uintptr_t a) {
 using QueueAddFn = void(__fastcall*)(uintptr_t self, void* edx, const void* item);
 using InitFn = void(__fastcall*)(uintptr_t self, void* edx);
 
+// True if [p, p+n) is committed readable memory (the race object can be
+// freed and its page given back while we still hold its address).
+bool Readable(uintptr_t p, size_t n) {
+  if (!p) return false;
+  MEMORY_BASIC_INFORMATION mbi{};
+  for (uintptr_t a = p; a < p + n;) {
+    if (!VirtualQuery(reinterpret_cast<const void*>(a), &mbi, sizeof(mbi))) return false;
+    if (mbi.State != MEM_COMMIT || (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))) return false;
+    if (!(mbi.Protect & (PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READ |
+                         PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)))
+      return false;
+    a = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
+  }
+  return true;
+}
+
 bool Logging() { return GetConfig().race_title_log; }
 
 double Now() {
@@ -121,6 +140,7 @@ struct State {
   // Announcer: countdown voices at whole seconds left, air horn at the start.
   bool snd_active = false;
   float snd_prev = 0;
+  unsigned dtors = 0, unreadable = 0;
 } g;
 
 const char* const kCountWav[] = {"one.wav", "two.wav", "three.wav", "four.wav", "five.wav"};
@@ -244,6 +264,28 @@ void Start(uintptr_t race) {
 void __fastcall CountdownInitHook(uintptr_t race, void* edx) {
   reinterpret_cast<InitFn>(kCountdownInit)(race, edx);
   if (GetConfig().race_title || GetConfig().announcer) Start(race);
+}
+
+// 0x418cb3: a BikeRace is being destroyed (quitting from the pause menu, the
+// race ending). If it is the one whose countdown we follow, stop following it
+// before its memory is freed: quitting during the countdown used to leave the
+// title and announcer reading the freed race (crash at the next frame drawn).
+void __fastcall RaceDtorHook(uintptr_t race, void* edx) {
+  ++g.dtors;
+  const bool ours = race && race == g.race;
+  Log("race title: race %08x destroyed%s (title %s, announcer %s, %u frames drawn)",
+      static_cast<unsigned>(race), ours ? " - the one being followed, stopped" : "", g.active ? "was on" : "off",
+      g.snd_active ? "was on" : "off", g.frames);
+  if (ours) {
+    if (g.active || g.snd_active)
+      Log("race title: left %.3f of %.2f s when the race went (quit during the countdown)",
+          Rd<float>(race + kCountdownLeft), g.total);
+    g.active = false;
+    g.snd_active = false;
+    g.race = 0;
+    g.vtable = 0;
+  }
+  reinterpret_cast<InitFn>(kRaceDtor)(race, edx);
 }
 
 RT_NOINLINE void __fastcall QueueAddLogHook(uintptr_t queue, void* edx, const char* item) {
@@ -504,6 +546,8 @@ void InstallRaceTitleHooks() {
   int calls = 0;
   for (uintptr_t site : kCountdownCalls)
     calls += PatchCall(site, kCountdownInit, reinterpret_cast<const void*>(&CountdownInitHook)) ? 1 : 0;
+  const bool dtor = PatchCall(kRaceDtorCall, kRaceDtor, reinterpret_cast<const void*>(&RaceDtorHook));
+  Log("race title: race destructor hook %s", dtor ? "applied" : "MISSING (title/announcer rely on the memory check)");
   int qlog = 0;
   if (c.race_title_log)
     for (uintptr_t site : kQueueAddCalls)
@@ -538,6 +582,14 @@ void CountdownBanner(Surface* rt) {
     // The race object stays alive through the countdown; stop if it looks
     // gone (vtable changed, countdown out of range, or frozen for a minute).
     const uintptr_t race = g.race;
+    if (!Readable(race, kCountdownLeft + 4)) {
+      ++g.unreadable;
+      Log("race title: race %08x is no longer readable memory after %u frames (destructor not seen); stopped",
+          static_cast<unsigned>(race), g.frames);
+      g.active = false;
+      g.snd_active = false;
+      return;
+    }
     const uintptr_t vt = Rd<uintptr_t>(race);
     const float left = Rd<float>(race + kCountdownLeft);
     const bool frozen = g.last_left == left && now - g.last_change > 60.0;
@@ -691,6 +743,14 @@ void AnnouncerTick() {
   OneShotTick();
   if (!g.snd_active) return;
   const uintptr_t race = g.race;
+  if (!Readable(race, kCountdownLeft + 4)) {
+    ++g.unreadable;
+    Log("announcer: race %08x is no longer readable memory (destructor not seen); stopped",
+        static_cast<unsigned>(race));
+    g.snd_active = false;
+    g.active = false;
+    return;
+  }
   const float left = Rd<float>(race + kCountdownLeft);
   if (Rd<uintptr_t>(race) != g.vtable || !(left >= -1.0f && left <= g.total + 0.5f)) {
     Log("announcer: race %08x no longer counting down (left %.3f); stopped", static_cast<unsigned>(race), left);
