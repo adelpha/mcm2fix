@@ -409,11 +409,13 @@ RestartFix=1
 AsyncSound=2
 
 ; SoundMaxDistanceMute: 1 = 3D sounds further away than their maximum distance
-; are muted by mcm2fix, as Windows' own DirectSound does (default). Needed with
-; DSOAL, which ignores that rule and otherwise leaves quiet looping fragments
-; of distant riders' sounds. 0 = leave it to the sound system. 2 = change
-; nothing but log each 3D sound that goes beyond its maximum distance, and how
-; often the game restarts a sound that is still playing (for comparing setups).
+; are muted by mcm2fix when the DirectSound in use is a replacement such as
+; DSOAL, which ignores that rule and otherwise leaves distant riders' sounds
+; playing quietly (default). Windows' own DirectSound mutes them itself, so
+; with it mcm2fix leaves them alone. 3 = mute them with any DirectSound (with
+; Windows' own this silences the bike engines after a pause). 0 = never.
+; 2 = change nothing but log each 3D sound that goes beyond its maximum
+; distance, and how often the game restarts a sound that is still playing.
 SoundMaxDistanceMute=1
 
 ; FastCrt: 1 = the game's millisecond clock uses QueryPerformanceCounter

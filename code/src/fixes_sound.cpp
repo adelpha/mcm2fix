@@ -117,7 +117,7 @@ struct AnyBuf {
 };
 std::map<void*, AnyBuf> g_all;
 bool g_pause_log = false;
-int g_mode = 1;  // SoundMaxDistanceMute: 0 = no muting, 1 = mute, 2 = watch only
+int g_mode = 1;  // 0 = no muting, 1 = mute, 2 = watch only (SoundMaxDistanceMute, 1 settled at DirectSoundCreate)
 void* g_device = nullptr;
 HWND g_coop_hwnd = nullptr;
 DWORD g_coop_level = 0;
@@ -802,6 +802,24 @@ HRESULT WINAPI SetCooperativeLevel(void* self, HWND hwnd, DWORD level) {
   return hr;
 }
 
+// True when path is Windows' own dsound.dll (System32, or SysWOW64 as a
+// 32-bit process may report it), not a replacement next to the exe.
+bool IsWindowsDsound(const char* path) {
+  const char* slash = std::strrchr(path, '\\');
+  if (!slash) return false;
+  const size_t dir_len = static_cast<size_t>(slash - path);
+  char sys[MAX_PATH] = {};
+  UINT n = GetSystemDirectoryA(sys, MAX_PATH);
+  if (n && n == dir_len && _strnicmp(sys, path, dir_len) == 0) return true;
+  using Wow64DirFn = UINT(WINAPI*)(LPSTR, UINT);
+  if (auto fn = reinterpret_cast<Wow64DirFn>(
+          reinterpret_cast<void*>(GetProcAddress(GetModuleHandleA("kernel32.dll"), "GetSystemWow64DirectoryA")))) {
+    n = fn(sys, MAX_PATH);
+    if (n && n == dir_len && _strnicmp(sys, path, dir_len) == 0) return true;
+  }
+  return false;
+}
+
 HRESULT WINAPI MyDirectSoundCreate(const GUID* dev, void** out, void* outer) {
   const HRESULT hr = g_create(dev, out, outer);
   if (SUCCEEDED(hr) && out && *out) {
@@ -817,6 +835,20 @@ HRESULT WINAPI MyDirectSoundCreate(const GUID* dev, void** out, void* outer) {
                            static_cast<LPCSTR>(**reinterpret_cast<void***>(*out)), &m))
       GetModuleFileNameA(m, path, MAX_PATH);
     LogCompat("DirectSoundCreate");
+    // Windows' own DirectSound already mutes these buffers at max distance,
+    // and our volume changes on top of its own confuse it: after a sound we
+    // had muted once is stopped and played again (every pause), Windows
+    // keeps it silent until its volume is set again (StOo, 2026-11-12: the
+    // bike engines went quiet after each pause until they had left and
+    // re-entered range). So SoundMaxDistanceMute=1 only acts when the
+    // DirectSound is a replacement (DSOAL); 3 forces it.
+    const int setting = GetConfig().sound_max_distance_mute;
+    if (setting == 1 && path[0] && IsWindowsDsound(path)) {
+      g_mode = 0;
+      g_watch = true;
+      patch::Log("sound: Windows' own DirectSound, it mutes 3D sounds at max distance itself; "
+                 "SoundMaxDistanceMute=1 leaves them to it (3 = mute anyway)");
+    }
     patch::Log("sound: DirectSoundCreate -> %p (%s); 3D buffers beyond their max distance will be %s", *out, path,
                g_mode == 0 ? "left to DirectSound" : g_watch ? "logged only (watch mode)" : "muted");
   } else {
@@ -858,6 +890,8 @@ void SoundTraceStart(const char* tag, DWORD ms) {
 void ApplySoundFixes() {
   LogCompat("start");
   g_mode = GetConfig().sound_max_distance_mute;
+  if (g_mode == 3) g_mode = 1;  // always, whatever DirectSound it is
+  if (g_mode < 0 || g_mode > 3) g_mode = 1;
   g_pause_log = GetConfig().sound_pause_log;
   if (g_pause_log) g_log_left = 600;
   if (!g_mode && !g_pause_log) {
