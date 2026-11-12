@@ -170,6 +170,11 @@ void AirDrag(void* bike, float dt) {
 // Called from the stub at 0x414790 for every computer rider step.
 const float* __stdcall AiTable(void* bike, int cls) {
   if (cls < 0 || cls > 2) cls = 0;
+  // 0x414000 also runs for the player's bike in the game's demo/autopilot
+  // mode; leave that bike exactly as the original.
+  if (bike && static_cast<uint8_t*>(bike)[0x734] == 0) {
+    return reinterpret_cast<const float*>(kTables) + cls * kEntries;
+  }
   const int d = Difficulty();
   if (d != g_last_diff) {
     const Config& c = GetConfig();
