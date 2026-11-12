@@ -281,8 +281,9 @@ RaceTitleSize=1
 ; there: five.wav, four.wav, three.wav, two.wav and one.wav as the countdown
 ; passes 5, 4, 3, 2 and 1 seconds left, airhorn.wav when the race starts,
 ; finallap.wav when FINAL LAP shows (not in one-lap races) and podium.wav
-; when the podium cutscene starts (default). Missing files are skipped.
-; 8 or 16-bit PCM WAV. 0 = off.
+; when the podium cutscene starts (default). The release ships all eight in
+; its SOUNDS\ folder; replace any with your own WAV of the same name.
+; Missing files are skipped. 8 or 16-bit PCM WAV. 0 = off.
 Announcer=1
 
 ; AnnouncerVolume: volume of those sounds in percent, 0 to 100. Default 100.
