@@ -27,6 +27,11 @@
 #include "texreplace.h"
 
 namespace dd {
+unsigned g_surface_gen = 0;
+extern unsigned g_devices_made, g_devices_gone;
+namespace {
+LONG g_made = 0, g_gone = 0, g_releases = 0;
+}  // namespace
 
 namespace {
 
@@ -239,6 +244,8 @@ DDPIXELFORMAT MakeRGBFormat(UINT bpp, DWORD r, DWORD g, DWORD b, DWORD a) {
 Surface::Surface(DirectDraw* dd, const DDSURFACEDESC2& desc, Surface* root)
     : dd_(dd), root_(root), desc_(desc) {
   if (!g_surface_vtable) g_surface_vtable = *reinterpret_cast<void**>(this);
+  gen_ = g_surface_gen;
+  if (!root) InterlockedIncrement(&g_made);
   desc_.dwSize = sizeof(DDSURFACEDESC2);
   DWORD caps = desc_.ddsCaps.dwCaps;
   if (caps & DDSCAPS_PRIMARYSURFACE || !(desc_.dwFlags & DDSD_WIDTH)) {
@@ -274,6 +281,7 @@ Surface::Surface(DirectDraw* dd, const DDSURFACEDESC2& desc, Surface* root)
 }
 
 Surface::~Surface() {
+  if (!root_) InterlockedIncrement(&g_gone);
   AllSurfaces().erase(this);
   HudTextForget(this);
   if (gpu_dc_) {
@@ -1109,6 +1117,7 @@ ULONG Surface::AddRef() {
 
 ULONG Surface::Release() {
   if (root_) return root_->Release();
+  InterlockedIncrement(&g_releases);
   LONG n = InterlockedDecrement(&refs_);
   if (n == 0) {
     DD_LOCK;
@@ -1855,6 +1864,44 @@ void Surface::MemoryLog() {
     used += m;
   }
   Log("memory: surface sizes: %s", line);
+  // Reference counts and creators of the surfaces the game owns directly.
+  unsigned refs[5] = {};
+  std::map<uintptr_t, std::pair<unsigned, unsigned>> by_creator;  // live, of them created before this period
+  std::map<unsigned, unsigned> by_gen;
+  for (Surface* s : AllSurfaces()) {
+    if (s->root_) continue;
+    ++refs[std::min<LONG>(std::max<LONG>(s->refs_, 0), 4)];
+    auto& c = by_creator[s->creator_];
+    ++c.first;
+    if (s->gen_ < g_surface_gen) ++c.second;
+    ++by_gen[s->gen_];
+  }
+  Log("memory: surface objects: %ld made, %ld deleted, %ld Release calls; live by reference count: 0:%u 1:%u 2:%u "
+      "3:%u 4+:%u; devices %u made, %u deleted",
+      g_made, g_gone, g_releases, refs[0], refs[1], refs[2], refs[3], refs[4], g_devices_made, g_devices_gone);
+  std::vector<std::pair<unsigned, uintptr_t>> cr;
+  for (const auto& kv : by_creator) cr.push_back({kv.second.first, kv.first});
+  std::sort(cr.begin(), cr.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+  for (size_t i = 0; i < cr.size() && i < 8; ++i)
+    Log("memory:   created from %08x: %u live, %u of them from earlier periods", static_cast<unsigned>(cr[i].second),
+        cr[i].first, by_creator[cr[i].second].second);
+  used = 0;
+  line[0] = 0;
+  for (const auto& kv : by_gen) {
+    int m = std::snprintf(line + used, sizeof(line) - used, "%s#%u:%u", used ? " " : "", kv.first, kv.second);
+    if (m < 0 || used + m >= sizeof(line)) break;
+    used += m;
+  }
+  Log("memory: live surfaces by the display mode period they were made in: %s (now #%u)", line, g_surface_gen);
+  // One sample surface from each of the top creators: its reference count and size.
+  for (size_t i = 0; i < cr.size() && i < 4; ++i) {
+    for (Surface* s : AllSurfaces()) {
+      if (s->root_ || s->creator_ != cr[i].second || s->gen_ >= g_surface_gen) continue;
+      Log("memory:   sample from %08x: %p %ux%u caps %08lx refs %ld, period #%u, %u mip levels", static_cast<unsigned>(s->creator_),
+          static_cast<void*>(s), s->Width(), s->Height(), s->Caps(), s->refs_, s->gen_, static_cast<unsigned>(s->mips_.size()));
+      break;
+    }
+  }
 }
 
 }  // namespace dd

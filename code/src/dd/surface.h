@@ -221,6 +221,12 @@ class Surface : public IDirectDrawSurface7 {
   bool locked_ = false;
   bool lock_readonly_ = false;
   bool rt_used_ = false;
+ public:
+  // Memory report bookkeeping: who created it (game return address) and in
+  // which display-mode period.
+  uintptr_t creator_ = 0;
+  unsigned gen_ = 0;
+ private:
   DWORD priority_ = 0, lod_ = 0;
   DWORD uniqueness_ = 1;
 };

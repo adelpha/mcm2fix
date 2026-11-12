@@ -18,6 +18,7 @@
 #include "surface.h"
 
 namespace dd {
+unsigned g_devices_made = 0, g_devices_gone = 0;
 
 using namespace d3d7;
 
@@ -775,6 +776,7 @@ void Device::FlushBatch(BatchBreak why) {
 
 
 Device::Device(DirectDraw* dd, Surface* rt, REFCLSID cls) : dd_(dd), rt_(rt), guid_(cls) {
+  ++g_devices_made;
   dd_->AddRef();
   rt_->AddRef();
   rt_->SetUsedAsRenderTarget();
@@ -815,6 +817,7 @@ Device::Device(DirectDraw* dd, Surface* rt, REFCLSID cls) : dd_(dd), rt_(rt), gu
 }
 
 Device::~Device() {
+  ++g_devices_gone;
   if (g_batch_owner == this) g_batch_owner = nullptr;  // waiting draws are dropped with the device
   for (Surface*& t : tex_) SafeRelease(t);
   SafeRelease(rt_);

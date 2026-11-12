@@ -11,8 +11,15 @@
 #include "surface.h"
 
 namespace crash { void OnModeChange(DWORD w, DWORD h); }
+#if defined(_MSC_VER)
+#include <intrin.h>
+#define DD_RETADDR() _ReturnAddress()
+#else
+#define DD_RETADDR() __builtin_return_address(0)
+#endif
 
 namespace dd {
+extern unsigned g_surface_gen;
 
 using d3d7::D3D_OK;
 using d3d7::D3DENUMRET_CANCEL;
@@ -145,6 +152,7 @@ HRESULT DirectDraw::CreateSurface(LPDDSURFACEDESC2 desc, LPDIRECTDRAWSURFACE7* o
   Surface* s = nullptr;
   HRESULT hr = Surface::Create(this, *desc, &s);
   if (FAILED(hr)) return hr;
+  s->creator_ = reinterpret_cast<uintptr_t>(DD_RETADDR());
   *out = s;
   return DD_OK;
 }
@@ -258,6 +266,7 @@ HRESULT DirectDraw::SetDisplayMode(DWORD w, DWORD h, DWORD bpp, DWORD, DWORD) {
   DD_LOCK;
   Log("SetDisplayMode %lux%lux%lu (virtual)", w, h, bpp);
   crash::OnModeChange(w, h);
+  ++g_surface_gen;
   if (!w || !h) return DDERR_INVALIDMODE;
   mode_w_ = w;
   mode_h_ = h;
