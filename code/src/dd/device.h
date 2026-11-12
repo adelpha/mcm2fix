@@ -36,6 +36,7 @@ enum BatchBreak : int {
   kBreakShape,     // a draw that is not merged (lines, points, processed vertices, bad indices)
   kBreakLayout,    // a different vertex format
   kBreakFull,
+  kBreakStatic,    // between cached (StaticGeoMB) and uploaded vertices
   kBreakOther,
   kBreakCount
 };
@@ -269,7 +270,10 @@ class Device : public d3d7::IDirect3DDevice7 {
     FvfLayout layout;
     DWORD nverts = 0;
     unsigned draws = 0;
+    bool stat = false;             // vertices already in the scenery cache (StaticGeoMB)
+    std::vector<uint32_t> idx32;   // then: triangle list into the cache's vertex buffer
   };
+  void SubmitStatic(const std::vector<uint32_t>& idx);
   Batch batch_, batch_out_;
   bool flushing_ = false;
   std::vector<uint8_t> scratch_;

@@ -94,6 +94,8 @@ using InitFn = void(__fastcall*)(uintptr_t self, void* edx);
 
 bool Logging() { return GetConfig().race_title_log; }
 
+bool g_in_game = false;  // InstallRaceTitleHooks ran (not in tests/dd_smoke)
+
 double Now() {
   static LARGE_INTEGER f{};
   if (!f.QuadPart) QueryPerformanceFrequency(&f);
@@ -495,6 +497,7 @@ void DrawBanner(Surface* rt, const std::string& name, const std::string& sub, co
 }  // namespace
 
 void InstallRaceTitleHooks() {
+  g_in_game = true;
   const Config& c = GetConfig();
   if (!c.race_title && !c.announcer) {
     Log("race title: off (RaceTitle=0, Announcer=0), the game's corner text stays");
@@ -718,7 +721,7 @@ void AnnouncerTick() {
 }  // namespace
 
 void RaceTitleDraw(Surface* rt) {
-  if (!rt || g.drawn_this_frame) return;
+  if (!g_in_game || !rt || g.drawn_this_frame) return;  // the game's memory is only there in the game
   if (rt->Width() < 320 || rt->Height() < 200) return;  // not the screen
   g.drawn_this_frame = true;
   PodiumWatch();

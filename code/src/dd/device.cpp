@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstring>
 #include <set>
+#include <unordered_map>
 #include <string>
 
 #include "../config.h"
@@ -615,11 +616,12 @@ namespace {
 
 constexpr DWORD kBatchMaxVerts = 16384;
 constexpr size_t kBatchMaxIdx = 49152;
+constexpr size_t kStaticBatchMaxIdx = 196608;
 
 const char* const kBreakNames[kBreakCount] = {"render state", "stage state", "texture", "transform", "viewport",
                                               "render target", "material/light", "clear", "begin/end scene",
                                               "surface access", "flip", "screen-space draw", "not mergeable",
-                                              "vertex format", "full", "other"};
+                                              "vertex format", "full", "cached/uploaded vertices", "other"};
 
 struct BatchStats {
   unsigned seen = 0;       // 3D draws from the game
@@ -640,6 +642,235 @@ bool SameLayout(const FvfLayout& a, const FvfLayout& b) {
   for (int i = 0; i < a.ntex && i < 8; ++i)
     if (a.tex[i] != b.tex[i] || a.tex_dim[i] != b.tex_dim[i]) return false;
   return true;
+}
+
+// The game's vertices (layout l, from src, count of them) in our format.
+// clip: ProcessVertices output for this range (mode 2), else null.
+void ConvertVerts(const FvfLayout& l, const uint8_t* src, DWORD count, int set0, int set1,
+                  const VertexBuffer::Processed* clip, GpuVertex* out) {
+  // Fixed-size copies only (a variable size became a memcpy call per field).
+  const int t0 = set0 < l.ntex ? l.tex[set0] : -1, t1 = set1 < l.ntex ? l.tex[set1] : -1;
+  const bool t0_uv = t0 >= 0 && l.tex_dim[set0] >= 2, t1_uv = t1 >= 0 && l.tex_dim[set1] >= 2;
+  for (DWORD i = 0; i < count; ++i, src += l.stride) {
+    const uint8_t* s = src;
+    GpuVertex& v = out[i];
+    if (clip) {
+      std::memcpy(v.pos, clip[i].clip, 16);
+    } else if (l.tl) {
+      std::memcpy(v.pos, s, 16);
+    } else {
+      std::memcpy(v.pos, s, 12);
+      v.pos[3] = 1.0f;
+    }
+    v.diffuse = 0xffffffff;
+    v.specular = 0;
+    if (l.diffuse >= 0) std::memcpy(&v.diffuse, s + l.diffuse, 4);
+    if (l.specular >= 0) std::memcpy(&v.specular, s + l.specular, 4);
+    v.t0[0] = v.t0[1] = v.t1[0] = v.t1[1] = 0;
+    if (t0_uv) std::memcpy(v.t0, s + t0, 8);
+    else if (t0 >= 0) std::memcpy(v.t0, s + t0, 4);
+    if (t1_uv) std::memcpy(v.t1, s + t1, 8);
+    else if (t1 >= 0) std::memcpy(v.t1, s + t1, 4);
+  }
+}
+
+// ------------------------------------------------- scenery vertex cache
+//
+// StaticGeoMB: most 3D draws in a race (terrain patches, trees, scenery) send
+// exactly the same vertices every frame, and each frame they were converted
+// to our format, copied into the batch and copied to the GPU again. Draws
+// that go through batching are looked up here by where their vertices are,
+// how many, their layout and texture coordinate sets; the game's bytes are
+// kept and compared in full every time, so a draw is only taken from the
+// cache when it is byte for byte what was converted. The second time a draw
+// is seen unchanged its converted vertices go into one big GPU buffer; from
+// then on a batch of such draws only sends indices. A source that keeps
+// changing (smoothed or animated objects, shared scratch memory) is marked
+// volatile and skipped. When the buffer is full the cache starts again.
+struct StaticEntry {
+  const uint8_t* src = nullptr;
+  DWORD count = 0;
+  FvfLayout layout;
+  int set0 = 0, set1 = 0;
+  std::vector<uint8_t> raw;  // the game's bytes as last seen
+  UINT base = 0;             // first vertex in the cache buffer, when uploaded
+  bool uploaded = false;
+  bool volatile_ = false;
+  uint8_t changes = 0;
+};
+struct StaticStats {
+  unsigned lookups = 0, hits = 0, uploads = 0, first_seen = 0, changed = 0, volatile_skips = 0, made_volatile = 0,
+           too_big = 0, collisions = 0, resets = 0, raw_full = 0;
+  uint64_t hit_verts = 0, upload_verts = 0, miss_verts = 0, compare_bytes = 0;
+  unsigned static_batches = 0, static_draws = 0;
+};
+struct StaticGeo {
+  ID3D11Device* device = nullptr;
+  ID3D11Buffer* vb = nullptr;  // converted vertices
+  UINT cap = 0, used = 0;      // in vertices
+  ID3D11Buffer* ib = nullptr;  // 32-bit indices, written per batch
+  UINT ib_size = 0, ib_pos = 0;
+  bool failed = false;
+  std::unordered_map<uint64_t, StaticEntry> map;
+  size_t raw_bytes = 0;
+  std::vector<GpuVertex> tmp;
+  StaticStats st;
+  DWORD last_report = 0;
+} g_sg;
+constexpr size_t kStaticRawMax = 48u << 20;  // game bytes kept for comparing
+
+void StaticReset(const char* why) {
+  if (!g_sg.map.empty() && GetConfig().static_geo_log)
+    Log("scenery cache: emptied (%s): %u entries, %u of %u vertices used", why, static_cast<unsigned>(g_sg.map.size()),
+        g_sg.used, g_sg.cap);
+  g_sg.map.clear();
+  g_sg.raw_bytes = 0;
+  g_sg.used = 0;
+  ++g_sg.st.resets;
+}
+
+bool StaticReady() {
+  const int mb = GetConfig().static_geo_mb;
+  if (mb <= 0 || g_sg.failed || IsD3D9()) return false;
+  Backend& b = B();
+  if (!b.device) return false;
+  if (g_sg.device != b.device) {
+    SafeRelease(g_sg.vb);
+    SafeRelease(g_sg.ib);
+    StaticReset("new Direct3D device");
+    g_sg.device = b.device;
+    D3D11_BUFFER_DESC d{};
+    d.Usage = D3D11_USAGE_DEFAULT;
+    d.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+    g_sg.cap = static_cast<UINT>((static_cast<uint64_t>(mb) << 20) / sizeof(GpuVertex));
+    d.ByteWidth = g_sg.cap * sizeof(GpuVertex);
+    HRESULT h1 = b.device->CreateBuffer(&d, nullptr, &g_sg.vb);
+    D3D11_BUFFER_DESC i{};
+    i.Usage = D3D11_USAGE_DYNAMIC;
+    i.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    i.BindFlags = D3D11_BIND_INDEX_BUFFER;
+    i.ByteWidth = g_sg.ib_size = 4u << 20;
+    HRESULT h2 = b.device->CreateBuffer(&i, nullptr, &g_sg.ib);
+    g_sg.ib_pos = 0;
+    if (FAILED(h1) || FAILED(h2) || !g_sg.vb || !g_sg.ib) {
+      Log("scenery cache: buffers not created (hr 0x%08lx / 0x%08lx), StaticGeoMB off", h1, h2);
+      SafeRelease(g_sg.vb);
+      SafeRelease(g_sg.ib);
+      g_sg.failed = true;
+      return false;
+    }
+    Log("scenery cache: %d MB GPU buffer (%u vertices) (StaticGeoLog=%d)", mb, g_sg.cap,
+        GetConfig().static_geo_log ? 1 : 0);
+  }
+  return true;
+}
+
+void StaticReport() {
+  const DWORD now = GetTickCount();
+  if (!g_sg.last_report) g_sg.last_report = now;
+  if (now - g_sg.last_report < 5000) return;
+  const double secs = (now - g_sg.last_report) / 1000.0;
+  g_sg.last_report = now;
+  const Config& c = GetConfig();
+  StaticStats& s = g_sg.st;
+  if (s.lookups && (c.static_geo_log || c.profile || c.batch_log)) {
+    Log("scenery cache %.1fs: %u lookups: %u from cache (%llu vertices), %u uploaded (%llu vertices), %u first seen, "
+        "%u changed, %u volatile skipped (%u made volatile), %u too big, %u key clashes; %llu vertices sent the old "
+        "way; %.1f MB compared; %u cached batches of %u draws; %u entries, %u/%u vertices used, %.1f MB kept, "
+        "%u resets, %u raw full",
+        secs, s.lookups, s.hits, static_cast<unsigned long long>(s.hit_verts), s.uploads,
+        static_cast<unsigned long long>(s.upload_verts), s.first_seen, s.changed, s.volatile_skips, s.made_volatile,
+        s.too_big, s.collisions, static_cast<unsigned long long>(s.miss_verts), s.compare_bytes / 1048576.0,
+        s.static_batches, s.static_draws, static_cast<unsigned>(g_sg.map.size()), g_sg.used, g_sg.cap,
+        g_sg.raw_bytes / 1048576.0, s.resets, s.raw_full);
+  }
+  s = StaticStats{};
+}
+
+// Where this draw's vertices are in the cache buffer, or -1 to send them.
+long StaticLookup(const uint8_t* src, DWORD count, const FvfLayout& l, int set0, int set1) {
+  if (!StaticReady()) return -1;
+  StaticReport();
+  StaticStats& s = g_sg.st;
+  ++s.lookups;
+  const size_t bytes = static_cast<size_t>(count) * l.stride;
+  uint64_t key = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(src));
+  key = key * 0x9E3779B97F4A7C15ull ^ count;
+  key = key * 0x9E3779B97F4A7C15ull ^ (static_cast<uint64_t>(l.stride) << 32 | static_cast<uint32_t>(l.diffuse));
+  key = key * 0x9E3779B97F4A7C15ull ^ (static_cast<uint64_t>(set0) << 8 | static_cast<uint64_t>(set1));
+  auto it = g_sg.map.find(key);
+  if (it == g_sg.map.end()) {
+    if (g_sg.raw_bytes + bytes > kStaticRawMax) {
+      ++s.raw_full;
+      StaticReset("kept bytes full");
+      s.miss_verts += count;
+      return -1;
+    }
+    StaticEntry e;
+    e.src = src;
+    e.count = count;
+    e.layout = l;
+    e.set0 = set0;
+    e.set1 = set1;
+    e.raw.assign(src, src + bytes);
+    g_sg.raw_bytes += bytes;
+    g_sg.map.emplace(key, std::move(e));
+    ++s.first_seen;
+    s.miss_verts += count;
+    return -1;
+  }
+  StaticEntry& e = it->second;
+  if (e.src != src || e.count != count || e.set0 != set0 || e.set1 != set1 || !SameLayout(e.layout, l)) {
+    ++s.collisions;
+    s.miss_verts += count;
+    return -1;
+  }
+  if (e.volatile_) {
+    ++s.volatile_skips;
+    s.miss_verts += count;
+    return -1;
+  }
+  s.compare_bytes += bytes;
+  if (std::memcmp(e.raw.data(), src, bytes) != 0) {
+    ++s.changed;
+    s.miss_verts += count;
+    e.uploaded = false;
+    if (++e.changes >= 3) {
+      e.volatile_ = true;
+      ++s.made_volatile;
+      g_sg.raw_bytes -= e.raw.size();
+      std::vector<uint8_t>().swap(e.raw);
+    } else {
+      std::memcpy(e.raw.data(), src, bytes);
+    }
+    return -1;
+  }
+  if (!e.uploaded) {
+    if (count > g_sg.cap / 8) {
+      ++s.too_big;
+      s.miss_verts += count;
+      return -1;
+    }
+    if (g_sg.used + count > g_sg.cap) {
+      StaticReset("buffer full");
+      s.miss_verts += count;
+      return -1;
+    }
+    g_sg.tmp.resize(count);
+    ConvertVerts(l, src, count, set0, set1, nullptr, g_sg.tmp.data());
+    D3D11_BOX box{g_sg.used * static_cast<UINT>(sizeof(GpuVertex)), 0, 0,
+                  (g_sg.used + count) * static_cast<UINT>(sizeof(GpuVertex)), 1, 1};
+    B().ctx->UpdateSubresource(g_sg.vb, 0, &box, g_sg.tmp.data(), 0, 0);
+    e.base = g_sg.used;
+    e.uploaded = true;
+    g_sg.used += count;
+    ++s.uploads;
+    s.upload_verts += count;
+  } else {
+    s.hit_verts += count;
+  }
+  ++s.hits;
+  return static_cast<long>(e.base);
 }
 
 void ReportBatches() {
@@ -708,12 +939,55 @@ bool Device::BatchAdd(const Draw& d) {
   }
   const size_t tris = d.prim == D3DPT_TRIANGLELIST ? n / 3 : n - 2;
   if (tris * 3 > kBatchMaxIdx) return refuse(3);
+  // Scenery whose converted vertices are already on the GPU: indices only.
+  {
+    const int set0 = static_cast<int>(tss_[0][TSS_TEXCOORDINDEX] & 0xffff);
+    const int set1 = static_cast<int>(tss_[1][TSS_TEXCOORDINDEX] & 0xffff);
+    const long sbase = StaticLookup(d.verts + static_cast<size_t>(d.first) * d.layout.stride, d.count, d.layout,
+                                    set0, set1);
+    if (sbase >= 0) {
+      if (batch_.draws && (!batch_.stat || batch_.idx32.size() + tris * 3 > kStaticBatchMaxIdx))
+        FlushBatch(batch_.stat ? kBreakFull : kBreakStatic);
+      if (!batch_.draws) {
+        batch_.stat = true;
+        batch_.idx32.clear();
+      }
+      const uint32_t base = static_cast<uint32_t>(sbase);
+      auto at = [&](DWORD i) -> uint32_t { return base + (d.idx ? d.idx[i] : i); };
+      const size_t o = batch_.idx32.size();
+      batch_.idx32.resize(o + tris * 3);
+      uint32_t* out = batch_.idx32.data() + o;
+      if (d.prim == D3DPT_TRIANGLELIST) {
+        for (size_t t = 0; t < tris * 3; ++t) out[t] = at(static_cast<DWORD>(t));
+      } else if (d.prim == D3DPT_TRIANGLEFAN) {
+        for (size_t t = 0; t < tris; ++t) {
+          out[t * 3] = at(0);
+          out[t * 3 + 1] = at(static_cast<DWORD>(t + 1));
+          out[t * 3 + 2] = at(static_cast<DWORD>(t + 2));
+        }
+      } else {
+        for (size_t t = 0; t < tris; ++t) {
+          const DWORD a = static_cast<DWORD>(t);
+          out[t * 3] = at(t & 1 ? a + 1 : a);
+          out[t * 3 + 1] = at(t & 1 ? a : a + 1);
+          out[t * 3 + 2] = at(a + 2);
+        }
+      }
+      ++batch_.draws;
+      ++g_bs.merged;
+      ++g_sg.st.static_draws;
+      g_batch_owner = this;
+      return true;
+    }
+  }
+  if (batch_.draws && batch_.stat) FlushBatch(kBreakStatic);
   if (batch_.draws) {
     if (!SameLayout(batch_.layout, d.layout)) FlushBatch(kBreakLayout);
     else if (batch_.nverts + d.count > kBatchMaxVerts || batch_.idx.size() + tris * 3 > kBatchMaxIdx)
       FlushBatch(kBreakFull);
   }
   if (!batch_.draws) {
+    batch_.stat = false;
     batch_.layout = d.layout;
     batch_.verts.clear();
     batch_.idx.clear();
@@ -762,6 +1036,12 @@ void Device::FlushBatch(BatchBreak why) {
   batch_.draws = 0;
   if (g_batch_owner == this) g_batch_owner = nullptr;
   flushing_ = true;
+  if (batch_out_.stat) {
+    ++g_sg.st.static_batches;
+    SubmitStatic(batch_out_.idx32);
+    flushing_ = false;
+    return;
+  }
   Draw d;
   d.prim = D3DPT_TRIANGLELIST;
   d.verts = batch_out_.verts.data();
@@ -2099,31 +2379,8 @@ void Device::SubmitDraw(const Draw& d) {
   scratch_.resize(static_cast<size_t>(d.count) * sizeof(GpuVertex));
   auto* out = reinterpret_cast<GpuVertex*>(scratch_.data());
   const VertexBuffer::Processed* clip = mode == 2 ? d.vb->ClipData() : nullptr;
-  // Fixed-size copies only (a variable size became a memcpy call per field).
-  const int t0 = set0 < l.ntex ? l.tex[set0] : -1, t1 = set1 < l.ntex ? l.tex[set1] : -1;
-  const bool t0_uv = t0 >= 0 && l.tex_dim[set0] >= 2, t1_uv = t1 >= 0 && l.tex_dim[set1] >= 2;
-  const uint8_t* src = d.verts + static_cast<size_t>(d.first) * l.stride;
-  for (DWORD i = 0; i < d.count; ++i, src += l.stride) {
-    const uint8_t* s = src;
-    GpuVertex& v = out[i];
-    if (clip) {
-      std::memcpy(v.pos, clip[d.first + i].clip, 16);
-    } else if (l.tl) {
-      std::memcpy(v.pos, s, 16);
-    } else {
-      std::memcpy(v.pos, s, 12);
-      v.pos[3] = 1.0f;
-    }
-    v.diffuse = 0xffffffff;
-    v.specular = 0;
-    if (l.diffuse >= 0) std::memcpy(&v.diffuse, s + l.diffuse, 4);
-    if (l.specular >= 0) std::memcpy(&v.specular, s + l.specular, 4);
-    v.t0[0] = v.t0[1] = v.t1[0] = v.t1[1] = 0;
-    if (t0_uv) std::memcpy(v.t0, s + t0, 8);
-    else if (t0 >= 0) std::memcpy(v.t0, s + t0, 4);
-    if (t1_uv) std::memcpy(v.t1, s + t1, 8);
-    else if (t1 >= 0) std::memcpy(v.t1, s + t1, 4);
-  }
+  ConvertVerts(l, d.verts + static_cast<size_t>(d.first) * l.stride, d.count, set0, set1,
+               clip ? clip + d.first : nullptr, out);
   UINT vbytes = d.count * sizeof(GpuVertex);
   if (vbytes > vbuf_size_) {
     LogOnce("draw of %lu vertices too large", d.count);
@@ -2179,6 +2436,76 @@ void Device::SubmitDraw(const Draw& d) {
   } else {
     b.ctx->Draw(d.count, static_cast<UINT>(base_vertex));
   }
+  if (cur_msaa_) MsaaMarkDrawn();
+  if (has_depth) Note3DDraw();
+  rt_->MarkGpuWritten();
+  ++Counters().draws;
+}
+
+// A batch of scenery draws whose vertices are in the cache buffer
+// (StaticGeoMB): the same as SubmitDraw for untransformed vertices, but the
+// cache's vertex buffer with 32-bit indices.
+void Device::SubmitStatic(const std::vector<uint32_t>& idx) {
+  if (idx.empty() || !g_sg.vb || !g_sg.ib) return;
+  Draw od;
+  od.prim = D3DPT_TRIANGLELIST;
+  OccludeText(od);
+  if (prof::On()) GpuTimerMark();
+  bool has_depth = false;
+  {
+    PROF_ZONE(kStateApply);
+    if (!BindTarget(has_depth)) return;
+  }
+  Backend& b = B();
+  const UINT bytes = static_cast<UINT>(idx.size() * 4);
+  if (bytes > g_sg.ib_size) return;
+  prof::Scope prep_zone(prof::kVertexPrep);
+  D3D11_MAP map = D3D11_MAP_WRITE_NO_OVERWRITE;
+  if (g_sg.ib_pos + bytes > g_sg.ib_size) {
+    g_sg.ib_pos = 0;
+    map = D3D11_MAP_WRITE_DISCARD;
+  }
+  D3D11_MAPPED_SUBRESOURCE m{};
+  if (FAILED(b.ctx->Map(g_sg.ib, 0, map, 0, &m))) return;
+  std::memcpy(static_cast<uint8_t*>(m.pData) + g_sg.ib_pos, idx.data(), bytes);
+  b.ctx->Unmap(g_sg.ib, 0);
+  const UINT ioff = g_sg.ib_pos;
+  g_sg.ib_pos += bytes;
+
+  VSConstants vc{};
+  std::memcpy(vc.wvp, Wvp(), sizeof(vc.wvp));
+  vc.vp[0] = static_cast<float>(viewport_.dwX);
+  vc.vp[1] = static_cast<float>(viewport_.dwY);
+  vc.vp[2] = static_cast<float>(viewport_.dwWidth ? viewport_.dwWidth : 1);
+  vc.vp[3] = static_cast<float>(viewport_.dwHeight ? viewport_.dwHeight : 1);
+  vc.mode[0] = 0.0f;
+  prep_zone.Switch(prof::kStateApply);
+  Bound& bd = Cache(this);
+  ++g_cstat.draws;
+  ReportCache();
+  if (!bd.vc_ok || std::memcmp(&bd.vc, &vc, sizeof(vc)) != 0) {
+    b.ctx->UpdateSubresource(vs_cb_, 0, nullptr, &vc, 0, 0);
+    bd.vc = vc;
+    bd.vc_ok = true;
+    ++g_cstat.vs_consts;
+  }
+  D3D11_VIEWPORT v{vc.vp[0], vc.vp[1], vc.vp[2], vc.vp[3], viewport_.dvMinZ, viewport_.dvMaxZ};
+  if (!bd.vp_ok || std::memcmp(&bd.vp, &v, sizeof(v)) != 0) {
+    b.ctx->RSSetViewports(1, &v);
+    bd.vp = v;
+    bd.vp_ok = true;
+  }
+  ApplyState(false, true, has_depth);
+  // The cache's buffers instead of the per-draw ones; the next ordinary draw
+  // binds those again (bd.pipe).
+  const UINT stride = sizeof(GpuVertex), zero = 0;
+  b.ctx->IASetVertexBuffers(0, 1, &g_sg.vb, &stride, &zero);
+  b.ctx->IASetIndexBuffer(g_sg.ib, DXGI_FORMAT_R32_UINT, 0);
+  bd.pipe = false;
+  if (bd.topo != D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST)
+    b.ctx->IASetPrimitiveTopology(bd.topo = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+  prep_zone.Switch(prof::kDriverDraw);
+  b.ctx->DrawIndexed(static_cast<UINT>(idx.size()), ioff / 4, 0);
   if (cur_msaa_) MsaaMarkDrawn();
   if (has_depth) Note3DDraw();
   rt_->MarkGpuWritten();

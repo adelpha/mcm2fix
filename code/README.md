@@ -443,6 +443,14 @@ StateCache=1
 ; send each draw the game makes on its own (for troubleshooting).
 DrawBatch=1
 
+; StaticGeoMB: Direct3D 11, with DrawBatch. Graphics memory, in MB, for
+; scenery vertices kept on the graphics card between frames: terrain, trees
+; and objects that send exactly the same vertices every frame are converted
+; and uploaded once instead of every frame (each is compared in full with
+; what was cached, so a changed one is always sent fresh). 0 to 512.
+; Default 32. 0 = send every draw's vertices every frame, as before.
+StaticGeoMB=32
+
 ; =============================================================================
 ; 3. LOGGING
 ;
@@ -507,6 +515,11 @@ TextureLog=0
 ; gets: events given out early or held for a later step, held taps, joystick
 ; samples, plus a summary every 10 s. Default 0.
 InputLog=0
+
+; StaticGeoLog: every 5 s, how many draws came from the StaticGeoMB cache,
+; were uploaded, changed or were skipped, and when the cache was emptied.
+; Default 0.
+StaticGeoLog=0
 
 ; SortLog: the game's sorts per calling code every 10 s (count, largest,
 ; time). Sorts over 2 ms are always logged. Default 0.
