@@ -106,7 +106,6 @@ Track* FindTrack(void* bike) {
     if (!t.bike || now - t.seen >= 1000) {  // free, or a bike of an earlier race
       t = Track();
       t.seen = now;
-      t = Track();
       t.bike = bike;
       return &t;
     }
@@ -120,8 +119,10 @@ void TrackBike(void* bike, const char* who, float dt) {
   if (!t) return;
   const uint8_t* b = static_cast<uint8_t*>(bike);
   const float* pos = reinterpret_cast<const float*>(b + 0xc);
-  const float speed = *reinterpret_cast<const float*>(b + 0xbc);
-  const bool ground = b[0x108] != 0;
+  // Horizontal speed from the velocity at +0x64 (y is up).
+  const float* vel = reinterpret_cast<const float*>(b + 0x64);
+  const float speed = std::sqrt(vel[0] * vel[0] + vel[2] * vel[2]);
+  const bool ground = b[0x108] == 0;  // +0x108 = no wheel touching (set by the AI controller)
   const bool crashed = *reinterpret_cast<const int*>(b + 0x444) != 0;
   if (t->has_pos) {
     const float dx = pos[0] - t->pos[0], dy = pos[1] - t->pos[1], dz = pos[2] - t->pos[2];
@@ -146,7 +147,7 @@ void TrackBike(void* bike, const char* who, float dt) {
   } else if (t->air) {
     t->air = false;
     if (t->air_time >= 0.3f) {
-      patch::Log("ai: %s %p jump %.2f s, speed %.1f -> %.1f ft/s (%+.0f %%)", who, bike,
+      patch::Log("ai: %s %p jump %.2f s, horizontal speed %.1f -> %.1f ft/s (%+.0f %%)", who, bike,
                  t->air_time, t->takeoff_speed, speed,
                  t->takeoff_speed > 1.0f ? (speed / t->takeoff_speed - 1.0f) * 100.0f : 0.0f);
     }
@@ -154,12 +155,12 @@ void TrackBike(void* bike, const char* who, float dt) {
 }
 
 // AiAirDrag: computer riders lose this many percent of their horizontal speed
-// per second while airborne (+0x108 = on the ground; velocity at +0x64).
+// per second while airborne (+0x108 = no wheel touching; velocity at +0x64).
 void AirDrag(void* bike, float dt) {
   const int pct = GetConfig().ai_air_drag;
   if (pct <= 0) return;
   uint8_t* b = static_cast<uint8_t*>(bike);
-  if (b[0x108] != 0 || *reinterpret_cast<int*>(b + 0x444) != 0) return;
+  if (b[0x108] == 0 || *reinterpret_cast<int*>(b + 0x444) != 0) return;
   float k = 1.0f - pct / 100.0f * dt;
   if (k < 0.0f) k = 0.0f;
   float* vel = reinterpret_cast<float*>(b + 0x64);
