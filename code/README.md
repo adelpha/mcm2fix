@@ -311,16 +311,18 @@ ArrowScale=2.0
 
 ; AiAccelEasy / AiAccelNormal / AiAccelHard: how hard computer riders can
 ; accelerate on each difficulty, in percent of the game's base curve.
-; Defaults 110 / 130 / 150, the original game's values. Lower = they pull
+; Defaults 80 / 130 / 150. The original game uses 110 for Easy, which is
+; barely easier than Normal (especially in Supercross). Lower = they pull
 ; away more slowly out of corners and after landings.
-AiAccelEasy=110
+AiAccelEasy=80
 AiAccelNormal=130
 AiAccelHard=150
 
 ; AiTopSpeedEasy / AiTopSpeedNormal / AiTopSpeedHard: computer riders' top
-; speed on each difficulty, in percent, 50 to 150. Default 100 (the original
-; game, where difficulty does not change top speed).
-AiTopSpeedEasy=100
+; speed on each difficulty, in percent, 50 to 150. Defaults 90 / 100 / 100.
+; The original game uses 100 for all three (difficulty never changes top
+; speed).
+AiTopSpeedEasy=90
 AiTopSpeedNormal=100
 AiTopSpeedHard=100
 

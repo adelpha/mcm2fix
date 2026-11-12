@@ -50,14 +50,15 @@ void LoadConfig() {
   if (g_config.ai_rate < 0) g_config.ai_rate = 0;
   {
     static const char* kLevel[3] = {"Easy", "Normal", "Hard"};
-    static const int kAccel[3] = {110, 130, 150};
+    static const int kAccel[3] = {80, 130, 150};
+    static const int kTop[3] = {90, 100, 100};
     for (int d = 0; d < 3; ++d) {
       char key[32];
       std::snprintf(key, sizeof(key), "AiAccel%s", kLevel[d]);
       int v = GetPrivateProfileIntA("mcm2fix", key, kAccel[d], ini);
       g_config.ai_accel[d] = v < 10 ? 10 : v > 400 ? 400 : v;
       std::snprintf(key, sizeof(key), "AiTopSpeed%s", kLevel[d]);
-      v = GetPrivateProfileIntA("mcm2fix", key, 100, ini);
+      v = GetPrivateProfileIntA("mcm2fix", key, kTop[d], ini);
       g_config.ai_top_speed[d] = v < 50 ? 50 : v > 150 ? 150 : v;
     }
     g_config.ai_log = GetPrivateProfileIntA("mcm2fix", "AiLog", 0, ini) != 0;

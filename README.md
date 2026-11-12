@@ -150,8 +150,9 @@ Windows 10 and 11.
 - A built-in profiler for finding hitches (`Profile`).
 
 ### Other
-- **Computer rider tuning**: acceleration and top speed per difficulty
-  (`AiAccel*`, `AiTopSpeed*`).
+- **Easier Easy**: on Easy, computer riders accelerate less hard and have a
+  slightly lower top speed than in the original, where Easy was barely easier
+  than Normal. Tunable per difficulty (`AiAccel*`, `AiTopSpeed*`).
 - **In-game Help** opens `MCM2HELP.html` in your web browser.
 - **Renderer label**: "Direct3D 11" or "Direct3D 9" in the bottom right
   corner of the menus (`RendererLabel`).
@@ -372,8 +373,8 @@ The file has three parts:
 
 | Setting | Default | Values | Description |
 |---|---|---|---|
-| `AiAccelEasy`, `AiAccelNormal`, `AiAccelHard` | `110`, `130`, `150` | 10-400, percent | How hard computer riders can accelerate on each difficulty, in percent of the game's base curve. The defaults are the original game's. Lower values make them pull away more slowly out of corners and after landings. |
-| `AiTopSpeedEasy`, `AiTopSpeedNormal`, `AiTopSpeedHard` | `100` | 50-150, percent | Computer riders' top speed on each difficulty. The original game doesn't change top speed with difficulty. |
+| `AiAccelEasy`, `AiAccelNormal`, `AiAccelHard` | `80`, `130`, `150` | 10-400, percent | How hard computer riders can accelerate on each difficulty, in percent of the game's base curve. Lower values make them pull away more slowly out of corners and after landings. The original game uses `110` for Easy, which is barely easier than Normal, especially in Supercross. |
+| `AiTopSpeedEasy`, `AiTopSpeedNormal`, `AiTopSpeedHard` | `90`, `100`, `100` | 50-150, percent | Computer riders' top speed on each difficulty. The original game uses `100` for all three. |
 
 ### 2. Advanced: changing these is not recommended
 
