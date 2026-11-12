@@ -82,6 +82,8 @@ struct Buffer {
   bool muted = false;
   bool playing = false, looping = false;
   bool logged_max = false;
+  void* iface3d = nullptr;  // its IDirectSound3DBuffer (SoundPauseLog snapshots)
+  unsigned mutes = 0, unmutes = 0;
 };
 
 // Originals per vtable, by slot.
@@ -147,7 +149,8 @@ void Hook(void* obj, int slot, void* fn) {
 }
 
 const char* g_trace_tag = nullptr;  // sound trace running (RestartLog, SoundPauseLog)
-bool Detail() { return (g_log || (g_pause_log && g_trace_tag)) && g_log_left > 0 && g_log_left--; }
+bool Detail() { return (g_log || g_pause_log) && g_log_left > 0 && g_log_left--; }
+volatile LONG g_all_commits = 0, g_set3d_deferred = 0, g_set3d_now = 0;
 
 Buffer* Find(void* iface) {
   auto it = g_iface.find(iface);
@@ -205,6 +208,7 @@ void Update(Buffer& b, const char* why) {
   const HRESULT hr =
       g_watch ? S_OK : reinterpret_cast<SetVolumeFn>(Orig(b.buffer, 0x3c / 4))(b.buffer, out ? kVolumeMin : b.volume);
   InterlockedIncrement(out ? &g_mutes : &g_unmutes);
+  ++(out ? b.mutes : b.unmutes);
   if (Detail()) {
     // DirectSound's attenuation stops at max distance at this level, then the
     // flag mutes: gain = min / (min + rolloff * (max - min)).
@@ -223,6 +227,7 @@ void Update(Buffer& b, const char* why) {
 // moved but a sound not yet (or the other way round), which flipped sounds
 // near the edge every frame (perf-18).
 void Changed(Buffer& b, DWORD apply, const char* why) {
+  InterlockedIncrement((apply & kDeferred) ? &g_set3d_deferred : &g_set3d_now);
   if (apply & kDeferred) {
     g_dirty = true;
     InterlockedIncrement(&g_deferred);
@@ -297,7 +302,10 @@ HRESULT WINAPI QueryInterface(void* self, const GUID& iid, void** out) {
   if (!b) return hr;
   ++b->refs;
   g_iface[*out] = b;
-  if (iid == kIID_3DBuffer) Hook3D(*out);
+  if (iid == kIID_3DBuffer) {
+    Hook3D(*out);
+    b->iface3d = *out;
+  }
   else HookUnknown(*out);
   return hr;
 }
@@ -535,6 +543,7 @@ HRESULT WINAPI SetAllParameters3D(void* self, const Ds3dBuffer* p, DWORD apply) 
   using Fn = HRESULT(WINAPI*)(void*, const Ds3dBuffer*, DWORD);
   const HRESULT hr = reinterpret_cast<Fn>(Orig(self, 0x30 / 4))(self, p, apply);
   Lock lock;
+  Trace(self, 'A', static_cast<long>(apply), hr);
   Buffer* b = Find(self);
   if (b && p && SUCCEEDED(hr)) {
     b->pos = p->pos;
@@ -581,6 +590,7 @@ HRESULT WINAPI SetMode(void* self, DWORD mode, DWORD apply) {
   using Fn = HRESULT(WINAPI*)(void*, DWORD, DWORD);
   const HRESULT hr = reinterpret_cast<Fn>(Orig(self, 0x48 / 4))(self, mode, apply);
   Lock lock;
+  Trace(self, 'M', static_cast<long>(mode), hr);
   Buffer* b = Find(self);
   if (b && SUCCEEDED(hr)) {
     b->mode = mode;
@@ -593,6 +603,7 @@ HRESULT WINAPI SetPosition3D(void* self, float x, float y, float z, DWORD apply)
   using Fn = HRESULT(WINAPI*)(void*, float, float, float, DWORD);
   const HRESULT hr = reinterpret_cast<Fn>(Orig(self, 0x4c / 4))(self, x, y, z, apply);
   Lock lock;
+  Trace(self, 'X', static_cast<long>(apply), hr);
   Buffer* b = Find(self);
   if (b && SUCCEEDED(hr)) {
     b->pos = {x, y, z};
@@ -631,6 +642,8 @@ HRESULT WINAPI ListenerCommit(void* self) {
   using Fn = HRESULT(WINAPI*)(void*);
   const HRESULT hr = reinterpret_cast<Fn>(Orig(self, 0x44 / 4))(self);
   Lock lock;
+  InterlockedIncrement(&g_all_commits);
+  if (FAILED(hr)) Failed(self, "CommitDeferredSettings", hr);
   if (g_dirty) {
     g_dirty = false;
     InterlockedIncrement(&g_commit_checks);
@@ -846,6 +859,7 @@ void ApplySoundFixes() {
   LogCompat("start");
   g_mode = GetConfig().sound_max_distance_mute;
   g_pause_log = GetConfig().sound_pause_log;
+  if (g_pause_log) g_log_left = 600;
   if (!g_mode && !g_pause_log) {
     patch::Log("sound: SoundMaxDistanceMute=0, 3D sounds left to DirectSound");
     return;
@@ -934,7 +948,7 @@ void Snapshot(const char* tag) {
     const bool primary = e.second.flags & kCapsPrimary;
     // Every buffer that is playing, lost or failed, plus the primary; the
     // rest are counted only.
-    if (primary || (st & 3) || FAILED(hs) || g_pause_events <= 2)
+    if (primary || (st & 3) || FAILED(hs) || g_pause_events <= 2 || (t && (t->muted || t->id < 4)))
       patch::Log("sound pause (%s):   #%d %p %s %lu bytes: status %08lx%s%s%s (hr %08lx), volume %ld (hr %08lx)%s, "
                  "frequency %ld (hr %08lx)%s",
                  tag, e.second.id, buf, primary ? "PRIMARY" : (e.second.flags & kCapsCtrl3D) ? "3D" : "2D",
@@ -942,12 +956,38 @@ void Snapshot(const char* tag) {
                  static_cast<unsigned long>(hs), vol, static_cast<unsigned long>(hv),
                  t ? (t->muted ? " [muted by mcm2fix]" : "") : "", freq, static_cast<unsigned long>(hf),
                  t ? (t->playing ? " [game started it]" : " [game stopped it]") : "");
-    if (t && (primary || (st & 3) || t->muted || g_pause_events <= 2))
-      patch::Log("sound pause (%s):     3D #%d: distance %.1f, max %.1f, mode %lu, %s, game volume %ld", tag, t->id,
-                 Distance(*t), t->max_dist, t->mode, t->muted ? "MUTED by mcm2fix" : "not muted", t->volume);
+    if (t && ((st & 3) || t->muted || g_pause_events <= 2 || t->id < 4)) {
+      // What DirectSound itself holds for the buffer (deferred values included).
+      Vec dp{};
+      float dmax = -1;
+      DWORD dmode = 99;
+      HRESULT hp = E_POINTER;
+      if (void* i3 = t->iface3d) {
+        using GetVecFn = HRESULT(WINAPI*)(void*, Vec*);
+        using GetFloatFn = HRESULT(WINAPI*)(void*, float*);
+        using GetDwFn = HRESULT(WINAPI*)(void*, DWORD*);
+        hp = reinterpret_cast<GetVecFn>(Orig(i3, 0x28 / 4))(i3, &dp);
+        reinterpret_cast<GetFloatFn>(Orig(i3, 0x1c / 4))(i3, &dmax);
+        reinterpret_cast<GetDwFn>(Orig(i3, 0x24 / 4))(i3, &dmode);
+      }
+      patch::Log("sound pause (%s):     3D #%d: our distance %.1f (pos %.1f %.1f %.1f), max %.1f, mode %lu, %s "
+                 "(%u mutes, %u unmutes so far), game volume %ld; DirectSound has pos %.1f %.1f %.1f (hr %08lx), "
+                 "max %.1f, mode %lu",
+                 tag, t->id, Distance(*t), t->pos.x, t->pos.y, t->pos.z, t->max_dist, t->mode,
+                 t->muted ? "MUTED by mcm2fix" : "not muted", t->mutes, t->unmutes, t->volume, dp.x, dp.y, dp.z,
+                 static_cast<unsigned long>(hp), dmax, dmode);
+    }
   }
-  patch::Log("sound pause (%s): listener %p at %.1f %.1f %.1f (placed %d), 3D changes waiting for a commit %d", tag,
-             g_listener, g_listener_pos.x, g_listener_pos.y, g_listener_pos.z, g_listener_set ? 1 : 0, g_dirty ? 1 : 0);
+  Vec lp{};
+  HRESULT hl = E_POINTER;
+  if (g_listener) hl = reinterpret_cast<HRESULT(WINAPI*)(void*, Vec*)>(Orig(g_listener, 0x1c / 4))(g_listener, &lp);
+  patch::Log("sound pause (%s): listener %p at %.1f %.1f %.1f (placed %d; DirectSound has %.1f %.1f %.1f, hr %08lx), "
+             "3D changes waiting for a commit %d; since last snapshot: %ld listener commits, %ld deferred / %ld "
+             "immediate 3D buffer changes, %ld mutes, %ld unmutes", tag,
+             g_listener, g_listener_pos.x, g_listener_pos.y, g_listener_pos.z, g_listener_set ? 1 : 0, lp.x, lp.y, lp.z,
+             static_cast<unsigned long>(hl), g_dirty ? 1 : 0, InterlockedExchange(&g_all_commits, 0),
+             InterlockedExchange(&g_set3d_deferred, 0), InterlockedExchange(&g_set3d_now, 0),
+             InterlockedExchange(&g_mutes, 0), InterlockedExchange(&g_unmutes, 0));
   patch::Log("sound pause (%s): %u buffers, %d playing, %d looping, %d lost, %d status calls failed; %ld failed "
              "DirectSound calls so far",
              tag, static_cast<unsigned>(g_all.size()), playing, looping, lost, failed, g_fails);
