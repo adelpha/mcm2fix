@@ -87,5 +87,8 @@ The HUD fonts in FONTS are Contrail One (c) 2011 Sorkin Type Co and DSEG7
 Classic (c) 2017 keshikan, both under the SIL Open Font License 1.1 (see
 licenses\ContrailOne-OFL.txt and licenses\DSEG-OFL.txt).
 
+The announcer sounds in SOUNDS come from Pixabay (https://pixabay.com),
+under the Pixabay Content License.
+
 Motocross Madness 2 is (c) Microsoft / Rainbow Studios. This fix contains
 no game files.
