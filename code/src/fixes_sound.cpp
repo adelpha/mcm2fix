@@ -32,6 +32,8 @@
 #include "config.h"
 #include "patch.h"
 
+void LogCompat(const char* when);
+
 namespace {
 
 // DirectSound definitions (no dsound.h dependency).
@@ -661,6 +663,7 @@ HRESULT WINAPI MyDirectSoundCreate(const GUID* dev, void** out, void* outer) {
     if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                            static_cast<LPCSTR>(**reinterpret_cast<void***>(*out)), &m))
       GetModuleFileNameA(m, path, MAX_PATH);
+    LogCompat("DirectSoundCreate");
     patch::Log("sound: DirectSoundCreate -> %p (%s); 3D buffers beyond their max distance will be %s", *out, path,
                g_watch ? "logged only (watch mode)" : "muted");
   } else {
@@ -671,6 +674,26 @@ HRESULT WINAPI MyDirectSoundCreate(const GUID* dev, void** out, void* outer) {
 
 }  // namespace
 
+// Which exe this is and whether Windows' compatibility layer is active in the
+// process: an AppCompat layer or shim matched by exe name can change what the
+// game's DirectSound calls do (Mcm2.exe vs a renamed copy behave differently).
+void LogCompat(const char* when) {
+  char exe[MAX_PATH] = {};
+  GetModuleFileNameA(nullptr, exe, MAX_PATH);
+  char layer[512] = {};
+  const DWORD n = GetEnvironmentVariableA("__COMPAT_LAYER", layer, sizeof(layer));
+  char mods[256] = {};
+  const char* names[] = {"apphelp.dll", "AcLayers.dll", "AcGenral.dll", "AcSpecfc.dll", "AcXtrnal.dll", "AcWinRT.dll",
+                         "aclua.dll"};
+  for (const char* m : names)
+    if (GetModuleHandleA(m)) {
+      if (mods[0]) strncat(mods, ", ", sizeof(mods) - strlen(mods) - 1);
+      strncat(mods, m, sizeof(mods) - strlen(mods) - 1);
+    }
+  patch::Log("compat (%s): exe %s; __COMPAT_LAYER %s; compatibility modules loaded: %s", when, exe,
+             n && n < sizeof(layer) ? layer : "(not set)", mods[0] ? mods : "none");
+}
+
 void SoundTraceStart(const char* tag, DWORD ms) {
   if (!g_cs_ready) return;
   Lock lock;
@@ -680,6 +703,7 @@ void SoundTraceStart(const char* tag, DWORD ms) {
 }
 
 void ApplySoundFixes() {
+  LogCompat("start");
   if (!GetConfig().sound_max_distance_mute) {
     patch::Log("sound: SoundMaxDistanceMute=0, 3D sounds left to DirectSound");
     return;
