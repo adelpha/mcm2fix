@@ -17,8 +17,6 @@ struct Config {
   bool sound_log = false;     // SoundLog: log 3D sound buffers, mutes and unmutes
   bool state_cache = true;    // StateCache: skip D3D11 state the device already has bound (device.cpp)       // FastCrt: QPC game clock and table-driven _stricmp (fixes_perf.cpp)
   bool draw_batch = true;     // DrawBatch: send 3D draws in a row with the same state as one draw (device.cpp)
-  int static_geo_mb = 32;     // StaticGeoMB: GPU memory for scenery vertices kept between frames (0 = off; device.cpp)
-  bool static_geo_log = false; // StaticGeoLog: log the scenery vertex cache every 5 s
   bool batch_log = false;     // BatchLog: log draw batching every 5 s
   bool draw_log = false;      // DrawLog: measure which draw calls could be merged (dd/drawlog.cpp)
   bool dd_stats = false;      // DDStats: log renderer activity every 2 seconds

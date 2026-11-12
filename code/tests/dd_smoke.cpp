@@ -105,7 +105,7 @@ int main(int argc, char** argv) {
   GetModuleFileNameA(nullptr, ini, MAX_PATH);
   std::strcpy(std::strrchr(ini, '\\') + 1, "mcm2fix.ini");
   FILE* f = std::fopen(ini, "w");
-  std::fprintf(f, "[mcm2fix]\nRenderer=%s\nAntialiasing=4\nAlphaToCoverage=2\nAlphaLog=1\nVSync=0\nD3D9Log=1\nDDStats=1\nGdiLog=1\nTextLog=1\nGpuText=%d\nTextureReplace=0\nProfile=%d\nProfileSampleUs=%d\nRaceTitle=0\nAnnouncer=0\nStaticGeoLog=1\n", api,
+  std::fprintf(f, "[mcm2fix]\nRenderer=%s\nAntialiasing=4\nAlphaToCoverage=2\nAlphaLog=1\nVSync=0\nD3D9Log=1\nDDStats=1\nGdiLog=1\nTextLog=1\nGpuText=%d\nTextureReplace=0\nProfile=%d\nProfileSampleUs=%d\n", api,
                gputext ? 1 : 0, profile ? 1 : 0, sample_us);
   if (exclusive) std::fprintf(f, "Fullscreen=Exclusive\n");
   std::fclose(f);

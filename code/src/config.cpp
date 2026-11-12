@@ -87,10 +87,6 @@ void LoadConfig() {
   g_config.state_cache = GetPrivateProfileIntA("mcm2fix", "StateCache", 1, ini) != 0;
   g_config.dd_stats = GetPrivateProfileIntA("mcm2fix", "DDStats", 0, ini) != 0;
   g_config.draw_batch = GetPrivateProfileIntA("mcm2fix", "DrawBatch", 1, ini) != 0;
-  g_config.static_geo_mb = GetPrivateProfileIntA("mcm2fix", "StaticGeoMB", 32, ini);
-  if (g_config.static_geo_mb < 0) g_config.static_geo_mb = 0;
-  if (g_config.static_geo_mb > 512) g_config.static_geo_mb = 512;
-  g_config.static_geo_log = GetPrivateProfileIntA("mcm2fix", "StaticGeoLog", 0, ini) != 0;
   g_config.batch_log = GetPrivateProfileIntA("mcm2fix", "BatchLog", 0, ini) != 0;
   g_config.draw_log = GetPrivateProfileIntA("mcm2fix", "DrawLog", 0, ini) != 0;
   {
