@@ -23,6 +23,9 @@ wrappers.
   uses the fonts in the FONTS folder (loaded by the game only, nothing is
   installed in Windows); HudFont and HudDigitFont in mcm2fix.ini choose
   others, or empty for the game's own.
+- A race announcer: countdown voices, an air horn at the start, a final
+  lap call and a podium sound (the .wav files in the SOUNDS folder;
+  Announcer=0 in mcm2fix.ini turns it off).
 - Smooth frame pacing at any refresh rate, plus graphics options
   (antialiasing, anisotropic filtering, view distance, FOV) and fixes for the
   race direction arrow and Restart Race.
@@ -41,8 +44,8 @@ Requirements
 
 Installing
 ----------
-Copy d3drm.dll, mcm2fix.ini, MCM2HELP.html and the FONTS folder into the
-game folder, next to Mcm2.exe, and start Mcm2.exe. If a different Mcm2.exe
+Copy d3drm.dll, mcm2fix.ini, MCM2HELP.html and the FONTS and SOUNDS folders
+into the game folder, next to Mcm2.exe, and start Mcm2.exe. If a different Mcm2.exe
 is found, the fix does nothing and says so in the log.
 
 d3drm.dll is mcm2fix itself. The game loads a library of that name, which
@@ -59,7 +62,7 @@ where only the main log is on.
 Uninstalling
 ------------
 Delete d3drm.dll, mcm2fix.ini, MCM2HELP.html, README.txt, README.md and the
-FONTS and licenses folders from the game folder.
+FONTS, SOUNDS and licenses folders from the game folder.
 Settings are kept in HKEY_CURRENT_USER\Software\mcm2fix\Motocross Madness 2,
 and saves and the log in %LOCALAPPDATA%\Motocross Madness 2.
 
@@ -83,6 +86,9 @@ rebuilt against a modified FFmpeg.
 The HUD fonts in FONTS are Contrail One (c) 2011 Sorkin Type Co and DSEG7
 Classic (c) 2017 keshikan, both under the SIL Open Font License 1.1 (see
 licenses\ContrailOne-OFL.txt and licenses\DSEG-OFL.txt).
+
+The announcer sounds in SOUNDS come from Pixabay (https://pixabay.com),
+under the Pixabay Content License.
 
 Motocross Madness 2 is (c) Microsoft / Rainbow Studios. This fix contains
 no game files.
