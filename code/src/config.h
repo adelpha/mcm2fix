@@ -12,6 +12,7 @@ struct Config {
   bool profile = false;       // Profile: performance profiling (see prof.cpp)
   int profile_sample_us = 1000;  // ProfileSampleUs: sampling profiler interval (0 = off)
   bool fast_crt = true;
+  bool fast_game_code = true;  // FastGameCode: badly compiled game loops rewritten in place, same results (fixes_perf.cpp)
   int async_sound = 2;        // AsyncSound: 3D sound listener commit on a worker thread; 2 = started at Present (fixes_perf.cpp)
   int sound_max_distance_mute = 1;  // SoundMaxDistanceMute: 1 = mute 3D sounds past their max distance ourselves (DSOAL ignores it), 2 = only log them (fixes_sound.cpp)
   bool sound_log = false;     // SoundLog: log 3D sound buffers, mutes and unmutes

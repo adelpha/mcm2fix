@@ -133,6 +133,9 @@ Windows 10 and 11.
   (`AsyncSound`).
 - The game's case-insensitive name compares use a lookup table instead of
   the slow CRT locale path (`FastCrt`).
+- A few of the game's own loops that its 1999 compiler built badly are
+  rewritten in place with identical maths (`FastGameCode`): so far the terrain
+  texture coordinate loop, about 13x faster.
 - **No freezes on tree-heavy maps** (`FastSort`, `TreeCacheMB`). The game's
   old qsort went quadratic sorting its tree cache, freezing for up to 125 ms
   while turning; it now uses a merge sort and trims that cache far less often.
@@ -401,6 +404,7 @@ troubleshooting.
 | `AsyncSound` | `2` | `0`, `1`, `2` | Where the 3D sound position update runs. The game makes it every physics step, and it's slow on Windows 10/11 because it holds the sound system's lock. `2` = a worker thread, started while the frame waits for VSync. `1` = a worker thread, started at once. `0` = the game thread, as in the original (can cause stutter). |
 | `SoundMaxDistanceMute` | `1` | `0`, `1`, `2` | mcm2fix mutes 3D sounds beyond their maximum distance, as Windows' DirectSound does. This is needed with DSOAL, which ignores that rule and otherwise leaves quiet looping fragments of distant riders' sounds. `2` changes nothing and only logs those sounds. |
 | `FastCrt` | `1` | `0`, `1` | The game's millisecond clock uses `QueryPerformanceCounter` instead of changing the Windows timer period on every call, and its case-insensitive name comparisons use a lookup table. Both were measurable slowdowns. |
+| `FastGameCode` | `1` | `0`, `1` | A few of the game's own loops that its 1999 compiler built badly are rewritten in place with the same maths, so results are exactly the same, only faster. So far: the terrain texture coordinate loop, which ran every frame and stalled the CPU, and the per-frame tree cache scan, which now reads ahead instead of waiting on memory. |
 | `FastSort` | `1` | `0`, `1` | The game's sorting uses a merge sort instead of the old C library qsort, which slows to a crawl when many items are equal. On tree-heavy maps that froze the game for 35-125 ms when turning the camera. Being stable, it also stops distant riders' engine sounds retriggering as quiet looping snippets. |
 | `TreeCacheMB` | `32` | `0`, 1-512 | The game's cache of built trees is only emptied when more than this many MB of it are unused (the original 256 KB emptied it constantly while turning, and the trees were then rebuilt). `0` = the original. |
 | `StateCache` | `1` | `0`, `1` | Direct3D 11 only: renderer state that's already set isn't sent again for every draw. `0` is slower and is for troubleshooting rendering problems. |
