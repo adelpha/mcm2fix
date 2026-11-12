@@ -307,6 +307,25 @@ ArrowTilt=10
 ; ArrowScale: size of the arrow, 0.25 to 8. Default 2.0. 1.0 = original size.
 ArrowScale=2.0
 
+; ------------------------------------------------------ Computer riders ----
+
+; AiAccelEasy / AiAccelNormal / AiAccelHard: how hard computer riders can
+; accelerate on each difficulty, in percent of the game's base curve.
+; Defaults 80 / 130 / 150. The original game uses 110 for Easy, which is
+; barely easier than Normal (especially in Supercross). Lower = they pull
+; away more slowly out of corners and after landings.
+AiAccelEasy=80
+AiAccelNormal=130
+AiAccelHard=150
+
+; AiTopSpeedEasy / AiTopSpeedNormal / AiTopSpeedHard: computer riders' top
+; speed on each difficulty, in percent, 50 to 150. Defaults 90 / 100 / 100.
+; The original game uses 100 for all three (difficulty never changes top
+; speed).
+AiTopSpeedEasy=90
+AiTopSpeedNormal=100
+AiTopSpeedHard=100
+
 ; =============================================================================
 ; 2. ADVANCED - CHANGING THESE IS NOT RECOMMENDED
 ;
@@ -474,6 +493,11 @@ Log=1
 ; D3D9Log: Direct3D 9 renderer details: card capabilities, the first frames,
 ; fallbacks. Default 0.
 D3D9Log=0
+
+; AiLog: computer rider speeds every 5 s, plus every jump (air time, speed at
+; takeoff and landing) and respawn, for computer riders and the player.
+; Default 0.
+AiLog=0
 
 ; DDStats: renderer activity (draws, uploads, surfaces) every 2 seconds.
 ; Default 0.

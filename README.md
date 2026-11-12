@@ -150,6 +150,9 @@ Windows 10 and 11.
 - A built-in profiler for finding hitches (`Profile`).
 
 ### Other
+- **Easier Easy**: on Easy, computer riders accelerate less hard and have a
+  slightly lower top speed than in the original, where Easy was barely easier
+  than Normal. Tunable per difficulty (`AiAccel*`, `AiTopSpeed*`).
 - **In-game Help** opens `MCM2HELP.html` in your web browser.
 - **Renderer label**: "Direct3D 11" or "Direct3D 9" in the bottom right
   corner of the menus (`RendererLabel`).
@@ -366,6 +369,13 @@ The file has three parts:
 | `ArrowTilt` | `10` | -45 to 45 | Degrees the arrow's nose is raised so it's seen a little from above (`0` = level, as in the original). |
 | `ArrowScale` | `2.0` | 0.25-8 | Size of the arrow (`1.0` = original). |
 
+#### Computer riders
+
+| Setting | Default | Values | Description |
+|---|---|---|---|
+| `AiAccelEasy`, `AiAccelNormal`, `AiAccelHard` | `80`, `130`, `150` | 10-400, percent | How hard computer riders can accelerate on each difficulty, in percent of the game's base curve. Lower values make them pull away more slowly out of corners and after landings. The original game uses `110` for Easy, which is barely easier than Normal, especially in Supercross. |
+| `AiTopSpeedEasy`, `AiTopSpeedNormal`, `AiTopSpeedHard` | `90`, `100`, `100` | 50-150, percent | Computer riders' top speed on each difficulty. The original game uses `100` for all three. |
+
 ### 2. Advanced: changing these is not recommended
 
 These settings keep the game starting, saving and playing correctly on modern
@@ -421,6 +431,7 @@ only when asked to. Logs go to `%LOCALAPPDATA%\Motocross Madness 2\logs`.
 |---|---|---|
 | `Log` | `1` | Writes `logs\mcm2fix-<date>-<time>.log` each run (the newest 50 are kept): Windows version, these settings, the renderer chosen and any problems. If the game crashes it also records where and why, and writes a crash dump (`.dmp`) next to the log. `0` = no log. |
 | `D3D9Log` | `0` | Direct3D 9 renderer details: card capabilities, the first frames, fallbacks. |
+| `AiLog` | `0` | Computer rider speeds every 5 seconds, plus every jump (air time, speed at takeoff and landing) and respawn, for computer riders and the player. |
 | `DDStats` | `0` | Renderer activity (draws, uploads, surfaces) every 2 seconds. |
 | `Profile` | `0` | Performance profile: frame times, timed sections, GPU time and a sampling profile of the game thread, in `logs\perf-*.csv` and `logs\perf-samples-*.txt` (summarise with `tools/perf_report.py`). It costs some frame rate. |
 | `ProfileSampleUs` | `1000` | With `Profile=1`, how often the game thread is sampled, in microseconds. `0` = timings only. |

@@ -25,6 +25,7 @@ add_library(mcm2fix SHARED
   src/fixes_perf.cpp
   src/fixes_sound.cpp
   src/fixes_sort.cpp
+  src/fixes_ai.cpp
   src/diagnostics.cpp
   src/crash.cpp
   src/regtrace.cpp
