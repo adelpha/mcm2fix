@@ -32,6 +32,8 @@
 #include "config.h"
 #include "patch.h"
 
+void LogCompat(const char* when);
+
 namespace {
 
 // DirectSound definitions (no dsound.h dependency).
@@ -96,6 +98,8 @@ constexpr float kUnmuteFraction = 0.98f;  // back in range only below 98% of max
 CRITICAL_SECTION g_cs;
 int g_next_id = 0;
 bool g_log = false;
+bool g_watch = false;  // SoundMaxDistanceMute=2: track and log out-of-range sounds, change nothing
+volatile LONG g_restarts = 0, g_restarts_out = 0, g_plays = 0;
 bool g_cs_ready = false;
 int g_log_left = 200;  // detailed lines per run
 volatile LONG g_mutes = 0, g_unmutes = 0, g_plays_out = 0, g_vol_held = 0;
@@ -153,8 +157,9 @@ void Update(Buffer& b, const char* why) {
   const float limit = b.muted ? b.max_dist * kUnmuteFraction : b.max_dist;
   const bool out = b.mode != kModeDisable && dist > limit;
   if (out == b.muted) return;
-  b.muted = out;
-  const HRESULT hr = reinterpret_cast<SetVolumeFn>(Orig(b.buffer, 0x3c / 4))(b.buffer, out ? kVolumeMin : b.volume);
+  b.muted = out;  // in watch mode: would be muted
+  const HRESULT hr =
+      g_watch ? S_OK : reinterpret_cast<SetVolumeFn>(Orig(b.buffer, 0x3c / 4))(b.buffer, out ? kVolumeMin : b.volume);
   InterlockedIncrement(out ? &g_mutes : &g_unmutes);
   if (Detail()) {
     // DirectSound's attenuation stops at max distance at this level, then the
@@ -163,7 +168,7 @@ void Update(Buffer& b, const char* why) {
     const float g = m / (m + g_rolloff * (b.max_dist > m ? b.max_dist - m : 0.0f));
     patch::Log("sound: buffer #%d %s (%s): distance %.1f, min %.1f, max %.1f, rolloff %.2f (level at max %.1f dB), "
                "mode %lu, %s%s, game volume %ld, hr %08lx",
-               b.id, out ? "muted" : "unmuted", why, dist, b.min_dist, b.max_dist, g_rolloff,
+               b.id, g_watch ? (out ? "out of range (watch only)" : "back in range (watch only)") : (out ? "muted" : "unmuted"), why, dist, b.min_dist, b.max_dist, g_rolloff,
                20.0f * std::log10(g > 1e-6f ? g : 1e-6f), b.mode, b.playing ? "playing" : "stopped",
                b.looping ? " looping" : "", b.volume, static_cast<unsigned long>(hr));
   }
@@ -194,10 +199,13 @@ void Summary() {
     playing_muted += b->playing && b->muted;
   }
   patch::Log("sound: 10s: %d 3D buffers tracked, %d muted now, %d playing (%d of them muted); %ld mutes, %ld unmutes, "
-             "%ld plays started out of range, %ld volume changes held while muted; listener at %.1f %.1f %.1f; "
+             "%ld plays (%ld started out of range; %ld of all plays hit a buffer still playing, %ld of those out of range), "
+             "%ld volume changes held while muted; listener at %.1f %.1f %.1f; "
              "3D changes %ld deferred / %ld immediate, %ld commits checked",
              static_cast<int>(g_buffers.size()), muted, playing, playing_muted, InterlockedExchange(&g_mutes, 0),
-             InterlockedExchange(&g_unmutes, 0), InterlockedExchange(&g_plays_out, 0),
+             InterlockedExchange(&g_unmutes, 0), InterlockedExchange(&g_plays, 0), InterlockedExchange(&g_plays_out, 0),
+             InterlockedExchange(&g_restarts, 0),
+             InterlockedExchange(&g_restarts_out, 0),
              InterlockedExchange(&g_vol_held, 0), g_listener_pos.x, g_listener_pos.y, g_listener_pos.z,
              InterlockedExchange(&g_deferred, 0), InterlockedExchange(&g_immediate, 0),
              InterlockedExchange(&g_commit_checks, 0));
@@ -281,7 +289,7 @@ HRESULT WINAPI GetVolume(void* self, LONG* v) {
   const HRESULT hr = reinterpret_cast<Fn>(Orig(self, 0x18 / 4))(self, v);
   Lock lock;
   Buffer* b = Find(self);
-  if (b && b->muted && v && SUCCEEDED(hr)) *v = b->volume;
+  if (b && b->muted && !g_watch && v && SUCCEEDED(hr)) *v = b->volume;
   return hr;
 }
 
@@ -368,7 +376,7 @@ HRESULT WINAPI SetVolume(void* self, LONG v) {
   Buffer* b = Find(self);
   if (b) {
     b->volume = v;
-    if (b->muted) {
+    if (b->muted && !g_watch) {
       InterlockedIncrement(&g_vol_held);
       return S_OK;
     }
@@ -382,7 +390,16 @@ HRESULT WINAPI Play(void* self, DWORD r1, DWORD prio, DWORD flags) {
     Lock lock;
     Trace(self, 'P', static_cast<long>(flags));
     if (Buffer* b = Find(self)) {
+      // Started again while still sounding: the game restarts the sample
+      // from wherever its play cursor is (DirectSound doesn't rewind on Play).
+      using StatusFn = HRESULT(WINAPI*)(void*, DWORD*);
+      DWORD st = 0;
+      if (SUCCEEDED(reinterpret_cast<StatusFn>(Orig(self, 0x24 / 4))(self, &st)) && (st & 1)) {
+        InterlockedIncrement(&g_restarts);
+        if (b->muted) InterlockedIncrement(&g_restarts_out);
+      }
       b->playing = true;
+      InterlockedIncrement(&g_plays);
       b->looping = flags & 1;  // DSBPLAY_LOOPING
       Update(*b, "play");
       if (b->muted) InterlockedIncrement(&g_plays_out);
@@ -596,7 +613,7 @@ HRESULT WINAPI CreateSoundBuffer(void* self, BufferDesc* desc, void** out, void*
   DWORD flags = desc ? desc->flags : 0;
   const bool track = (flags & kCapsCtrl3D) && !(flags & kCapsPrimary);
   BufferDesc copy;
-  if (track && (flags & kCapsMuteMax) && !(flags & kCapsCtrlVolume)) {
+  if (track && !g_watch && (flags & kCapsMuteMax) && !(flags & kCapsCtrlVolume)) {
     copy = *desc;  // we need volume control to mute it
     copy.flags |= kCapsCtrlVolume;
     desc = &copy;
@@ -646,7 +663,9 @@ HRESULT WINAPI MyDirectSoundCreate(const GUID* dev, void** out, void* outer) {
     if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                            static_cast<LPCSTR>(**reinterpret_cast<void***>(*out)), &m))
       GetModuleFileNameA(m, path, MAX_PATH);
-    patch::Log("sound: DirectSoundCreate -> %p (%s); 3D buffers will be muted beyond their max distance", *out, path);
+    LogCompat("DirectSoundCreate");
+    patch::Log("sound: DirectSoundCreate -> %p (%s); 3D buffers beyond their max distance will be %s", *out, path,
+               g_watch ? "logged only (watch mode)" : "muted");
   } else {
     patch::Log("sound: DirectSoundCreate failed %08lx", static_cast<unsigned long>(hr));
   }
@@ -654,6 +673,26 @@ HRESULT WINAPI MyDirectSoundCreate(const GUID* dev, void** out, void* outer) {
 }
 
 }  // namespace
+
+// Which exe this is and whether Windows' compatibility layer is active in the
+// process: an AppCompat layer or shim matched by exe name can change what the
+// game's DirectSound calls do (Mcm2.exe vs a renamed copy behave differently).
+void LogCompat(const char* when) {
+  char exe[MAX_PATH] = {};
+  GetModuleFileNameA(nullptr, exe, MAX_PATH);
+  char layer[512] = {};
+  const DWORD n = GetEnvironmentVariableA("__COMPAT_LAYER", layer, sizeof(layer));
+  char mods[256] = {};
+  const char* names[] = {"apphelp.dll", "AcLayers.dll", "AcGenral.dll", "AcSpecfc.dll", "AcXtrnal.dll", "AcWinRT.dll",
+                         "aclua.dll"};
+  for (const char* m : names)
+    if (GetModuleHandleA(m)) {
+      if (mods[0]) strncat(mods, ", ", sizeof(mods) - strlen(mods) - 1);
+      strncat(mods, m, sizeof(mods) - strlen(mods) - 1);
+    }
+  patch::Log("compat (%s): exe %s; __COMPAT_LAYER %s; compatibility modules loaded: %s", when, exe,
+             n && n < sizeof(layer) ? layer : "(not set)", mods[0] ? mods : "none");
+}
 
 void SoundTraceStart(const char* tag, DWORD ms) {
   if (!g_cs_ready) return;
@@ -664,13 +703,15 @@ void SoundTraceStart(const char* tag, DWORD ms) {
 }
 
 void ApplySoundFixes() {
+  LogCompat("start");
   if (!GetConfig().sound_max_distance_mute) {
     patch::Log("sound: SoundMaxDistanceMute=0, 3D sounds left to DirectSound");
     return;
   }
   InitializeCriticalSection(&g_cs);
   g_cs_ready = true;
-  g_log = GetConfig().sound_log;
+  g_watch = GetConfig().sound_max_distance_mute == 2;
+  g_log = GetConfig().sound_log || g_watch;
   constexpr uintptr_t kDirectSoundCreate = 0x55503c;  // DSOUND ordinal 1
   void* prev = *reinterpret_cast<void**>(kDirectSoundCreate);
   if (!prev) {
@@ -678,5 +719,6 @@ void ApplySoundFixes() {
     return;
   }
   g_create = reinterpret_cast<CreateFn>(patch::HookIat(kDirectSoundCreate, reinterpret_cast<void*>(&MyDirectSoundCreate)));
-  patch::Log("sound: DirectSoundCreate wrapped for max-distance mute (SoundLog=%d)", g_log ? 1 : 0);
+  patch::Log("sound: DirectSoundCreate wrapped (SoundMaxDistanceMute=%d, SoundLog=%d)",
+             GetConfig().sound_max_distance_mute, g_log ? 1 : 0);
 }
