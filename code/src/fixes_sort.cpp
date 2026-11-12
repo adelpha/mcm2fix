@@ -18,6 +18,12 @@
 // keys; same comparator, so the same order apart from equal elements, which
 // qsort leaves in no particular order anyway). TreeCacheMB raises the 256 KB
 // threshold so the cache is trimmed far less often.
+//
+// Every frame before that, 0x401130 adds up the bytes of entries unused this
+// frame: one pointer hop per entry to a scattered heap block, so with the
+// bigger cache (~34k entries) it waited on memory for most of its time.
+// FastGameCode=1 swaps that call (at 0x45b8e6 only) for the same sum with
+// the next entries fetched ahead of time; same result.
 #include <windows.h>
 
 #include <algorithm>
@@ -28,6 +34,8 @@
 
 #include "config.h"
 #include "patch.h"
+
+#include <xmmintrin.h>
 
 #ifdef _MSC_VER
 #include <intrin.h>
@@ -143,6 +151,91 @@ void PatchTreeCache(int mb) {
   patch::Log("sort: tree cache trimmed only when over %d MB of it is unused (was 256 KB)", mb);
 }
 
+// Tree cache layout (see above).
+struct TreeEntry {
+  uint32_t last_frame;
+  uint32_t pad[3];
+  uint32_t size;
+};
+struct TreeCache {
+  uint32_t frame;
+  int32_t count;
+  int32_t cap;
+  TreeEntry** entries;
+  uint32_t bytes;
+};
+
+bool g_prefetch = false;  // CPU has SSE prefetch
+struct ScanStats {
+  unsigned calls = 0;
+  uint64_t entries = 0;
+  LONGLONG ticks = 0;
+} g_scan;
+DWORD g_scan_last = 0;
+
+// thiscall (cache in ecx, one stack argument popped by us): __fastcall has the
+// same convention with edx unused.
+using ScanFn = uint32_t(__fastcall*)(TreeCache*, void*, uint32_t*);
+const ScanFn kOrigScan = reinterpret_cast<ScanFn>(0x401130);
+
+#if defined(__GNUC__) && !defined(_MSC_VER)
+#define SSE_FN __attribute__((target("sse")))
+#else
+#define SSE_FN
+#endif
+
+// Only called when the CPU has SSE (g_prefetch).
+SSE_FN void SumAhead(TreeEntry* const* e, int n, uint32_t frame, uint32_t* out) {
+  uint32_t sum = 0;
+  constexpr int kAhead = 32;
+  for (int i = 0; i < n && i < kAhead; ++i) _mm_prefetch(reinterpret_cast<const char*>(e[i]), _MM_HINT_T0);
+  for (int i = 0; i < n; ++i) {
+    if (i + kAhead < n) _mm_prefetch(reinterpret_cast<const char*>(e[i + kAhead]), _MM_HINT_T0);
+    const TreeEntry* x = e[i];
+    if (x->last_frame < frame) sum += x->size;
+  }
+  *out = sum;
+}
+
+uint32_t __fastcall FastTreeScan(TreeCache* c, void*, uint32_t* stale) {
+  if (!g_prefetch) return kOrigScan(c, nullptr, stale);
+  if (!stale) return c->bytes;
+  LARGE_INTEGER t0, t1;
+  if (g_log) QueryPerformanceCounter(&t0);
+  const int n = c->count;
+  SumAhead(c->entries, n, c->frame, stale);
+  if (g_log) {
+    QueryPerformanceCounter(&t1);
+    EnterCriticalSection(&g_cs);
+    ++g_scan.calls;
+    g_scan.entries += static_cast<uint64_t>(n > 0 ? n : 0);
+    g_scan.ticks += t1.QuadPart - t0.QuadPart;
+    const DWORD now = GetTickCount();
+    if (!g_scan_last) g_scan_last = now;
+    if (now - g_scan_last >= 10000) {
+      g_scan_last = now;
+      patch::Log("sort: 10 s: tree cache scans %u, %.0f entries each, %.1f us each (%.2f ms total)", g_scan.calls,
+                 g_scan.calls ? static_cast<double>(g_scan.entries) / g_scan.calls : 0.0,
+                 g_scan.calls ? Ms(g_scan.ticks) * 1000.0 / g_scan.calls : 0.0, Ms(g_scan.ticks));
+      g_scan = ScanStats{};
+    }
+    LeaveCriticalSection(&g_cs);
+  }
+  return c->bytes;
+}
+
+void PatchTreeScan() {
+  const uint8_t orig[] = {0xE8, 0x45, 0x58, 0xFA, 0xFF};  // call 401130
+  if (!patch::Matches(0x45B8E6, orig, sizeof(orig))) {
+    patch::Log("sort: tree cache scan call differs, left as it is");
+    return;
+  }
+  g_prefetch = IsProcessorFeaturePresent(PF_XMMI_INSTRUCTIONS_AVAILABLE) != FALSE;
+  patch::Call(0x45B8E6, reinterpret_cast<const void*>(&FastTreeScan), sizeof(orig));
+  patch::Log("sort: FastGameCode=1, tree cache scan reads ahead (%s)",
+             g_prefetch ? "SSE prefetch" : "no SSE on this CPU: game's own loop");
+}
+
 }  // namespace
 
 void ApplySortFixes() {
@@ -152,6 +245,7 @@ void ApplySortFixes() {
   g_log = c.sort_log;
   if (c.fast_sort) PatchQsort();
   else patch::Log("sort: FastSort=0, CRT qsort left as it is");
+  if (c.fast_game_code) PatchTreeScan();
   if (c.tree_cache_mb > 0) PatchTreeCache(c.tree_cache_mb);
   else patch::Log("sort: TreeCacheMB=0, tree cache trimmed at 256 KB as in the original");
 }

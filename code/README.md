@@ -423,7 +423,8 @@ FastCrt=1
 ; FastGameCode: 1 = a few of the game's own loops that its 1999 compiler
 ; built badly are rewritten in place with the same maths, so the results are
 ; exactly the same, only faster (default). So far: the loop that unpacks
-; terrain texture coordinates every frame. 0 = the game's own code.
+; terrain texture coordinates every frame, and the per-frame tree cache scan
+; (reads ahead instead of waiting on memory). 0 = the game's own code.
 FastGameCode=1
 
 ; FastSort: 1 = the game's sorting uses a merge sort instead of the old C
