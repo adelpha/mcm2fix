@@ -650,7 +650,7 @@ bool DrawMixed(HDC dc, const Item& it, LONG x0, LONG top, float kx, float ky, LO
   LONG x = x0;
   for (const Run& r : runs) {
     const float k = fit * (r.digits ? dk : 1.0f);
-    SelectObject(dc, ScaledFontCached(it.font, kx * k, ky * k, r.digits));
+    GpuTextSelectFont(dc, ScaledFontCached(it.font, kx * k, ky * k, r.digits));
     const SIZE ext = GpuTextExtent(dc, r.s.c_str(), static_cast<int>(r.s.size()));
     GdiCall call{};
     call.dc = dc;
@@ -728,7 +728,7 @@ void DrawItemsNow(Surface* rt, uintptr_t self, const Panel& p, const RECT& regio
       ++n;
       continue;
     }
-    SelectObject(dc, ScaledFontCached(it.font, kx, ky));
+    GpuTextSelectFont(dc, ScaledFontCached(it.font, kx, ky));
     // The scaled font can come out wider than the game's (a different face
     // stands in for a bitmap font): make it smaller until it fits the width
     // the game's text took, scaled.
@@ -738,7 +738,7 @@ void DrawItemsNow(Surface* rt, uintptr_t self, const Panel& p, const RECT& regio
       const SIZE ext = GpuTextExtent(dc, it.s.c_str(), static_cast<int>(it.s.size()));
       if (ext.cx <= want + 0.5f) break;
       fit *= std::max(0.5f, want / ext.cx);
-      SelectObject(dc, ScaledFontCached(it.font, kx * fit, ky * fit));
+      GpuTextSelectFont(dc, ScaledFontCached(it.font, kx * fit, ky * fit));
     }
     if (fit < 1.0f) {
       static unsigned logged = 0;
@@ -777,7 +777,7 @@ void DrawItemsNow(Surface* rt, uintptr_t self, const Panel& p, const RECT& regio
                              GpuTextExtent(dc, it.s.c_str(), static_cast<int>(it.s.find_last_not_of(' ') + 1)).cx;
     ++n;
   }
-  SelectObject(dc, GetStockObject(SYSTEM_FONT));
+  GpuTextSelectFont(dc, GetStockObject(SYSTEM_FONT));
   GpuTextSetClip(dc, nullptr);
   GpuTextEndDC(dc);
   static unsigned logged = 0;
@@ -998,6 +998,11 @@ void HudTextFlush() {
   }
 }
 
+const char* HudFontFace() {
+  EnsureFonts();
+  return g_face;
+}
+
 void HudPanelLayout(uintptr_t inst) {
   if (!Active() || Scale() == 1.0f) return;
   auto it = g_panels.find(inst);
@@ -1019,6 +1024,13 @@ void InstallHudTextHooks() {
   ok += PatchCall(kStuntTextCall, kBitmapText, reinterpret_cast<const void*>(&StuntTextHook));
   ok += PatchCall(kRaceClockCall, kBitmapText, reinterpret_cast<const void*>(&BitmapTextHook));
   Log("hud text: %u of %u HUD panel calls hooked; panels drawn x%.2f", ok, total, Scale());
+}
+
+void HudTextMemoryLog() {
+  Log("memory: HUD text: %u panels, %u pending, %u scratch DCs, %u panel textures, %u copies, %u fonts",
+      static_cast<unsigned>(g_panels.size()), static_cast<unsigned>(g_pending.size()),
+      static_cast<unsigned>(g_scratch_dc.size()), static_cast<unsigned>(g_panel_tex.size()),
+      static_cast<unsigned>(g_copies.size()), static_cast<unsigned>(g_fonts.size()));
 }
 
 }  // namespace dd

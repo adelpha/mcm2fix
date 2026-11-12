@@ -47,11 +47,32 @@ struct KnownFont {
   bool tm_ok = false;
   std::unordered_map<std::string, SIZE> ext;  // string + char extra -> extent
   std::map<int, HiFont*> hi;                  // scale x100 -> glyph font
+  ABC abc[256]{};                             // per character, for the italic overhang
+  bool abc_ok[256]{};
 };
+
+// The font mcm2fix itself selected into one of its own DCs (GpuTextSelectFont),
+// so finding it needs no GDI call. Only for DCs the game never sees.
+struct TrackedFont {
+  HDC dc;
+  HGDIOBJ font;
+};
+std::vector<TrackedFont> g_tracked;
+
+void Untrack(HDC dc) {
+  for (size_t i = 0; i < g_tracked.size(); ++i)
+    if (g_tracked[i].dc == dc) {
+      g_tracked[i] = g_tracked.back();
+      g_tracked.pop_back();
+      return;
+    }
+}
 
 std::unordered_map<HGDIOBJ, KnownFont> g_known;
 struct CacheStats {
   unsigned ext_hits = 0, ext_misses = 0, tm_hits = 0, tm_misses = 0, clip_known = 0, clip_read = 0;
+  unsigned font_tracked = 0, font_asked = 0, font_selects = 0, font_selects_skipped = 0;
+  unsigned abc_hits = 0, abc_misses = 0, dc_resets = 0, dc_resets_skipped = 0;
 } g_cs;
 
 void Report() {
@@ -66,9 +87,11 @@ void Report() {
         g_ts.composites, g_ts.copies, g_ts.fallbacks, g_ts.batches);
   if ((GetConfig().text_log || GetConfig().dd_stats || GetConfig().profile) && (g_cs.ext_hits || g_cs.ext_misses))
     Log("gpu text 5s: extents %u cached / %u asked, metrics %u / %u, clip %u known / %u read, %u glyph batches "
-        "(%u glyphs), %u fonts kept",
+        "(%u glyphs), %u fonts kept; font of a DC %u tracked / %u asked GDI, font selects %u done / %u skipped, "
+        "overhang widths %u cached / %u asked, DC resets %u done / %u skipped",
         g_cs.ext_hits, g_cs.ext_misses, g_cs.tm_hits, g_cs.tm_misses, g_cs.clip_known, g_cs.clip_read, g_ts.batches,
-        g_ts.glyphs, static_cast<unsigned>(g_known.size()));
+        g_ts.glyphs, static_cast<unsigned>(g_known.size()), g_cs.font_tracked, g_cs.font_asked, g_cs.font_selects,
+        g_cs.font_selects_skipped, g_cs.abc_hits, g_cs.abc_misses, g_cs.dc_resets, g_cs.dc_resets_skipped);
   g_cs = CacheStats{};
   g_ts = TextStats{};
 }
@@ -184,7 +207,16 @@ Overlay* EnsureOverlay(const void* native, UINT bw, UINT bh) {
 
 KnownFont* Known(HDC dc) {
   if (g_known.empty()) return nullptr;
-  auto it = g_known.find(GetCurrentObject(dc, OBJ_FONT));
+  HGDIOBJ font = nullptr;
+  for (const TrackedFont& t : g_tracked)
+    if (t.dc == dc) font = t.font;
+  if (font) {
+    ++g_cs.font_tracked;
+  } else {
+    ++g_cs.font_asked;
+    font = GetCurrentObject(dc, OBJ_FONT);
+  }
+  auto it = g_known.find(font);
   return it == g_known.end() ? nullptr : &it->second;
 }
 
@@ -445,11 +477,22 @@ void ReadClip(HDC dc, Ctx& c, const RECT* extra) {
 // edge that ends where the text ends is moved out by the overhang.
 void WidenClipForOverhang(Ctx& c, HDC dc, int text_right, const char* s, int n) {
   if (!s || n <= 0 || c.clips.empty()) return;
+  const unsigned char last = static_cast<unsigned char>(s[n - 1]);
   ABC abc{};
-  if (!GetCharABCWidthsA(dc, static_cast<unsigned char>(s[n - 1]), static_cast<unsigned char>(s[n - 1]), &abc))
-    return;
+  KnownFont* k = Known(dc);
+  if (k && k->abc_ok[last]) {
+    abc = k->abc[last];
+    ++g_cs.abc_hits;
+  } else {
+    ++g_cs.abc_misses;
+    if (!GetCharABCWidthsA(dc, last, last, &abc)) return;
+    if (k) {
+      k->abc[last] = abc;
+      k->abc_ok[last] = true;
+    }
+  }
   TEXTMETRICA tm{};
-  GetTextMetricsA(dc, &tm);
+  Metrics(dc, &tm);
   int over = abc.abcC < 0 ? -abc.abcC : 0;
   if (tm.tmItalic) over = std::max<int>(over, (tm.tmAscent + 3) / 4);  // slant of a full-height stroke
   if (over <= 0) return;
@@ -660,8 +703,16 @@ class Recorder : public GdiTarget {
   const void* native = nullptr;
   bool clip_known = false, clip_none = false;  // see Ctx
   RECT clip{};
+  // The last use was mcm2fix's own (HUD text) and left the DC as GpuTextBeginDC
+  // makes it: no GDI clip, stock font, pen and brush. The next one can skip
+  // those GDI calls.
+  bool clean = false;
+  bool gdi_clip_changed = false;
 
-  void ClipChanged() override { clip_known = false; }
+  void ClipChanged() override {
+    clip_known = false;
+    gdi_clip_changed = true;
+  }
 
   bool Draw(const GdiCall& call) override {
     ++g_ts.calls;
@@ -801,16 +852,24 @@ HDC GpuTextBeginDC(const GpuTexture& base, UINT w, UINT h) {
   }
   HDC dc = r->dc;
   // A fresh DC state each time, like a new surface DC.
-  SelectClipRgn(dc, nullptr);
+  if (!r->clean) SelectClipRgn(dc, nullptr);
   SetTextColor(dc, RGB(0, 0, 0));
   SetBkColor(dc, RGB(255, 255, 255));
   SetBkMode(dc, OPAQUE);
   SetTextAlign(dc, TA_LEFT | TA_TOP | TA_NOUPDATECP);
   SetTextCharacterExtra(dc, 0);
-  SelectObject(dc, GetStockObject(SYSTEM_FONT));
-  SelectObject(dc, GetStockObject(BLACK_PEN));
-  SelectObject(dc, GetStockObject(WHITE_BRUSH));
-  MoveToEx(dc, 0, 0, nullptr);
+  Untrack(dc);
+  if (!r->clean) {
+    SelectObject(dc, GetStockObject(SYSTEM_FONT));
+    SelectObject(dc, GetStockObject(BLACK_PEN));
+    SelectObject(dc, GetStockObject(WHITE_BRUSH));
+    MoveToEx(dc, 0, 0, nullptr);
+    ++g_cs.dc_resets;
+  } else {
+    ++g_cs.dc_resets_skipped;
+  }
+  r->clean = false;
+  r->gdi_clip_changed = false;
   r->clip_known = true;  // SelectClipRgn(dc, nullptr) above
   r->clip_none = true;
   r->busy = true;
@@ -823,8 +882,35 @@ HDC GpuTextBeginDC(const GpuTexture& base, UINT w, UINT h) {
 
 void GpuTextEndDC(HDC dc) {
   GdiUntrack(dc);
+  // Only mcm2fix's own drawing selects fonts through GpuTextSelectFont, and
+  // it touches nothing else that needs resetting: if it put the stock font
+  // back, the DC is as GpuTextBeginDC left it.
+  HGDIOBJ tracked = nullptr;
+  for (const TrackedFont& t : g_tracked)
+    if (t.dc == dc) tracked = t.font;
+  Untrack(dc);
   for (auto& rec : g_recorders)
-    if (rec->dc == dc) rec->busy = false;
+    if (rec->dc == dc) {
+      rec->busy = false;
+      rec->clean = tracked == GetStockObject(SYSTEM_FONT) && !rec->gdi_clip_changed;
+    }
+}
+
+void GpuTextSelectFont(HDC dc, HGDIOBJ f) {
+  for (TrackedFont& t : g_tracked)
+    if (t.dc == dc) {
+      if (t.font == f) {
+        ++g_cs.font_selects_skipped;
+        return;
+      }
+      SelectObject(dc, f);
+      t.font = f;
+      ++g_cs.font_selects;
+      return;
+    }
+  SelectObject(dc, f);
+  g_tracked.push_back(TrackedFont{dc, f});
+  ++g_cs.font_selects;
 }
 
 void GpuTextKeepFont(HFONT f) {
@@ -996,6 +1082,18 @@ void GpuTextDeviceLost() {
   g_overlays.clear();
   g_nonempty = 0;
   for (GpuTexture& t : texs) t.Reset();
+}
+
+void GpuTextMemoryLog() {
+  unsigned n = 0, used = 0;
+  uint64_t bytes = 0;
+  for (const auto& kv : g_overlays) {
+    ++n;
+    if (!kv.second.empty) ++used;
+    bytes += static_cast<uint64_t>(kv.second.tex.width) * kv.second.tex.height * 4;
+  }
+  Log("memory: GPU text: %u overlays (%u with text, %u MB of textures), %u fonts, %u known GDI fonts", n, used,
+      static_cast<unsigned>(bytes >> 20), static_cast<unsigned>(g_fonts.size()), static_cast<unsigned>(g_known.size()));
 }
 
 }  // namespace dd

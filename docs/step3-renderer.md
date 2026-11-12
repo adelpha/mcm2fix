@@ -34,6 +34,8 @@ own implementation in `code/src/dd/`, which draws with Direct3D 11.
   decodes Indeo 5 with FFmpeg and MS ADPCM itself, plays sound with waveOut
   and writes each frame into one of our surfaces.
 
-## Later
+## Since
 
-- Draw text on the GPU instead of through GDI.
+- Text is drawn on the GPU instead of through GDI (`GpuText=1`, `dd/gputext.cpp`).
+- A Direct3D 9 renderer (`Renderer=D3D9`, `dd/backend9.cpp`) is used where
+  Direct3D 11 is missing, e.g. on Windows XP.

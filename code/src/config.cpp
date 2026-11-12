@@ -36,6 +36,8 @@ void LoadConfig() {
   g_config.reg_log = GetPrivateProfileIntA("mcm2fix", "RegLog", 0, ini) != 0;
   g_config.wide_fov = GetPrivateProfileIntA("mcm2fix", "WideFov", 1, ini) != 0;
   g_config.alpha_cut = GetPrivateProfileIntA("mcm2fix", "AlphaCut", 128, ini);
+  g_config.alpha_to_coverage = GetPrivateProfileIntA("mcm2fix", "AlphaToCoverage", 2, ini);
+  if (g_config.alpha_to_coverage < 0 || g_config.alpha_to_coverage > 2) g_config.alpha_to_coverage = 2;
   g_config.alpha_log = GetPrivateProfileIntA("mcm2fix", "AlphaLog", 0, ini) != 0;
   g_config.vsync = GetPrivateProfileIntA("mcm2fix", "VSync", 1, ini) != 0;
   g_config.frame_cap = GetPrivateProfileIntA("mcm2fix", "FrameCap", 0, ini);
@@ -65,6 +67,7 @@ void LoadConfig() {
   GetPrivateProfileStringA("mcm2fix", "ArrowTilt", "10", buf, sizeof(buf), ini);
   float tilt = static_cast<float>(std::atof(buf));
   g_config.arrow_log = GetPrivateProfileIntA("mcm2fix", "ArrowLog", 0, ini) != 0;
+  g_config.fov_log = GetPrivateProfileIntA("mcm2fix", "FovLog", 0, ini) != 0;
   g_config.arrow_tilt = (tilt >= -45.0f && tilt <= 45.0f) ? tilt : 10.0f;
   g_config.restart_fix = GetPrivateProfileIntA("mcm2fix", "RestartFix", 1, ini) != 0;
   g_config.restart_log = GetPrivateProfileIntA("mcm2fix", "RestartLog", 0, ini) != 0;
@@ -73,9 +76,19 @@ void LoadConfig() {
   g_config.fast_crt = GetPrivateProfileIntA("mcm2fix", "FastCrt", 1, ini) != 0;
   g_config.async_sound = GetPrivateProfileIntA("mcm2fix", "AsyncSound", 2, ini);
   g_config.sound_max_distance_mute = GetPrivateProfileIntA("mcm2fix", "SoundMaxDistanceMute", 1, ini);
+  g_config.fast_sort = GetPrivateProfileIntA("mcm2fix", "FastSort", 1, ini) != 0;
+  g_config.tree_cache_mb = GetPrivateProfileIntA("mcm2fix", "TreeCacheMB", 32, ini);
+  if (g_config.tree_cache_mb < 0) g_config.tree_cache_mb = 0;
+  if (g_config.tree_cache_mb > 512) g_config.tree_cache_mb = 512;
+  g_config.sort_log = GetPrivateProfileIntA("mcm2fix", "SortLog", 0, ini) != 0;
+  g_config.input_timing = GetPrivateProfileIntA("mcm2fix", "InputTiming", 1, ini) != 0;
+  g_config.input_log = GetPrivateProfileIntA("mcm2fix", "InputLog", 0, ini) != 0;
   g_config.sound_log = GetPrivateProfileIntA("mcm2fix", "SoundLog", 0, ini) != 0;
   g_config.state_cache = GetPrivateProfileIntA("mcm2fix", "StateCache", 1, ini) != 0;
   g_config.dd_stats = GetPrivateProfileIntA("mcm2fix", "DDStats", 0, ini) != 0;
+  g_config.draw_batch = GetPrivateProfileIntA("mcm2fix", "DrawBatch", 1, ini) != 0;
+  g_config.batch_log = GetPrivateProfileIntA("mcm2fix", "BatchLog", 0, ini) != 0;
+  g_config.draw_log = GetPrivateProfileIntA("mcm2fix", "DrawLog", 0, ini) != 0;
   {
     char r[32] = {};
     GetPrivateProfileStringA("mcm2fix", "Renderer", "D3D11", r, sizeof(r), ini);
@@ -118,9 +131,17 @@ void LoadConfig() {
   if (!(g_config.hud_stunt_text_size >= 0.5f && g_config.hud_stunt_text_size <= 1.5f)) g_config.hud_stunt_text_size = 0.8f;
   g_config.hud_digit_size = ReadFloat("HudDigitSize", 0.7f, ini);
   if (!(g_config.hud_digit_size >= 0.5f && g_config.hud_digit_size <= 2.0f)) g_config.hud_digit_size = 0.7f;
+  g_config.race_title = GetPrivateProfileIntA("mcm2fix", "RaceTitle", 1, ini) != 0;
+  g_config.race_title_size = ReadFloat("RaceTitleSize", 1.0f, ini);
+  if (!(g_config.race_title_size >= 0.5f && g_config.race_title_size <= 2.0f)) g_config.race_title_size = 1.0f;
+  g_config.announcer = GetPrivateProfileIntA("mcm2fix", "Announcer", 1, ini) != 0;
+  g_config.announcer_volume = GetPrivateProfileIntA("mcm2fix", "AnnouncerVolume", 100, ini);
+  if (g_config.announcer_volume < 0) g_config.announcer_volume = 0;
+  if (g_config.announcer_volume > 100) g_config.announcer_volume = 100;
+  g_config.race_title_log = GetPrivateProfileIntA("mcm2fix", "RaceTitleLog", 0, ini) != 0;
   g_config.text_log = GetPrivateProfileIntA("mcm2fix", "TextLog", 0, ini) != 0;
   g_config.gdi_log = GetPrivateProfileIntA("mcm2fix", "GdiLog", 0, ini) != 0;
-  g_config.d3d9_log = GetPrivateProfileIntA("mcm2fix", "D3D9Log", 1, ini) != 0;
+  g_config.d3d9_log = GetPrivateProfileIntA("mcm2fix", "D3D9Log", 0, ini) != 0;
   g_config.activate_log = GetPrivateProfileIntA("mcm2fix", "ActivateLog", 0, ini) != 0;
 
   float fov = ReadFloat("Fov", 0.0f, ini);

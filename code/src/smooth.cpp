@@ -197,6 +197,7 @@ struct VertRec {
   std::vector<float> prev, cur;  // positions, 3 floats each
   unsigned prev_tick = 0, tick = 0;
   bool has_prev = false;
+  bool still = false;  // the last two steps had the same positions (scenery): nothing to blend
 };
 std::unordered_map<uint64_t, VertRec> g_vrecs;
 struct TextRec {
@@ -314,7 +315,15 @@ void Rotate(const float* q, const float* v, float* o) {
 }
 UseCounter g_vuses;
 std::vector<uint8_t> g_vout;
-unsigned g_vtotal = 0, g_vblended = 0;
+unsigned g_vtotal = 0, g_vblended = 0, g_vstill = 0, g_vstill_changed = 0;
+
+// The positions of `verts` are exactly `pos` (3 floats each).
+bool SamePositions(const uint8_t* verts, uint32_t stride, uint32_t count, const std::vector<float>& pos) {
+  if (pos.size() != static_cast<size_t>(count) * 3) return false;
+  for (uint32_t i = 0; i < count; ++i)
+    if (std::memcmp(verts + static_cast<size_t>(i) * stride, &pos[i * 3], 12) != 0) return false;
+  return true;
+}
 
 // Largest distance a vertex may move apart from the object's average move in
 // one step (turning, leaning, legs and arms) before the pair is taken to be
@@ -338,7 +347,19 @@ const uint8_t* SmoothVertices(const uint8_t* verts, uint32_t stride, uint32_t co
   const uint32_t use = g_vuses.Next(source);
   const uint64_t key = source * 0x9E3779B97F4A7C15ull ^ use;
   VertRec& r = g_vrecs[key];
-  if (r.tick != tick) {
+  ++g_vtotal;
+  if (r.tick == tick && r.still) {
+    // Scenery that did not move between the last two steps, drawn again
+    // within the same step: the blend would give back the same positions.
+    if (SamePositions(verts, stride, count, r.cur)) {
+      ++g_vstill;
+      return verts;
+    }
+    r.still = false;
+    ++g_vstill_changed;
+  }
+  const bool new_tick = r.tick != tick;
+  if (new_tick) {
     if (r.tick != 0 && r.cur.size() == static_cast<size_t>(count) * 3) {
       r.prev.swap(r.cur);
       r.prev_tick = r.tick;
@@ -350,7 +371,13 @@ const uint8_t* SmoothVertices(const uint8_t* verts, uint32_t stride, uint32_t co
   }
   r.cur.resize(static_cast<size_t>(count) * 3);
   for (uint32_t i = 0; i < count; ++i) std::memcpy(&r.cur[i * 3], verts + static_cast<size_t>(i) * stride, 12);
-  ++g_vtotal;
+  if (new_tick) {
+    r.still = r.has_prev && r.prev_tick + 1 == tick && r.prev == r.cur;
+    if (r.still) {
+      ++g_vstill;
+      return verts;
+    }
+  }
   // Centre of this draw, also kept per slot regardless of size: a shadow cast
   // on bumpy ground changes its number of points every step, so for those
   // only the centre can be followed.
@@ -603,9 +630,9 @@ void SmoothFrameEnd() {
     const bool on = SimDrawPoint(&tick, &alpha);
     if (on && g_total) {
       patch::Log("smoothing: %u of %u matrices and %u of %u vertex draws blended over 600 frames, "
-                 "%u + %u tracked",
+                 "%u + %u tracked; %u vertex draws left alone as still (%u found moved again)",
                  g_blended, g_total, g_vblended, g_vtotal, static_cast<unsigned>(g_recs.size()),
-                 static_cast<unsigned>(g_vrecs.size()));
+                 static_cast<unsigned>(g_vrecs.size()), g_vstill, g_vstill_changed);
     }
     if (on) {
       patch::Log("smoothing: %u shadow draws rebuilt (calls %u, no meshes %u, no previous %u, jumped %u, off %u)",
@@ -621,7 +648,7 @@ void SmoothFrameEnd() {
     g_proj_sample = false;
     if (!on) g_projs.clear();
     for (unsigned& w : g_shadow_why) w = 0;
-    g_total = g_blended = g_vtotal = g_vblended = 0;
+    g_total = g_blended = g_vtotal = g_vblended = g_vstill = g_vstill_changed = 0;
     g_shadow_blends = 0;
     for (auto it = g_recs.begin(); it != g_recs.end();) {
       if (!on || it->second.tick + 30 < tick) it = g_recs.erase(it);
@@ -1088,4 +1115,19 @@ void InstallProjectedShadowSmoothing() {
   const bool a = PatchSlot(kVtable + 0x30, 0x4DF7F0, reinterpret_cast<void*>(&SmoothPsPreDraw), "projected shadow pre-draw");
   const bool b = PatchSlot(kVtable + 0x34, 0x4E0C00, reinterpret_cast<void*>(&SmoothPsDraw), "projected shadow draw");
   patch::Log("smoothing: projected shadows %s", a && b ? "re-rendered every frame from casters placed between steps" : "NOT hooked");
+}
+
+// Memory report (at each display mode change).
+void SmoothMemoryLog() {
+  size_t verts = 0;
+  for (const auto& kv : g_vrecs) verts += kv.second.prev.capacity() + kv.second.cur.capacity();
+  size_t mesh = 0;
+  for (const auto& kv : g_meshes) mesh += kv.second.prev.capacity() + kv.second.cur.capacity();
+  patch::Log("memory: smoothing records: %u matrices, %u vertex draws (%u KB), %u texts, %u centres, %u projections, "
+             "%u shadows, %u casters, %u meshes (%u KB)",
+             static_cast<unsigned>(g_recs.size()), static_cast<unsigned>(g_vrecs.size()),
+             static_cast<unsigned>(verts * 4 / 1024), static_cast<unsigned>(g_trecs.size()),
+             static_cast<unsigned>(g_crecs.size()), static_cast<unsigned>(g_projs.size()),
+             static_cast<unsigned>(g_shadows.size()), static_cast<unsigned>(g_casters.size()),
+             static_cast<unsigned>(g_meshes.size()), static_cast<unsigned>(mesh * 4 / 1024));
 }

@@ -69,82 +69,479 @@ install before a release.
 
 ## mcm2fix.ini (optional, next to Mcm2.exe)
 
-All settings default to the values shown; set one to 0 or 1 to change it.
+All settings default to the values shown. The file is grouped into preferences,
+advanced settings that are best left alone (physics, timing, compatibility),
+and logging, where everything but the main log is off. `tools/package.sh`
+ships this block as the release `mcm2fix.ini`.
 
 ```ini
 [mcm2fix]
-Log=1          ; write %LOCALAPPDATA%\Motocross Madness 2\logs\mcm2fix-<date>-<time>.log
-Startup=1      ; auto-pick the video card, skip the "detected a change" box
-Registry=1     ; keep settings in HKCU instead of HKLM
-Files=1        ; send file writes to %LOCALAPPDATA%\Motocross Madness 2
-AlphaCut=128   ; trees and flags: drop pixels less opaque than this (0-255), which
-               ; removes the fringe where trees hide flags behind them (0 = original look)
-WideFov=1      ; widescreen modes show more to the sides (0 = crop top and bottom like the original)
-VSync=1        ; wait for the monitor's refresh (0 = no wait; tears if the system allows it)
-Fullscreen=Borderless ; Borderless (default: a window covering the screen) or Exclusive (owns the screen; Alt+Tab leaves it)
-FullscreenMode=Desktop ; Exclusive only: Desktop (keep the current mode) or <width>x<height>[@<Hz>], e.g. 1024x768@85
-FrameCap=0     ; most frames per second (0 = no cap beyond VSync)
-PreciseTimer=1 ; the game's frame time from QueryPerformanceCounter instead of whole milliseconds
-FrameFix=1     ; steps the game applies once per frame scale with frame time (0 = original)
-RefRate=30     ; the frame rate those per-frame steps are treated as tuned for
-AiRate=30      ; computer riders re-plan their line this many times a second (0 = every frame)
-AiSteerRate=0  ; fastest a computer rider's front wheel can turn, degrees per second (0 = no limit)
-SimRate=30     ; races run this many simulation steps per second whatever the frame rate
-               ; (0 = one step per frame, the original way; 10-1000)
-SimSmooth=1    ; draw the camera, bikes, riders, shadows and names blended between simulation steps
-               ; (smooth motion at any frame rate, one step of delay); 0 = show each step as it is
-Fov=0          ; field of view in degrees as a 4:3 screen shows it (0 = game default, 77);
-               ; the zoom keys still step from it, widescreen adds to the sides
-Renderer=D3D11 ; D3D11 (default) or D3D9; D3D9 is also used by itself when Direct3D 11 is missing
-RendererLabel=1 ; show the active renderer (Direct3D 9 / 11) in the bottom right corner of the menus
-Anisotropy=16  ; anisotropic texture filtering, 0/1 = off, 2-16
-Antialiasing=4 ; multisample antialiasing of the 3D scene: 0/1 = off, 2, 4 or 8
-MipBias=0      ; texture sharpness at a distance: negative = sharper (e.g. -0.5), positive = softer
-ViewDistance=1 ; multiplies how far the game draws (far clip, culling and fog move together)
-FogDistance=1  ; multiplies the fog distances on top of that (2 = fog starts twice as far away)
-TreeDetailDistance=1 ; 0 = every tree uses its sparse close-up version at any distance (looks bad; for fun)
-ModelLod=1     ; detailed models stay this many times further away before switching to simpler ones
-TextureReplace=1 ; draw pictures from textures\<hash>.png in place of the game's textures
-TextureDump=0  ; save every texture the game loads to %LOCALAPPDATA%\Motocross Madness 2\textures_dump
-TrueColorTextures=1 ; load textures in full colour (24-bit, 32-bit with alpha) instead of the game's 16-bit
-ArrowFix=1     ; race direction arrow points the right way (0 = original, leans toward the screen centre)
-ArrowTurn=0.8  ; how much of that correction to apply (1.0 = full; lower if the arrow points left of a gate dead ahead)
-ArrowTilt=10   ; degrees the arrow's nose is raised so it is seen a little from above (0 = level)
-ArrowScale=2.0 ; size of the race direction arrow (1.0 = original)
-ArrowLog=0     ; log the arrow placement for a few seconds after each race start
-RestartFix=1   ; Restart Race puts every rider back on the grid facing the course (0 = original bug)
-OneCore=0      ; 1 = pin the game to one CPU core (old stopgap)
-ActivateLog=0  ; debugging: log window activation
-RegLog=0       ; debugging: log every registry call
-DDStats=0      ; debugging: log renderer activity every 2 seconds
-Profile=0      ; debugging: performance profile - frame times, timed sections, GPU time and a sampling
-               ; profile of the game thread in logs\perf-*.csv / perf-samples-*.txt (tools/perf_report.py)
-ProfileSampleUs=1000 ; how often (microseconds) Profile samples the game thread (0 = no sampling)
-FastCrt=1      ; the game's millisecond clock reads QueryPerformanceCounter (no timer-period change per
-               ; call) and its case-insensitive name compares use a table (0 = the game's own code)
-AsyncSound=2   ; the 3D sound listener update the game makes every physics step runs on a worker thread,
-               ; started while the frame waits for VSync (1 = started at once, 0 = on the game thread)
-SoundMaxDistanceMute=1 ; 3D sounds further away than their max distance are muted by mcm2fix, as Windows'
-               ; DirectSound does (DSOAL doesn't, which left quiet looping bits of old sounds)
-               ; (2 = change nothing, only log sounds played beyond max distance)
-SoundLog=0     ; debugging: log 3D sound buffers and when they are muted / unmuted
-StateCache=1   ; Direct3D 11: state the renderer already has bound is not sent again for every draw
-D3D9Log=1      ; debugging: extra Direct3D 9 renderer logging (device caps, first frames, fallbacks)
-GpuText=1      ; draw the game's menu and HUD text (GDI) on the GPU, antialiased, at screen resolution
-HudText=1      ; with GpuText: the race HUD panels' text is drawn by mcm2fix on screen, sharp
-HudScale=2     ; race HUD text panels (position, lap, times) drawn this many times larger (1 = original)
-LabelScale=1.5 ; name labels over the riders drawn this many times larger (1 = original)
-LineWidth=3    ; speedometer needle width in pixels, antialiased (1 = original thin line)
-HudFont=FONTS\ContrailOne-Regular.ttf ; a .ttf (relative to the game folder) for the HUD panel and name label
-               ; text (empty = the game's fonts)
-HudDigitFont=FONTS\DSEG7Classic-BoldItalic.ttf ; .ttf for the numbers in the stats panel (times, position,
-               ; lap); words keep HudFont (empty = same as HudFont)
-HudDigitSize=0.7 ; size of those numbers relative to the words beside them
-HudStuntTextSize=0.8 ; stunt events: size of the score panel's text (1 = as big as the race panel's)
-TextLog=0      ; debugging: log GPU text drawing and what erases it
-GdiLog=0       ; debugging: log the GDI calls (text, boxes, lines) the game draws onto the screen with
-RestartLog=0   ; debugging: log the start grid at race load and on Restart Race
-TextureLog=0   ; debugging: log the format of each texture the game creates
+; mcm2fix settings for Motocross Madness 2.
+;
+; Every setting is optional: delete a line, or the whole file, and the default
+; shown here is used. On/off settings take 1 (on) or 0 (off). Lines starting
+; with ';' are comments. Changes take effect the next time the game starts.
+;
+; The file has three parts:
+;   1. PREFERENCES  - change these to taste.
+;   2. ADVANCED     - keep the game working and playing correctly; changing
+;                     them is NOT recommended.
+;   3. LOGGING      - only the main log is on; the rest are for debugging.
+
+; =============================================================================
+; 1. PREFERENCES
+; =============================================================================
+
+; ---------------------------------------------------------------- Display ----
+
+; Renderer: the graphics API used to draw the game.
+;   D3D11 - Direct3D 11 (default, recommended on Windows 7 and later).
+;   D3D9  - Direct3D 9, fixed function. Used automatically when Direct3D 11 is
+;           missing (Windows XP, very old graphics cards).
+Renderer=D3D11
+
+; Fullscreen: how the game fills the screen.
+;   Borderless - a borderless window covering the primary monitor at its
+;                current resolution (default). The desktop resolution never
+;                changes, and Alt+Tab is instant.
+;   Exclusive  - the game takes over the screen. Alt+Tab leaves fullscreen and
+;                it comes back when you return. Can help VSync on Windows XP.
+; Either way, the game renders at the resolution chosen in its own Options
+; and the picture is scaled to the screen with its shape kept.
+Fullscreen=Borderless
+
+; FullscreenMode: the screen mode used with Fullscreen=Exclusive (ignored when
+; Borderless).
+;   Desktop                  - keep the current desktop mode (default).
+;   <width>x<height>         - e.g. 1920x1080, at the highest refresh rate.
+;   <width>x<height>@<Hz>    - e.g. 1024x768@85.
+FullscreenMode=Desktop
+
+; VSync: 1 = wait for the monitor's refresh before showing each frame: no
+; tearing, frame rate limited to the refresh rate (default).
+; 0 = show frames as soon as they are ready: higher frame rate, tearing where
+; Windows allows it.
+VSync=1
+
+; FrameCap: the most frames per second, on top of VSync. 0 = no cap (default).
+; Useful with VSync=0, e.g. FrameCap=120. Does not change game speed.
+FrameCap=0
+
+; WideFov: 1 = on widescreen resolutions, the view is widened so you see more
+; to the sides (default). 0 = keep the 4:3 view width and crop the top and
+; bottom, like the original game.
+WideFov=1
+
+; Fov: field of view in degrees, as a 4:3 screen would show it, 20 to 150.
+; 0 = the game's own default, 77 (default). WideFov widens it further on
+; widescreen; the game's zoom keys still step from this value.
+Fov=0
+
+; RendererLabel: 1 = show "Direct3D 11" or "Direct3D 9" in the bottom right
+; corner of the menus (default). Only shown while no 3D scene is being drawn.
+; 0 = hide it.
+RendererLabel=1
+
+; ------------------------------------------------------- Graphics quality ----
+
+; Antialiasing: multisample antialiasing (MSAA) of the 3D scene, which smooths
+; jagged edges. 0 or 1 = off, 2, 4 (default) or 8 samples. If the graphics
+; card can't do the number asked for, the next lower one is used.
+Antialiasing=4
+
+; Anisotropy: anisotropic texture filtering, which keeps the ground sharp at
+; shallow angles. 0 or 1 = off, 2 to 16 (default 16). Capped at what the
+; graphics card supports.
+Anisotropy=16
+
+; MipBias: texture sharpness at a distance, -4 to 4. 0 = as the game sets it
+; (default). Negative = sharper but may shimmer (e.g. -0.5); positive = softer.
+MipBias=0
+
+; ViewDistance: multiplies how far the game draws, 0.25 to 10 (default 1).
+; The far clipping distance, the distance objects such as trees are drawn to,
+; and the fog all move out together, so the fog still hides the edge.
+; 2 = twice as far. Higher values cost frame rate.
+ViewDistance=1
+
+; FogDistance: multiplies the fog distances on top of ViewDistance, 0.1 to 20
+; (default 1). 2 = fog starts twice as far away. Above 1, the edge of the
+; drawn world may show through the fog unless ViewDistance is raised too.
+FogDistance=1
+
+; ModelLod: detailed models are kept this many times further away before the
+; game switches to simpler versions, 0.25 to 10 (default 1 = the game's
+; distances).
+ModelLod=1
+
+; TreeDetailDistance: 1 = trees switch between their dense far-away version
+; and their sparse close-up version as the game intends (default).
+; 0 = every tree uses its close-up version at any distance (looks sparse; for
+; fun only).
+TreeDetailDistance=1
+
+; AlphaCut: for trees, flags and other cut-out pictures, pixels less opaque
+; than this (0 to 255) are not drawn. This removes the stair-step fringe where
+; tree edges hide whatever is behind them, a flaw of the original game.
+; 128 = default. 0 = the original look. Soft see-through layers (shadows,
+; ground detail, supercross ground) are never affected. With
+; AlphaToCoverage on, this is where the smoothed edge sits instead.
+AlphaCut=128
+
+; AlphaToCoverage: smooth, antialiased edges on cut-out pictures (tree
+; leaves, flags, fences, metal arches, tents, desert plants) by turning their
+; transparency into MSAA coverage. Only works while Antialiasing is 2 or more;
+; without MSAA, AlphaCut and the game's own alpha test are used as before.
+; 2 = soft (default): tree leaves and flags use their transparency as is,
+; so distant trees look fuller and fade smoothly between their far-away and
+; close-up versions; edges are softer (fences and other solid models are
+; always sharpened). 1 = sharpened: crisp edges about one pixel wide at any
+; distance, but trees switch abruptly between versions. 0 = off.
+; Direct3D 11 only: the Direct3D 9 renderer uses AlphaCut.
+AlphaToCoverage=2
+
+; TrueColorTextures: 1 = load textures in full colour (24-bit, or 32-bit with
+; alpha) wherever the picture has more than 16 bits of colour (default).
+; The game always cut them down to 16-bit because of a bug. Most of the
+; game's own art is stored in 16-bit already, so only a few textures change.
+; 0 = the game's 16-bit textures. Changing it changes the names of unnamed
+; dumped textures (see TextureDump).
+TrueColorTextures=1
+
+; TextureReplace: 1 = when the game loads a texture, use a replacement picture
+; if there is one (default). Replacements go in the "textures" folder in the
+; game folder or in %LOCALAPPDATA%\Motocross Madness 2\textures (that one wins
+; when both have the same picture). Name each file like the dumped texture
+; (see TextureDump). PNG, JPEG or BMP, any size, full colour with alpha.
+; 0 = always use the game's own textures.
+TextureReplace=1
+
+; TextureDump: 1 = save every texture the game loads as a PNG in
+; %LOCALAPPDATA%\Motocross Madness 2\textures_dump, at the largest size the
+; game loaded it, to use as a starting point for replacements. Named textures
+; are saved as <name>.png, others as <16 hex digits>.png. 0 = off (default).
+; Slows loading while on.
+TextureDump=0
+
+; ------------------------------------------------------------ Text and HUD ----
+
+; GpuText: 1 = the game's menu and HUD text is drawn by the graphics card,
+; antialiased, at your screen's resolution instead of the game's (default).
+; 0 = the game's own text, drawn at the game's resolution and scaled up.
+GpuText=1
+
+; HudText: 1 = the race HUD panels (position, lap, times, stunt score) and the
+; rider name labels are redrawn sharp by mcm2fix, using HudScale, LabelScale
+; and the HUD fonts below (default). Needs GpuText=1. 0 = the game's panels.
+HudText=1
+
+; HudScale: size of the race HUD text panels, 1 (original) to 4. Default 2.
+HudScale=2
+
+; LabelScale: size of the name labels over the riders, 1 (original) to 4.
+; Default 1.5. Names are shrunk to fit if they would be too long.
+LabelScale=1.5
+
+; LineWidth: width in pixels of the speedometer needle, 1 (original thin line)
+; to 16. Default 3. Drawn antialiased.
+LineWidth=3
+
+; HudFont: TrueType font file for the HUD panel and name label text, relative
+; to the game folder (or a full path). The font is used by the game only and
+; is not installed in Windows. Empty (HudFont=) = the game's own fonts.
+HudFont=FONTS\ContrailOne-Regular.ttf
+
+; HudDigitFont: TrueType font file for the numbers in the race stats panel
+; (times, position, lap); the words beside them keep HudFont. Any character
+; the font lacks falls back to HudFont. Empty = use HudFont for numbers too.
+HudDigitFont=FONTS\DSEG7Classic-BoldItalic.ttf
+
+; HudDigitSize: size of those numbers relative to the words beside them,
+; 0.5 to 2. Default 0.7.
+HudDigitSize=0.7
+
+; HudStuntTextSize: stunt events only: size of the score panel's text relative
+; to the race panel's, 0.5 to 1.5. Default 0.8.
+HudStuntTextSize=0.8
+
+; RaceTitle: 1 = during the countdown the event's name and lap count (stunt
+; events: time limit) open out of a white line in the middle of the screen
+; and close back into it as the countdown ends, instead of the game's small
+; green name in the bottom-left corner (default). FINAL LAP is shown the same
+; way (held 2 seconds) instead of dropping down the screen, and the finish
+; message opens near the top of the screen for the length of the podium
+; cutscene (top 3; otherwise the game shows it as usual). Needs GpuText=1.
+; 0 = the game's corner text and drop text.
+RaceTitle=1
+
+; RaceTitleSize: size of that title, 0.5 to 2. Default 1.
+RaceTitleSize=1
+
+; Announcer: 1 = play WAV files from the game's SOUNDS\ folder, if they are
+; there: five.wav, four.wav, three.wav, two.wav and one.wav as the countdown
+; passes 5, 4, 3, 2 and 1 seconds left, airhorn.wav when the race starts,
+; finallap.wav when FINAL LAP shows (not in one-lap races) and podium.wav
+; when the podium cutscene starts (default). Missing files are skipped.
+; 8 or 16-bit PCM WAV. 0 = off.
+Announcer=1
+
+; AnnouncerVolume: volume of those sounds in percent, 0 to 100. Default 100.
+AnnouncerVolume=100
+
+; --------------------------------------------------- Race direction arrow ----
+
+; ArrowFix: 1 = the green race direction arrow (bottom left) points at the
+; next gate (default). 0 = the original arrow, which leans toward the centre
+; of the screen because of a perspective bug.
+ArrowFix=1
+
+; ArrowTurn: how much of that correction is applied, 0 to 2. Default 0.8.
+; 1.0 = the full mathematical correction; lower it if the arrow points to the
+; left of a gate straight ahead, raise it if it points to the right.
+ArrowTurn=0.8
+
+; ArrowTilt: degrees the arrow's nose is raised so it is seen a little from
+; above, -45 to 45. Default 10. 0 = level, as in the original.
+ArrowTilt=10
+
+; ArrowScale: size of the arrow, 0.25 to 8. Default 2.0. 1.0 = original size.
+ArrowScale=2.0
+
+; =============================================================================
+; 2. ADVANCED - CHANGING THESE IS NOT RECOMMENDED
+;
+; These settings keep the game starting, saving and playing correctly on
+; modern PCs. Changing them can stop the game starting, lose settings or
+; saves, make bikes and computer riders behave differently, make motion
+; judder, or bring back bugs of the original game. Leave them as they are
+; unless you are troubleshooting.
+; =============================================================================
+
+; ----------------------------------------------------------- Compatibility ----
+
+; Startup: 1 = no video card picker (the primary display adapter is used) and
+; no "detected a change in your video hardware" box (default).
+; 0 = the original prompts.
+Startup=1
+
+; Registry: 1 = the game's settings are kept in
+; HKEY_CURRENT_USER\Software\mcm2fix\Motocross Madness 2 (default). On first
+; run, settings from an earlier install in HKLM are copied there.
+; 0 = the original HKLM key, which needs administrator rights to write.
+Registry=1
+
+; Files: 1 = everything the game writes (profiles, replays, ghosts, tracks,
+; circuits, its own .ini and log files) goes to
+; %LOCALAPPDATA%\Motocross Madness 2 instead of the game folder (default).
+; Files there are read in preference to the game folder's.
+; 0 = write into the game folder, which fails under Program Files without
+; administrator rights. Saves made with 1 are not seen with 0.
+Files=1
+
+; OneCore: 1 = run the game on one CPU core only. An old workaround for a
+; startup hang that is now fixed; it costs performance. 0 = all cores
+; (default).
+OneCore=0
+
+; --------------------------------------------------- Simulation and timing ----
+
+; SimRate: during races, the game's physics and AI run this many steps per
+; second whatever the frame rate, 10 to 1000. Default 30.
+; The game's physics and AI were tuned at low frame rates and go wrong when
+; stepped faster: 30 is the tested value. 0 = one step per drawn frame, the
+; original behaviour (bikes and AI misbehave at high frame rates).
+; Outside races (menus) the game always steps once per frame.
+SimRate=30
+
+; SimSmooth: 1 = with SimRate, each frame shows the camera, bikes, riders,
+; shadows and name labels blended between the last two simulation steps, so
+; motion is smooth at any refresh rate, with one step (1/30 s) of delay
+; (default). 0 = show each step as it is: motion judders at 30 steps a second.
+SimSmooth=1
+
+; InputTiming: 1 = with SimRate, each race step gets the controls as they were
+; during its own 1/30 s, also when a slow frame makes several steps run at
+; once, and a key or button tapped faster than one step still counts for one
+; step (default). 0 = the original reading: after a slow frame every catch-up
+; step gets the controls as they are at that moment, and quick taps can be
+; missed.
+InputTiming=1
+
+; PreciseTimer: 1 = the game's frame time is measured with the precise
+; QueryPerformanceCounter instead of whole milliseconds (default). Only used
+; with SimRate=0; with SimRate the precise timer is always used.
+PreciseTimer=1
+
+; FrameFix: 1 = the few effects the game applies once per step instead of per
+; second (steering and lean speed, spin damping, bodies coming to rest,
+; camera zoom) are scaled to the actual step length (default).
+; 0 = applied once per step, as in the original. With SimRate=30 and
+; RefRate=30 race steps are unchanged; it matters in menus and with SimRate=0.
+FrameFix=1
+
+; RefRate: the step rate, 10 to 240, that FrameFix treats those per-step
+; effects as tuned for. Default 30.
+RefRate=30
+
+; AiRate: computer riders re-plan their racing line at most this many times a
+; second. Default 30. 0 = every step. Only has an effect when it is lower
+; than SimRate, or with SimRate=0.
+AiRate=30
+
+; AiSteerRate: fastest a computer rider's front wheel can turn, in degrees per
+; second. 0 = no limit, as in the original (default). Values change how the
+; AI rides.
+AiSteerRate=0
+
+; RestartFix: 1 = "Restart Race" in the pause menu puts every rider back on
+; their start position facing the course, and FINAL LAP shows again on the
+; last lap (default). 0 = the original bugs: riders that had crashed or left
+; the track restart in the wrong place or facing the wrong way.
+RestartFix=1
+
+; ------------------------------------------------------ Sound and performance ----
+
+; AsyncSound: where the 3D sound position update (made every physics step, and
+; slow on Windows 10/11 because it holds the sound system's lock) runs.
+;   2 = on a worker thread, started while the frame waits for VSync (default).
+;   1 = on a worker thread, started at once.
+;   0 = on the game thread, as in the original (can cause stutter).
+AsyncSound=2
+
+; SoundMaxDistanceMute: 1 = 3D sounds further away than their maximum distance
+; are muted by mcm2fix, as Windows' own DirectSound does (default). Needed with
+; DSOAL, which ignores that rule and otherwise leaves quiet looping fragments
+; of distant riders' sounds. 0 = leave it to the sound system. 2 = change
+; nothing but log each 3D sound that goes beyond its maximum distance, and how
+; often the game restarts a sound that is still playing (for comparing setups).
+SoundMaxDistanceMute=1
+
+; FastCrt: 1 = the game's millisecond clock uses QueryPerformanceCounter
+; instead of changing the Windows timer period on every call, and its
+; case-insensitive name comparisons use a lookup table (default). Both were
+; measurable slowdowns. 0 = the game's own code.
+FastCrt=1
+
+; FastSort: 1 = the game's sorting uses a merge sort instead of the old C
+; library qsort, which slows to a crawl when many items are equal (default).
+; On maps with many trees that froze the game for 35-125 ms when turning the
+; camera. 0 = the game's own qsort.
+FastSort=1
+
+; TreeCacheMB: the game keeps built trees in a cache and empties the unused
+; part whenever more than 256 KB of it is unused, which happens constantly
+; while turning on tree-heavy maps (and the trees are then built again when
+; they come back into view). It is now only emptied when more than this many
+; MB are unused, 1 to 512. Default 32. 0 = the original 256 KB.
+TreeCacheMB=32
+
+; StateCache: Direct3D 11 only. 1 = renderer state that is already set is not
+; sent to the graphics card again for every draw (default). 0 = send it every
+; draw (slower; for troubleshooting rendering problems).
+StateCache=1
+
+; DrawBatch: 1 = 3D draws in a row with nothing changed between them (trees,
+; terrain, scenery) are sent to the graphics card as one draw (default). 0 =
+; send each draw the game makes on its own (for troubleshooting).
+DrawBatch=1
+
+; =============================================================================
+; 3. LOGGING
+;
+; Log=1 writes one short log per run; please include the newest one with any
+; problem report. Everything else in this part is for debugging: it slows the
+; game down and makes the log much bigger, so turn one on only when asked to.
+; Logs go to %LOCALAPPDATA%\Motocross Madness 2\logs.
+; =============================================================================
+
+; Log: 1 = write logs\mcm2fix-<date>-<time>.log each run; the newest 50 are
+; kept (default). It records the Windows version, these settings, the
+; renderer chosen and any problems. If the game crashes it also records where
+; and why, and writes a crash dump (mcm2fix-<date>-<time>.dmp) next to the
+; log. 0 = no log.
+Log=1
+
+; D3D9Log: Direct3D 9 renderer details: card capabilities, the first frames,
+; fallbacks. Default 0.
+D3D9Log=0
+
+; DDStats: renderer activity (draws, uploads, surfaces) every 2 seconds.
+; Default 0.
+DDStats=0
+
+; Profile: performance profile. Frame times, timed sections, GPU time and a
+; sampling profile of the game thread go to logs\perf-*.csv and
+; logs\perf-samples-*.txt (summarise with tools/perf_report.py from the
+; source). Costs some frame rate. Default 0.
+Profile=0
+
+; ProfileSampleUs: with Profile=1, how often the game thread is sampled, in
+; microseconds. Default 1000. 0 = no sampling (timings only).
+ProfileSampleUs=1000
+
+; ActivateLog: window activation (the game pauses while it is in the
+; background). Default 0.
+ActivateLog=0
+
+; RegLog: every registry call the game makes. Default 0.
+RegLog=0
+
+; TextLog: GPU text drawing and what erases it. Default 0.
+TextLog=0
+
+; BatchLog: every 5 seconds, how many draws DrawBatch merged and what ended
+; each batch. Default 0.
+BatchLog=0
+
+; DrawLog: during races, which draw calls could be merged into fewer (per game
+; call site, plus a few whole frames listed draw by draw). Costs about 1.5 ms
+; a frame. Default 0.
+DrawLog=0
+
+; GdiLog: the GDI calls (text, boxes, lines) the game draws onto the screen
+; with. Default 0.
+GdiLog=0
+
+; TextureLog: the format of each texture the game creates. Default 0.
+TextureLog=0
+
+; InputLog: with InputTiming, the keyboard and joystick input each race step
+; gets: events given out early or held for a later step, held taps, joystick
+; samples, plus a summary every 10 s. Default 0.
+InputLog=0
+
+; SortLog: the game's sorts per calling code every 10 s (count, largest,
+; time). Sorts over 2 ms are always logged. Default 0.
+SortLog=0
+
+; SoundLog: 3D sound buffers, and when they are muted or unmuted by
+; SoundMaxDistanceMute. Default 0.
+SoundLog=0
+
+; RaceTitleLog: the countdown race title: name and lap count found, timing
+; and placement. Default 0.
+RaceTitleLog=0
+
+; RestartLog: the start grid when a race loads and on Restart Race. Default 0.
+RestartLog=0
+
+; ArrowLog: the direction arrow's placement for a few seconds after each race
+; start. Default 0.
+ArrowLog=0
+
+; FovLog: every change to a camera's field of view: who set it, what mcm2fix
+; widened it to for the screen shape and the smoothing cull margin. Default 0.
+FovLog=0
+
+; AlphaLog: each kind of see-through draw and whether AlphaCut or
+; AlphaToCoverage applied to it, plus alpha-to-coverage counts every 10 s.
+; Default 0.
+AlphaLog=0
+
+; SmoothLog: SimSmooth tracing. 0 = off (default), 1 = matrices and draws for
+; a few frames, 2 = camera only (120 frames), 3 = rider shadows, 4 = camera and
+; projection after each race start.
+SmoothLog=0
 ```
 
 ## True-colour textures
@@ -183,3 +580,8 @@ those pixels. PNG, JPEG and BMP of any size work, at full 32-bit colour;
 mipmaps are generated on the GPU. Keep alpha where the original has it.
 Textures that change every frame (videos) are never replaced, and menu
 screens, the cursor and fonts are not textures, so they can't be replaced.
+
+Sky boxes are 48 overlapping tiles each. `tools/mcm2sky` (mcm2sky.exe, built
+by CI) extracts every sky straight from `RES\SKIES.RES` as one picture and
+cuts an edited picture back into correctly named tiles; see
+`tools/mcm2sky/README.md`.

@@ -16,6 +16,9 @@ struct Config {
   int sound_max_distance_mute = 1;  // SoundMaxDistanceMute: 1 = mute 3D sounds past their max distance ourselves (DSOAL ignores it), 2 = only log them (fixes_sound.cpp)
   bool sound_log = false;     // SoundLog: log 3D sound buffers, mutes and unmutes
   bool state_cache = true;    // StateCache: skip D3D11 state the device already has bound (device.cpp)       // FastCrt: QPC game clock and table-driven _stricmp (fixes_perf.cpp)
+  bool draw_batch = true;     // DrawBatch: send 3D draws in a row with the same state as one draw (device.cpp)
+  bool batch_log = false;     // BatchLog: log draw batching every 5 s
+  bool draw_log = false;      // DrawLog: measure which draw calls could be merged (dd/drawlog.cpp)
   bool dd_stats = false;      // DDStats: log renderer activity every 2 seconds
   int renderer = 11;          // Renderer: 11 = Direct3D 11, 9 = Direct3D 9 (also used when D3D11 is missing)
   bool exclusive = false;     // Fullscreen: false = borderless window (default), true = exclusive fullscreen
@@ -29,10 +32,15 @@ struct Config {
   char hud_digit_font[260] = {};  // HudDigitFont: .ttf for the numbers in the stats panel (times, position, lap)
   float hud_stunt_text_size = 0.8f;  // HudStuntTextSize: stunt score panel text, relative to the race panel's
   float hud_digit_size = 0.7f;    // HudDigitSize: size of those numbers relative to the text around them
+  bool race_title = true;     // RaceTitle: countdown race name intro in the middle of the screen (0 = game's corner text)
+  float race_title_size = 1.0f;  // RaceTitleSize: size of that title (0.5..2)
+  bool announcer = true;         // Announcer: countdown voices, air horn and final lap sounds from SOUNDS\ (when present)
+  int announcer_volume = 100;     // AnnouncerVolume: their volume in percent (0..100)
+  bool race_title_log = false;   // RaceTitleLog: trace the race title intro
   bool hud_text = true;       // HudText: race HUD panel text (GDI turned into textures) drawn sharp too
   bool text_log = false;      // TextLog: log GPU text drawing (first calls, what erases it)
   bool gdi_log = false;       // GdiLog: log the GDI calls the game draws text and boxes with
-  bool d3d9_log = true;       // D3D9Log: extra logging from the Direct3D 9 renderer (first frames, fallbacks)
+  bool d3d9_log = false;      // D3D9Log: extra logging from the Direct3D 9 renderer (first frames, fallbacks)
   bool wide_fov = true;       // WideFov: wide modes show more to the sides instead of cropping
   bool vsync = true;          // VSync: wait for the monitor's refresh when showing a frame
   int frame_cap = 0;          // FrameCap: most frames per second (0 = no cap beyond VSync)
@@ -41,11 +49,17 @@ struct Config {
   int ai_rate = 30;           // AiRate: computer riders re-plan this many times a second (0 = every frame)
   int smooth_log = 0;         // SmoothLog: 1 = trace a few frames of matrices and draws, 2 = camera only, 120 frames, 3 = rider shadows
   int sim_smooth = 1;         // SimSmooth: draw objects between simulation steps (needs SimRate)
+  bool fast_sort = true;      // FastSort: replace the CRT qsort (quadratic on equal keys) with a merge sort (fixes_sort.cpp)
+  int tree_cache_mb = 32;     // TreeCacheMB: trim the vegetation cache only when this much is unused (0 = original 256 KB)
+  bool sort_log = false;      // SortLog: sort calls per caller every 10 s
+  bool input_timing = true;   // InputTiming: race steps get the input of their own time slice; taps held one step (input_timing.cpp)
+  bool input_log = false;     // InputLog: log input timing (events per step, held taps, joystick samples)
   int sim_rate = 30;          // SimRate: race simulation steps per second, drawing stays per frame (0 = one step per frame)
   int ai_steer_rate = 0;    // AiSteerRate: fastest a computer rider's front wheel turns, degrees/s (0 = no limit)
   int ref_rate = 30;          // RefRate: frame rate those per-frame steps were tuned for
   bool arrow_heading = true;  // ArrowFix: draw the race direction arrow without perspective lean
   float arrow_turn = 0.8f;    // ArrowTurn: how much of that correction to apply (1 = full)
+  bool fov_log = false;       // FovLog: every camera field-of-view change (who set it, what we widened it to)
   bool arrow_log = false;     // ArrowLog: trace the direction arrow and camera for 4 s after each race start
   float arrow_tilt = 10.0f;   // ArrowTilt: degrees the arrow's nose is raised, to see it more from above
   float arrow_scale = 2.0f;   // ArrowScale: size of the race direction arrow (1 = original)
@@ -53,6 +67,7 @@ struct Config {
   bool restart_log = false;  // RestartLog: log the start grid at race load and Restart Race
   bool alpha_log = false;    // AlphaLog: log each blended/alpha-tested draw combination and whether AlphaCut applied
   int alpha_cut = 128;        // AlphaCut: alpha-tested blended pixels below this (0-255) are dropped
+  int alpha_to_coverage = 2;  // AlphaToCoverage: cut-out edges via MSAA coverage (0 off, 1 sharp, 2 soft)
   // Graphics options.
   float fov = 0.0f;           // Fov: camera field of view in degrees at 4:3 (0 = game's own, 77)
   int anisotropy = 16;        // Anisotropy: anisotropic filtering level (0/1 = off, up to 16)

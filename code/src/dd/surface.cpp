@@ -1,9 +1,12 @@
 #include "../smooth.h"
 #include "surface.h"
+#include "drawlog.h"
+#include "device.h"
 #include "../prof.h"
 #include "gdihook.h"
 #include "gputext.h"
 #include "hudtext.h"
+#include "racetitle.h"
 
 #include <algorithm>
 #include <cstring>
@@ -24,6 +27,11 @@
 #include "texreplace.h"
 
 namespace dd {
+unsigned g_surface_gen = 0;
+extern unsigned g_devices_made, g_devices_gone;
+namespace {
+LONG g_made = 0, g_gone = 0, g_releases = 0;
+}  // namespace
 
 namespace {
 
@@ -236,6 +244,8 @@ DDPIXELFORMAT MakeRGBFormat(UINT bpp, DWORD r, DWORD g, DWORD b, DWORD a) {
 Surface::Surface(DirectDraw* dd, const DDSURFACEDESC2& desc, Surface* root)
     : dd_(dd), root_(root), desc_(desc) {
   if (!g_surface_vtable) g_surface_vtable = *reinterpret_cast<void**>(this);
+  gen_ = g_surface_gen;
+  if (!root) InterlockedIncrement(&g_made);
   desc_.dwSize = sizeof(DDSURFACEDESC2);
   DWORD caps = desc_.ddsCaps.dwCaps;
   if (caps & DDSCAPS_PRIMARYSURFACE || !(desc_.dwFlags & DDSD_WIDTH)) {
@@ -271,6 +281,7 @@ Surface::Surface(DirectDraw* dd, const DDSURFACEDESC2& desc, Surface* root)
 }
 
 Surface::~Surface() {
+  if (!root_) InterlockedIncrement(&g_gone);
   AllSurfaces().erase(this);
   HudTextForget(this);
   if (gpu_dc_) {
@@ -1099,13 +1110,33 @@ HRESULT Surface::QueryInterface(REFIID riid, void** out) {
   return E_NOINTERFACE;
 }
 
+// Implicit attachments (back buffers, mip levels) count their own
+// references, as in DirectDraw: the game AddRefs them through
+// GetAttachedSurface and may never release them, which DirectDraw shrugs off
+// because releasing the root destroys the whole chain. Forwarding those
+// references to the root (as before) kept every mipmapped texture and every
+// primary chain alive forever (refcounts in the thousands, ~1500 surfaces
+// and 30+ MB leaked per race). mcm2fix's own holds (the device's render
+// target and textures) use Hold/Unhold, which keep the root alive.
 ULONG Surface::AddRef() {
-  if (root_) return root_->AddRef();
+  if (root_) return static_cast<ULONG>(InterlockedIncrement(&refs_));
   return static_cast<ULONG>(InterlockedIncrement(&refs_));
 }
 
+void Surface::Hold() { Root()->AddRef(); }
+void Surface::Unhold() { Root()->Release(); }
+
 ULONG Surface::Release() {
-  if (root_) return root_->Release();
+  if (root_) {
+    InterlockedIncrement(&g_releases);
+    const LONG n = InterlockedDecrement(&refs_);
+    if (n < 0) {
+      InterlockedIncrement(&refs_);
+      return 0;
+    }
+    return static_cast<ULONG>(n);
+  }
+  InterlockedIncrement(&g_releases);
   LONG n = InterlockedDecrement(&refs_);
   if (n == 0) {
     DD_LOCK;
@@ -1134,6 +1165,7 @@ HRESULT Surface::AddOverlayDirtyRect(LPRECT) { return DDERR_UNSUPPORTED; }
 
 HRESULT Surface::Blt(LPRECT dr_in, LPDIRECTDRAWSURFACE7 src_in, LPRECT sr_in, DWORD flags,
                      LPDDBLTFX fx) {
+  FlushPendingDraws(kBreakSurface);
   DD_LOCK;
   PROF_ZONE(kBlt);
   prof::Count(prof::cBlts);
@@ -1206,6 +1238,7 @@ HRESULT Surface::BltBatch(LPDDBLTBATCH, DWORD, DWORD) {
 }
 
 HRESULT Surface::BltFast(DWORD x, DWORD y, LPDIRECTDRAWSURFACE7 src_in, LPRECT sr_in, DWORD flags) {
+  FlushPendingDraws(kBreakSurface);
   DD_LOCK;
   Surface* src = From(src_in);
   Surface* foreign = nullptr;
@@ -1255,12 +1288,14 @@ HRESULT Surface::EnumOverlayZOrders(DWORD, LPVOID, LPDDENUMSURFACESCALLBACK7) {
 }
 
 HRESULT Surface::Flip(LPDIRECTDRAWSURFACE7 s, DWORD flags) {
+  FlushPendingDraws(kBreakFlip);
   HRESULT hr;
   {
     PROF_ZONE(kFlip);
     hr = FlipImpl(s, flags);
   }
   prof::FrameEnd();
+  DrawLogFrameEnd();
   return hr;
 }
 
@@ -1277,6 +1312,7 @@ HRESULT Surface::FlipImpl(LPDIRECTDRAWSURFACE7, DWORD flags) {
   }
   if (!back_) return DDERR_NOTFLIPPABLE;
   ++Counters().flips;
+  RaceTitleNewFrame();
   Surface* cur = this;
   while (cur->back_) {
     cur->SwapContents(cur->back_);
@@ -1332,6 +1368,7 @@ HRESULT Surface::GetColorKey(DWORD flags, LPDDCOLORKEY key) {
 }
 
 HRESULT Surface::GetDC(HDC* out) {
+  FlushPendingDraws(kBreakSurface);
   DD_LOCK;
   PROF_ZONE(kGetDC);
   prof::Count(prof::cGetDCs);
@@ -1551,6 +1588,7 @@ HRESULT Surface::Initialize(LPDIRECTDRAW, LPDDSURFACEDESC2) { return DDERR_ALREA
 HRESULT Surface::IsLost() { return DD_OK; }
 
 HRESULT Surface::Lock(LPRECT rect, LPDDSURFACEDESC2 desc, DWORD flags, HANDLE) {
+  FlushPendingDraws(kBreakSurface);
   DD_LOCK;
   PROF_ZONE(kLock);
   prof::Count(prof::cLocks);
@@ -1589,6 +1627,7 @@ HRESULT Surface::SetClipper(LPDIRECTDRAWCLIPPER c) {
 }
 
 HRESULT Surface::SetColorKey(DWORD flags, LPDDCOLORKEY key) {
+  FlushPendingDraws(kBreakSurface);
   DD_LOCK;
   if (flags & DDCKEY_SRCBLT) {
     has_key_ = key != nullptr;
@@ -1611,6 +1650,7 @@ HRESULT Surface::SetColorKey(DWORD flags, LPDDCOLORKEY key) {
 HRESULT Surface::SetOverlayPosition(LONG, LONG) { return DDERR_NOTAOVERLAYSURFACE; }
 
 HRESULT Surface::SetPalette(LPDIRECTDRAWPALETTE p) {
+  FlushPendingDraws(kBreakSurface);
   DD_LOCK;
   if (p) p->AddRef();
   SafeRelease(palette_);
@@ -1668,6 +1708,7 @@ HRESULT Surface::GetPriority(LPDWORD p) {
 }
 
 HRESULT Surface::SetLOD(DWORD l) {
+  FlushPendingDraws(kBreakSurface);
   lod_ = l;
   return DD_OK;
 }
@@ -1803,6 +1844,83 @@ HRESULT GammaControl::SetGammaRamp(DWORD, LPDDGAMMARAMP ramp) {
   set_ = true;
   LogOnce("gamma ramp set (not applied yet)");
   return DD_OK;
+}
+
+void Surface::MemoryLog() {
+  unsigned n = 0, tex = 0, rt = 0, mipped = 0, gpu = 0, replaced = 0, sys = 0;
+  uint64_t cpu = 0, gpu_bytes = 0;
+  std::map<std::pair<UINT, UINT>, unsigned> sizes;
+  for (Surface* s : AllSurfaces()) {
+    ++n;
+    cpu += s->mem_.capacity();
+    if (!s->mem_.empty()) ++sys;
+    if (s->Caps() & DDSCAPS_TEXTURE) ++tex;
+    if (s->rt_used_) ++rt;
+    if (!s->mips_.empty()) ++mipped;
+    if (s->gpu_.Valid()) {
+      ++gpu;
+      uint64_t b = static_cast<uint64_t>(s->gpu_.width) * s->gpu_.height * 4;
+      if (s->gpu_.levels > 1) b = b * 4 / 3;
+      gpu_bytes += b;
+    }
+    if (s->replaced_.Valid()) ++replaced;
+    if (s->level_ == 0) ++sizes[{s->Width(), s->Height()}];
+  }
+  Log("memory: surfaces: %u live (%u textures, %u with mipmaps, %u drawn into), CPU copies %u MB in %u, GPU copies "
+      "~%u MB in %u, %u with a replacement",
+      n, tex, mipped, rt, static_cast<unsigned>(cpu >> 20), sys, static_cast<unsigned>(gpu_bytes >> 20), gpu,
+      replaced);
+  // The most common sizes (a leak shows up as one size piling up).
+  std::vector<std::pair<unsigned, std::pair<UINT, UINT>>> top;
+  for (const auto& kv : sizes) top.push_back({kv.second, kv.first});
+  std::sort(top.begin(), top.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+  char line[400] = {};
+  size_t used = 0;
+  for (size_t i = 0; i < top.size() && i < 10; ++i) {
+    int m = std::snprintf(line + used, sizeof(line) - used, "%s%ux%u x%u", i ? ", " : "", top[i].second.first,
+                          top[i].second.second, top[i].first);
+    if (m < 0 || used + m >= sizeof(line)) break;
+    used += m;
+  }
+  Log("memory: surface sizes: %s", line);
+  // Reference counts and creators of the surfaces the game owns directly.
+  unsigned refs[5] = {};
+  std::map<uintptr_t, std::pair<unsigned, unsigned>> by_creator;  // live, of them created before this period
+  std::map<unsigned, unsigned> by_gen;
+  for (Surface* s : AllSurfaces()) {
+    if (s->root_) continue;
+    ++refs[std::min<LONG>(std::max<LONG>(s->refs_, 0), 4)];
+    auto& c = by_creator[s->creator_];
+    ++c.first;
+    if (s->gen_ < g_surface_gen) ++c.second;
+    ++by_gen[s->gen_];
+  }
+  Log("memory: surface objects: %ld made, %ld deleted, %ld Release calls; live by reference count: 0:%u 1:%u 2:%u "
+      "3:%u 4+:%u; devices %u made, %u deleted",
+      g_made, g_gone, g_releases, refs[0], refs[1], refs[2], refs[3], refs[4], g_devices_made, g_devices_gone);
+  std::vector<std::pair<unsigned, uintptr_t>> cr;
+  for (const auto& kv : by_creator) cr.push_back({kv.second.first, kv.first});
+  std::sort(cr.begin(), cr.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+  for (size_t i = 0; i < cr.size() && i < 8; ++i)
+    Log("memory:   created from %08x: %u live, %u of them from earlier periods", static_cast<unsigned>(cr[i].second),
+        cr[i].first, by_creator[cr[i].second].second);
+  used = 0;
+  line[0] = 0;
+  for (const auto& kv : by_gen) {
+    int m = std::snprintf(line + used, sizeof(line) - used, "%s#%u:%u", used ? " " : "", kv.first, kv.second);
+    if (m < 0 || used + m >= sizeof(line)) break;
+    used += m;
+  }
+  Log("memory: live surfaces by the display mode period they were made in: %s (now #%u)", line, g_surface_gen);
+  // One sample surface from each of the top creators: its reference count and size.
+  for (size_t i = 0; i < cr.size() && i < 4; ++i) {
+    for (Surface* s : AllSurfaces()) {
+      if (s->root_ || s->creator_ != cr[i].second || s->gen_ >= g_surface_gen) continue;
+      Log("memory:   sample from %08x: %p %ux%u caps %08lx refs %ld, period #%u, %u mip levels", static_cast<unsigned>(s->creator_),
+          static_cast<void*>(s), s->Width(), s->Height(), s->Caps(), s->refs_, s->gen_, static_cast<unsigned>(s->mips_.size()));
+      break;
+    }
+  }
 }
 
 }  // namespace dd

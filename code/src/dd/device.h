@@ -19,6 +19,30 @@ namespace dd {
 class DirectDraw;
 class Surface;
 
+// DrawBatch=1: why a batch of merged draws was sent (logged as counts).
+enum BatchBreak : int {
+  kBreakRenderState,
+  kBreakStageState,
+  kBreakTexture,
+  kBreakTransform,
+  kBreakViewport,
+  kBreakTarget,
+  kBreakLighting,
+  kBreakClear,
+  kBreakScene,
+  kBreakSurface,   // Blt, Lock, GetDC, colour key, LOD ... on any surface
+  kBreakFlip,
+  kBreakScreen,    // a screen-space draw
+  kBreakShape,     // a draw that is not merged (lines, points, processed vertices, bad indices)
+  kBreakLayout,    // a different vertex format
+  kBreakFull,
+  kBreakOther,
+  kBreakCount
+};
+// Sends the device's merged draws, if any, before something that could see
+// or change what they draw.
+void FlushPendingDraws(BatchBreak why);
+
 // Where each part of a vertex lives for a given FVF code.
 struct FvfLayout {
   UINT stride = 0;
@@ -169,6 +193,12 @@ class Device : public d3d7::IDirect3DDevice7 {
     const VertexBuffer* vb = nullptr;  // for ProcessVertices clip data
   };
   void Submit(const Draw& d);
+  bool BatchAdd(const Draw& d);
+  HRESULT SetTransformNow(DWORD type, d3d7::D3DMATRIX* m);
+ public:
+  void FlushBatch(BatchBreak why);
+ private:
+  void NoteDrawLog(const Draw& d);  // DrawLog=1 (drawlog.cpp)
   bool SubmitWideLine(const Draw& d);
   void SubmitDraw(const Draw& d);
   void OccludeText(const Draw& d);
@@ -182,7 +212,17 @@ class Device : public d3d7::IDirect3DDevice7 {
   // `full_clear`: the caller will overwrite all of the colour buffer.
   bool BindTarget(bool& has_depth, bool full_clear = false);
   void ApplyState(bool tl, bool depth_clip, bool has_depth);
-  ID3D11BlendState* GetBlend();
+  ID3D11BlendState* GetBlend(bool a2c);
+  // Cut-out draws that write depth, which get alpha-to-coverage when the
+  // scene is multisampled (ini AlphaToCoverage):
+  //  kBlendedCutout: blended + alpha test > 0 (leaves, flags, bike numbers);
+  //    without coverage these get AlphaCut.
+  //  kTestedCutout: not blended, alpha test against a reference above 0
+  //    (fences, metal arches, tents, bikes, desert plants).
+  enum Cutout { kNoCutout, kBlendedCutout, kTestedCutout };
+  Cutout CutoutDraw() const;
+  // Alpha-to-coverage for this draw (cut-out, MSAA target, ini on), logged.
+  bool UseAlphaToCoverage(Cutout cutout);
   ID3D11DepthStencilState* GetDepth(bool has_depth);
   ID3D11RasterizerState* GetRaster(bool depth_clip);
   ID3D11SamplerState* GetSampler(int stage);
@@ -222,6 +262,16 @@ class Device : public d3d7::IDirect3DDevice7 {
   std::map<uint32_t, ID3D11DepthStencilState*> depth_cache_;
   std::map<uint32_t, ID3D11RasterizerState*> raster_cache_;
   std::map<uint32_t, ID3D11SamplerState*> sampler_cache_;
+  // DrawBatch=1: 3D triangle draws in a row with the same state, merged.
+  struct Batch {
+    std::vector<uint8_t> verts;  // the game's vertices, its own layout
+    std::vector<WORD> idx;       // triangle list
+    FvfLayout layout;
+    DWORD nverts = 0;
+    unsigned draws = 0;
+  };
+  Batch batch_, batch_out_;
+  bool flushing_ = false;
   std::vector<uint8_t> scratch_;
   std::vector<WORD> scratch_idx_;
   // Direct3D 9: what BindTarget9 bound.

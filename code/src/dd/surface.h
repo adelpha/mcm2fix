@@ -98,6 +98,10 @@ class Surface : public IDirectDrawSurface7 {
 
   // ---- backend helpers ----
   static Surface* From(IDirectDrawSurface7* s);  // nullptr if not ours
+  // mcm2fix's own reference (device render target / texture): keeps the
+  // whole chain (its root) alive, unlike a game AddRef on an attachment.
+  void Hold();
+  void Unhold();
   // A temporary copy of a surface from the system DirectDraw (caller releases).
   static Surface* CopyForeign(DirectDraw* dd, IUnknown* s);
   UINT Width() const { return desc_.dwWidth; }
@@ -143,6 +147,8 @@ class Surface : public IDirectDrawSurface7 {
   const GpuTexture* KeyedTex(DWORD key);
   // Direct3D 9 device reset: drop GPU copies that live in video memory.
   static void DeviceLost9();
+  // Memory report: live surfaces, CPU and GPU bytes.
+  static void MemoryLog();
 
   // Copy pixel data (all mip levels when both have them) for Device::Load.
   void CopyFrom(Surface* src, const POINT* dst_pt, const RECT* src_rect);
@@ -219,6 +225,12 @@ class Surface : public IDirectDrawSurface7 {
   bool locked_ = false;
   bool lock_readonly_ = false;
   bool rt_used_ = false;
+ public:
+  // Memory report bookkeeping: who created it (game return address) and in
+  // which display-mode period.
+  uintptr_t creator_ = 0;
+  unsigned gen_ = 0;
+ private:
   DWORD priority_ = 0, lod_ = 0;
   DWORD uniqueness_ = 1;
 };

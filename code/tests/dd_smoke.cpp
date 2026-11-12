@@ -105,7 +105,7 @@ int main(int argc, char** argv) {
   GetModuleFileNameA(nullptr, ini, MAX_PATH);
   std::strcpy(std::strrchr(ini, '\\') + 1, "mcm2fix.ini");
   FILE* f = std::fopen(ini, "w");
-  std::fprintf(f, "[mcm2fix]\nRenderer=%s\nAntialiasing=4\nVSync=0\nD3D9Log=1\nDDStats=1\nGdiLog=1\nTextLog=1\nGpuText=%d\nTextureReplace=0\nProfile=%d\nProfileSampleUs=%d\n", api,
+  std::fprintf(f, "[mcm2fix]\nRenderer=%s\nAntialiasing=4\nAlphaToCoverage=2\nAlphaLog=1\nVSync=0\nD3D9Log=1\nDDStats=1\nGdiLog=1\nTextLog=1\nGpuText=%d\nTextureReplace=0\nProfile=%d\nProfileSampleUs=%d\n", api,
                gputext ? 1 : 0, profile ? 1 : 0, sample_us);
   if (exclusive) std::fprintf(f, "Fullscreen=Exclusive\n");
   std::fclose(f);
@@ -243,6 +243,11 @@ int main(int argc, char** argv) {
     dev->SetRenderState(RS_ALPHATESTENABLE, 1);
     dev->SetRenderState(RS_ALPHAFUNC, 5);
     dev->SetRenderState(RS_ALPHAREF, 0);
+    // Blended + depth write + alpha test GREATER 0: a cut-out, which takes
+    // the alpha-to-coverage path (MSAA is on).
+    dev->SetRenderState(RS_ALPHABLENDENABLE, 1);
+    dev->SetRenderState(RS_SRCBLEND, 5);
+    dev->SetRenderState(RS_DESTBLEND, 6);
     V3 w[4] = {{0.5f, 0.5f, 5, 0xffffffff, 0, 0},
                {4.5f, 0.5f, 5, 0xffffffff, 1, 0},
                {0.5f, 4.5f, 5, 0xffffffff, 0, 1},
@@ -250,6 +255,7 @@ int main(int argc, char** argv) {
     WORD idx[6] = {0, 1, 2, 1, 3, 2};
     dev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, fvf_3d, w, 4, idx, 6, 0);
     dev->SetRenderState(RS_ALPHATESTENABLE, 0);
+    dev->SetRenderState(RS_ALPHABLENDENABLE, 0);
 
     // 3. ProcessVertices + DrawIndexedPrimitiveVB: a white-ish (vertex colour
     //    yellow) quad bottom left, untextured (colour op select diffuse).
@@ -286,6 +292,26 @@ int main(int argc, char** argv) {
                     {0.5f, -0.1f, 2, 0xffffffff, 0, 1}, {0.7f, -0.1f, 2, 0xffffffff, 1, 1}};
     dev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, fvf_3d, near_q, 4, idx, 6, 0);
     dev->SetRenderState(RS_FOGENABLE, 0);
+    // 4c. Draw batching (DrawBatch=1): three quads in a row with the same
+    //     state, as a fan, a strip and an indexed list, then a fourth after a
+    //     world matrix change (the first three must keep the old matrix).
+    //     At z 5: pixel x = 320 + 48 x, pixel y = 240 - 48 y.
+    V3 fa[4] = {{-2.0f, 2, 5, 0xff00ffff, 0, 0}, {-1.6f, 2, 5, 0xff00ffff, 0, 0},
+                {-1.6f, 3, 5, 0xff00ffff, 0, 0}, {-2.0f, 3, 5, 0xff00ffff, 0, 0}};
+    dev->DrawPrimitive(D3DPT_TRIANGLEFAN, fvf_3d, fa, 4, 0);
+    V3 st[4] = {{-1.4f, 2, 5, 0xffff00ff, 0, 0}, {-1.0f, 2, 5, 0xffff00ff, 0, 0},
+                {-1.4f, 3, 5, 0xffff00ff, 0, 0}, {-1.0f, 3, 5, 0xffff00ff, 0, 0}};
+    dev->DrawPrimitive(D3DPT_TRIANGLESTRIP, fvf_3d, st, 4, 0);
+    V3 li[4] = {{-0.8f, 2, 5, 0xff0000ff, 0, 0}, {-0.4f, 2, 5, 0xff0000ff, 0, 0},
+                {-0.8f, 3, 5, 0xff0000ff, 0, 0}, {-0.4f, 3, 5, 0xff0000ff, 0, 0}};
+    dev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, fvf_3d, li, 4, idx, 6, 0);
+    D3DMATRIX down = I;
+    down.m[3][1] = -1.5f;
+    dev->SetTransform(D3DTRANSFORMSTATE_WORLD, &down);
+    V3 gr[4] = {{-2.0f, 2, 5, 0xff808080, 0, 0}, {-1.6f, 2, 5, 0xff808080, 0, 0},
+                {-1.6f, 3, 5, 0xff808080, 0, 0}, {-2.0f, 3, 5, 0xff808080, 0, 0}};
+    dev->DrawPrimitive(D3DPT_TRIANGLEFAN, fvf_3d, gr, 4, 0);
+    dev->SetTransform(D3DTRANSFORMSTATE_WORLD, &I);
     // 4b. A screen-space line (like the speedometer needle: colour with alpha
     //     0, texture still set): drawn LineWidth (3) pixels wide.
     dev->SetTexture(0, red);
@@ -421,6 +447,18 @@ int main(int argc, char** argv) {
   ReadRGB(back, 392, 264, c);
   std::printf("     near fogged quad %d %d %d\n", c[0], c[1], c[2]);
   Check(Near(c, 227, 241, 241, 30), "linear fog, near quad mostly unfogged");
+  ReadRGB(back, 233, 120, c);
+  std::printf("     batched fan %d %d %d\n", c[0], c[1], c[2]);
+  Check(Near(c, 0, 255, 255), "batched draws: fan (cyan)");
+  ReadRGB(back, 262, 120, c);
+  std::printf("     batched strip %d %d %d\n", c[0], c[1], c[2]);
+  Check(Near(c, 255, 0, 255), "batched draws: strip (magenta)");
+  ReadRGB(back, 291, 120, c);
+  std::printf("     batched list %d %d %d\n", c[0], c[1], c[2]);
+  Check(Near(c, 0, 0, 255), "batched draws: indexed list (blue)");
+  ReadRGB(back, 233, 192, c);
+  std::printf("     after a matrix change %d %d %d\n", c[0], c[1], c[2]);
+  Check(Near(c, 128, 128, 128), "batched draws: matrix change ends the batch (grey moved down)");
   ReadRGB(back, 404, 304, c);
   std::printf("     sprite border %d %d %d\n", c[0], c[1], c[2]);
   Check(Near(c, 0, 0, 255), "keyed sprite, opaque border (blue)");

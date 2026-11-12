@@ -628,3 +628,9 @@ void LogTextureSummary() {
              g_count, g_by_file, g_by_loader, g_by_stream, g_by_object, g_unnamed, g_forgotten);
   Summary();
 }
+
+void TextureNamesMemoryLog() {
+  patch::Log("memory: texture names: %u by image data, %u by object, %u by stream",
+             static_cast<unsigned>(g_data_names.size()), static_cast<unsigned>(g_obj_names.size()),
+             static_cast<unsigned>(g_stream_names.size()));
+}

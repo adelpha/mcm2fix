@@ -98,6 +98,7 @@ int g_next_id = 0;
 bool g_log = false;
 bool g_watch = false;  // SoundMaxDistanceMute=2: track and log out-of-range sounds, change nothing
 volatile LONG g_restarts = 0, g_restarts_out = 0, g_plays = 0;
+bool g_cs_ready = false;
 int g_log_left = 200;  // detailed lines per run
 volatile LONG g_mutes = 0, g_unmutes = 0, g_plays_out = 0, g_vol_held = 0;
 DWORD g_last_summary = 0;
@@ -290,8 +291,86 @@ HRESULT WINAPI GetVolume(void* self, LONG* v) {
   return hr;
 }
 
+
+// ---- RestartLog sound trace ----
+// For a few seconds after a race load and after Restart Race, every
+// SetVolume / SetFrequency / Play / Stop on a buffer is summarised per
+// (buffer, call, game call chain), so the engine sound the game picks during
+// the countdown can be compared between a fresh start and a restart.
+struct TraceKey {
+  int id;
+  char op;
+  uintptr_t chain[4];
+  bool operator<(const TraceKey& o) const {
+    if (id != o.id) return id < o.id;
+    if (op != o.op) return op < o.op;
+    return std::memcmp(chain, o.chain, sizeof(chain)) < 0;
+  }
+};
+struct TraceVal {
+  unsigned count = 0;
+  long first = 0, lo = 0, hi = 0, last = 0;
+  DWORD bytes = 0;
+};
+std::map<TraceKey, TraceVal> g_trace;
+DWORD g_trace_end = 0;
+const char* g_trace_tag = nullptr;
+
+void TraceFlush() {
+  if (!g_trace_tag) return;
+  patch::Log("sound trace (%s): %u call sites", g_trace_tag, static_cast<unsigned>(g_trace.size()));
+  for (const auto& t : g_trace)
+    patch::Log("sound trace (%s): #%d %u bytes %c x%u first %ld min %ld max %ld last %ld via %08x %08x %08x %08x",
+               g_trace_tag, t.first.id, static_cast<unsigned>(t.second.bytes), t.first.op, t.second.count,
+               t.second.first, t.second.lo, t.second.hi, t.second.last, static_cast<unsigned>(t.first.chain[0]),
+               static_cast<unsigned>(t.first.chain[1]), static_cast<unsigned>(t.first.chain[2]),
+               static_cast<unsigned>(t.first.chain[3]));
+  g_trace.clear();
+  g_trace_tag = nullptr;
+}
+
+// Called under g_cs.
+__declspec(noinline) void Trace(void* self, char op, long v) {
+  if (!g_trace_tag) return;
+  if (static_cast<LONG>(GetTickCount() - g_trace_end) >= 0) {
+    TraceFlush();
+    return;
+  }
+  Buffer* b = Find(self);
+  TraceKey k{};
+  k.id = b ? b->id : -1;
+  k.op = op;
+  // Game code addresses on the stack above us: the call site and its callers.
+  volatile uintptr_t marker = 0;
+  const uintptr_t* sp = reinterpret_cast<const uintptr_t*>(const_cast<uintptr_t*>(&marker));
+  int n = 0;
+  for (int i = 0; i < 96 && n < 4; ++i) {
+    uintptr_t a = 0;
+    if (IsBadReadPtr(sp + i, 4)) break;
+    a = sp[i];
+    if (a >= 0x401000 && a < 0x553000) k.chain[n++] = a;
+  }
+  TraceVal& t = g_trace[k];
+  if (!t.count) t.first = t.lo = t.hi = v;
+  ++t.count;
+  if (v < t.lo) t.lo = v;
+  if (v > t.hi) t.hi = v;
+  t.last = v;
+  t.bytes = b ? b->bytes : 0;
+}
+
+HRESULT WINAPI SetFrequency(void* self, DWORD f) {
+  using Fn = HRESULT(WINAPI*)(void*, DWORD);
+  {
+    Lock lock;
+    Trace(self, 'F', static_cast<long>(f));
+  }
+  return reinterpret_cast<Fn>(Orig(self, 0x44 / 4))(self, f);
+}
+
 HRESULT WINAPI SetVolume(void* self, LONG v) {
   Lock lock;
+  Trace(self, 'V', v);
   Buffer* b = Find(self);
   if (b) {
     b->volume = v;
@@ -307,6 +386,7 @@ HRESULT WINAPI Play(void* self, DWORD r1, DWORD prio, DWORD flags) {
   using Fn = HRESULT(WINAPI*)(void*, DWORD, DWORD, DWORD);
   {
     Lock lock;
+    Trace(self, 'P', static_cast<long>(flags));
     if (Buffer* b = Find(self)) {
       // Started again while still sounding: the game restarts the sample
       // from wherever its play cursor is (DirectSound doesn't rewind on Play).
@@ -331,6 +411,7 @@ HRESULT WINAPI Stop(void* self) {
   using Fn = HRESULT(WINAPI*)(void*);
   {
     Lock lock;
+    Trace(self, 'S', 0);
     if (Buffer* b = Find(self)) b->playing = false;
   }
   return reinterpret_cast<Fn>(Orig(self, 0x48 / 4))(self);
@@ -341,6 +422,7 @@ void HookBuffer(void* obj) {
   Hook(obj, 0x18 / 4, reinterpret_cast<void*>(&GetVolume));
   Hook(obj, 0x30 / 4, reinterpret_cast<void*>(&Play));
   Hook(obj, 0x3c / 4, reinterpret_cast<void*>(&SetVolume));
+  if (GetConfig().restart_log) Hook(obj, 0x44 / 4, reinterpret_cast<void*>(&SetFrequency));
   Hook(obj, 0x48 / 4, reinterpret_cast<void*>(&Stop));
 }
 
@@ -589,12 +671,21 @@ HRESULT WINAPI MyDirectSoundCreate(const GUID* dev, void** out, void* outer) {
 
 }  // namespace
 
+void SoundTraceStart(const char* tag, DWORD ms) {
+  if (!g_cs_ready) return;
+  Lock lock;
+  TraceFlush();
+  g_trace_tag = tag;
+  g_trace_end = GetTickCount() + ms;
+}
+
 void ApplySoundFixes() {
   if (!GetConfig().sound_max_distance_mute) {
     patch::Log("sound: SoundMaxDistanceMute=0, 3D sounds left to DirectSound");
     return;
   }
   InitializeCriticalSection(&g_cs);
+  g_cs_ready = true;
   g_watch = GetConfig().sound_max_distance_mute == 2;
   g_log = GetConfig().sound_log || g_watch;
   constexpr uintptr_t kDirectSoundCreate = 0x55503c;  // DSOUND ordinal 1
