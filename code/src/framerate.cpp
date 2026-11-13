@@ -547,9 +547,15 @@ void __stdcall NoteBikeSim(const void* bike) {
   if (dd::MotionBlurOn()) dd::MotionBlurBikeStep(bike);  // reads the player's velocity
 }
 
-// Stub for the bike simulation call at 0x497bd7 (thiscall, ecx = bike):
-// pushad; push ecx; call NoteBikeSim; popad; jmp 414000. Returns null on failure.
-uint8_t* MakeBikeStub(uint8_t* b) {
+// The player's bike (and crashed bikes) are simulated by 0x40d820 instead
+// (call at 0x497be8): MotionBlur reads the player's velocity there. Does not
+// count as "a bike was simulated" for the fixed-rate switch.
+void __stdcall NotePlayerSim(const void* bike) { dd::MotionBlurBikeStep(bike); }
+
+// Stub for a bike simulation call (thiscall, ecx = bike):
+// pushad; push ecx; call note; popad; jmp target.
+uint8_t* MakeBikeStub(uint8_t* b, void(__stdcall* note)(const void*) = &NoteBikeSim,
+                      uintptr_t target = 0x414000) {
   auto rel = [](const uint8_t* from_end, const void* to) {
     return static_cast<int32_t>(reinterpret_cast<uintptr_t>(to) - reinterpret_cast<uintptr_t>(from_end));
   };
@@ -557,29 +563,38 @@ uint8_t* MakeBikeStub(uint8_t* b) {
   b[m++] = 0x60;
   b[m++] = 0x51;
   b[m++] = 0xE8;
-  int32_t r = rel(b + m + 4, reinterpret_cast<const void*>(&NoteBikeSim));
+  int32_t r = rel(b + m + 4, reinterpret_cast<const void*>(note));
   std::memcpy(b + m, &r, 4);
   m += 4;
   b[m++] = 0x61;
   b[m++] = 0xE9;
-  r = rel(b + m + 4, reinterpret_cast<const void*>(0x414000));
+  r = rel(b + m + 4, reinterpret_cast<const void*>(target));
   std::memcpy(b + m, &r, 4);
   m += 4;
   FlushInstructionCache(GetCurrentProcess(), b, m);
   return b;
 }
 
-// MotionBlur without SimRate: only the bike call is hooked.
-void PatchBikeSimNote() {
-  const uint8_t call_sim[] = {0xE8, 0x24, 0xC4, 0xF7, 0xFF};  // 00497bd7 call 414000
-  if (!patch::Matches(0x497BD7, call_sim, sizeof(call_sim))) {
-    patch::Log("motion blur: bike simulation call differs; no speed, no blur");
-    return;
-  }
+// MotionBlur: the computer-rider call (only needed without SimRate, which
+// hooks it already) and the player's bike call.
+void PatchBikeSimNote(bool ai_call) {
   auto* t = static_cast<uint8_t*>(
       VirtualAlloc(nullptr, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
   if (!t) return;
-  patch::Call(0x497BD7, MakeBikeStub(t), sizeof(call_sim));
+  const uint8_t call_sim[] = {0xE8, 0x24, 0xC4, 0xF7, 0xFF};     // 00497bd7 call 414000
+  const uint8_t call_player[] = {0xE8, 0x33, 0x5C, 0xF7, 0xFF};  // 00497be8 call 40d820
+  if (ai_call) {
+    if (patch::Matches(0x497BD7, call_sim, sizeof(call_sim)))
+      patch::Call(0x497BD7, MakeBikeStub(t), sizeof(call_sim));
+    else
+      patch::Log("motion blur: computer rider simulation call differs");
+  }
+  if (patch::Matches(0x497BE8, call_player, sizeof(call_player))) {
+    patch::Call(0x497BE8, MakeBikeStub(t + 32, &NotePlayerSim, 0x40D820), sizeof(call_player));
+    patch::Log("motion blur: player's bike speed hooked (0x497be8)");
+  } else {
+    patch::Log("motion blur: player bike simulation call differs; no speed, no blur");
+  }
 }
 
 void PatchFixedTick() {
@@ -660,7 +675,7 @@ void ApplyFramePacing() {
   } else if (c.precise_timer || c.frame_fix || c.ai_steer_rate > 0) {
     PatchFrameTime();
   }
-  if (c.sim_rate <= 0 && c.motion_blur) PatchBikeSimNote();
+  if (c.motion_blur) PatchBikeSimNote(c.sim_rate <= 0);
   patch::Log("frame pacing: VSync=%d FrameCap=%d PreciseTimer=%d FrameFix=%d RefRate=%d AiRate=%d "
              "AiSteerRate=%d SimRate=%d",
              c.vsync, c.frame_cap, c.precise_timer, c.frame_fix, c.ref_rate, c.ai_rate,

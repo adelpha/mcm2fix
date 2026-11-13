@@ -13,8 +13,9 @@
 //    before it. GPU text, HUD text and the race title are drawn later still.
 //  - Speed: the player's bike velocity (+0x64, feet per second, the vector
 //    the speedometer's speed comes from), copied when the game simulates the
-//    bike (call 0x497bd7 into 0x414000, see framerate.cpp). Read only: the
-//    game's physics is not touched.
+//    bike (the player's bike: call 0x497be8 into 0x40d820; computer riders:
+//    0x497bd7 into 0x414000; see framerate.cpp). Read only: the game's
+//    physics is not touched.
 //  - Focus: that velocity's direction projected with the view and
 //    projection the scene was drawn with (smoothed ones with SimSmooth), so
 //    it follows the camera at any frame rate.
@@ -346,9 +347,18 @@ void MotionBlurBikeStep(const void* bike) {
     g_race_seen = race;
   }
   const void* player = *reinterpret_cast<const void* const*>(static_cast<const uint8_t*>(race) + 0x38);
-  if (player != bike) return;
+  const bool ai = b[0x734] != 0;  // computer rider flag
+  static unsigned s_seen = 0;
+  if (s_seen < 12) {
+    ++s_seen;
+    patch::Log("motionblur: bike step %p race %p race+0x38 %p ai %d crashed %d", bike, race, player, ai ? 1 : 0,
+               *reinterpret_cast<const int*>(b + 0x444) != 0 ? 1 : 0);
+  }
+  // The player: BikeRace+0x38, or else the one bike that isn't a computer rider.
+  if (player != bike && ai) return;
   if (g_bike.bike != bike) {
-    patch::Log("motionblur: player's bike %p (race %p)", bike, race);
+    patch::Log("motionblur: player's bike %p (race %p, race+0x38 %s)", bike, race,
+               player == bike ? "matches" : "differs");
   }
   g_bike.bike = bike;
   std::memcpy(g_bike.vel, b + 0x64, sizeof(g_bike.vel));
