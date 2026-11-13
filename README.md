@@ -102,8 +102,16 @@ Windows 10 and 11.
 - **View distance, fog distance and model detail** multipliers
   (`ViewDistance`, `FogDistance`, `ModelLod`), plus texture sharpness
   (`MipBias`).
+- **Speed blur** (`MotionBlur`, off by default). At speed, the sides of the
+  3D scene streak towards where the bike is heading while the middle and the
+  HUD stay sharp. Direct3D 11 and Direct3D 9.
 - **True-colour textures** where the game's own art has more than 16 bits
   (`TrueColorTextures`).
+- **Shadows for every rider, drawn by the graphics card** (`RiderShadows`).
+  The game drew one blurry shadow, for the rider the camera follows, into a
+  small picture on the CPU. Now every rider and bike casts a sharp,
+  soft-edged shadow on the ground, drawn on the GPU and moving smoothly with
+  the riders between simulation steps (Direct3D 11).
 - **Texture dumping and replacement** by name with PNG, JPEG or BMP files of
   any size (`TextureDump`, `TextureReplace`). See
   [below](#texture-dumping-and-replacement).
@@ -403,14 +411,24 @@ The file has three parts:
 | `ReflectBike` / `ReflectHelmet` / `ReflectRider` | `1` / `1` / `0.25` | 0-1 | How strongly bike bodywork, helmets and the rider's suit, gloves and boots reflect, seen edge-on. `ReflectStrength` (default `1`) multiplies all three. |
 | `ReflectBikeFresnel` / `ReflectHelmetFresnel` / `ReflectRiderFresnel` | `0.35` / `0.35` / `0.1` | 0-1 | Share of the strength seen when you look straight at the surface; real paint and plastic shine mostly at the edges, higher values look more like chrome. |
 | `ReflectBikeBlur` / `ReflectHelmetBlur` / `ReflectRiderBlur` | `0.5` / `0.5` / `3` | 0-8 | How soft the reflection is; `0` = mirror-sharp. |
+| `ReflectBikeSun` / `ReflectHelmetSun` / `ReflectRiderSun` | `0.6` / `0.8` / `0.15` | 0-4 | Brightness of the sun's highlight (the light that sets the riders' shadows) on bodywork, helmets and suits. `ReflectSun` (default `1`, `0` = none) multiplies all three. Tracks without a sun have none. |
+| `ReflectBikeShine` / `ReflectHelmetShine` / `ReflectRiderShine` | `40` / `60` / `8` | 1-2000 | How small and sharp the sun's highlight is; higher looks glossier. |
 | `ReflectSize` | `128` | 16-1024 | Reflection cube side in pixels. |
 | `ReflectLiveFaces` | `1` | 1-6 | With `Reflections=2`, cube sides redrawn per frame. |
 | `ReflectGround` | `1` | 0-2 | Brightness of the ground below the horizon in the reflection, as a share of the fog colour. |
 | `ReflectBikeTextures` / `ReflectHelmetFrames` / `ReflectRiderFrames` / `ReflectExclude` / `ReflectTextures` / `ReflectFrames` | see ini | names | Which parts reflect: bike textures by name pattern (`*` matches anything), model parts by frame name (the rider's `Head` is the helmet; `ReflectRiderFrames` lists the body parts), textures that never reflect (`tire*`), and extra `name:strength` entries. |
 | `LiquidMetal` | `0` | `0`, `1` | "T-1000 mode": every bike and rider is drawn in liquid chrome, reflecting the world around it (uses `Reflections=2` if `Reflections` is `0`). |
+| `MotionBlur` | `0` | `0`, `1` | Speed blur: above `MotionBlurMinSpeed` the edges of the 3D scene streak towards the point the bike is heading for, more the faster you go, while the middle of the screen stays sharp. The HUD, text and menus are never blurred. Works the same at any frame rate. |
+| `MotionBlurStrength` | `80` | 0-300 | Length of the streaks at full speed, in percent (higher = longer streaks). |
+| `MotionBlurMinSpeed` | `30` | 0-200 | Speed (mph, as the speedometer shows) where the blur starts. |
+| `MotionBlurMaxSpeed` | `70` | 1-250 | Speed (mph) where the blur is at full strength. |
+| `MotionBlurCenter` | `60` | 0-95 | Size of the sharp middle of the screen, in percent of the way from the middle to the edges. Only the part outside it streaks, most at the edges. |
 | `TrueColorTextures` | `1` | `0`, `1` | Loads textures in full colour (24-bit, or 32-bit with alpha) wherever the picture has more than 16 bits; a bug made the game always use 16-bit. Most of the game's art is stored in 16-bit, so only a few textures change. Changing it renames unnamed dumped textures. |
 | `TextureReplace` | `1` | `0`, `1` | Uses replacement pictures from `textures\` in the game folder or in `%LOCALAPPDATA%\Motocross Madness 2\textures\` (the per-user folder wins). See [Texture dumping and replacement](#texture-dumping-and-replacement). |
 | `TextureDump` | `0` | `0`, `1` | Saves every texture the game loads as a PNG in `%LOCALAPPDATA%\Motocross Madness 2\textures_dump`, to start replacements from. Loading is slower while it's on. |
+| `RiderShadows` | `2` | `0`, `1`, `2` | `2`: every rider and bike casts a shadow, drawn by the graphics card at high resolution with soft edges, following the riders smoothly between simulation steps. `1`: only the rider the camera follows has one, as in the original game, but drawn the same new way. `0`: the game's own shadow (one rider, drawn into a small picture on the CPU). Direct3D 11 only; the Direct3D 9 renderer always uses the game's shadow. Tracks where the game draws no shadow (no sun) still have none. |
+| `ShadowStrength` | `0` | `0`, 1-100 | How dark the `RiderShadows` shadows are, in percent. `0` = as dark as the game's own shadow. |
+| `ShadowSoftness` | `100` | 0-400 | How much the `RiderShadows` shadows blur and fade with the rider's height above the ground, in percent. Crisp where the wheels touch the ground, wide and faint under a high jump. `0` = always sharp. |
 
 #### Text and HUD
 
@@ -537,6 +555,8 @@ only when asked to. Logs go to `%LOCALAPPDATA%\Motocross Madness 2\logs`.
 | `AlphaLog` | `0` | Each kind of see-through draw, and whether `AlphaCut` or `AlphaToCoverage` applied to it, plus alpha-to-coverage counts every 10 seconds. |
 | `ReflectLog` | `0` | Which bike and rider textures and model parts reflect, the sky tiles kept for `Reflections`, and every 5 seconds what the reflections cost. |
 | `ReflectDebug` | `0` | `1` = the reflection alone at full strength on everything that reflects (no Fresnel), to see what is reflected. |
+| `MotionBlurLog` | `0` | With `MotionBlur`, every 5 seconds: speed, blur amount and focus point, where in the frame the blur went, plus a few whole-frame draw lists. |
+| `ShadowLog` | `0` | `RiderShadows` counters every 5 seconds: shadows drawn, vertices, time taken, terrain draws shadowed. `2` also logs every shadow's placement for 90 frames, 10 s into each race. |
 | `SmoothLog` | `0` | `SimSmooth` tracing: `1` = matrices and draws for a few frames, `2` = camera only (120 frames), `3` = rider shadows, `4` = camera and projection after each race start. |
 
 The shipped `mcm2fix.ini` is generated from the block in

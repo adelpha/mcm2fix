@@ -202,6 +202,15 @@ class Device : public d3d7::IDirect3DDevice7 {
   void FlushBatch(BatchBreak why);
  private:
   void NoteDrawLog(const Draw& d);  // DrawLog=1 (drawlog.cpp)
+  // MotionBlur (motionblur.cpp): every draw is noted (`tl`: screen-space
+  // vertices); the first screen-space draw without depth test after the 3D
+  // scene blurs the scene before it is drawn, so the HUD stays sharp.
+  // Returns true when it kept the draw back: the race direction arrow is
+  // drawn after the blur (MotionBlurReplay), so it stays sharp.
+  bool MotionBlurNote(const Draw& d, bool tl);
+  bool MotionBlurPass(float fu, float fv, float len, float inner, float outer);
+  void MotionBlurReplay();
+  bool ArrowKeepBack(const Draw& d);  // a 3D draw of the arrow: copied and kept back
   bool SubmitWideLine(const Draw& d);
   void SubmitDraw(const Draw& d);
   void OccludeText(const Draw& d);
@@ -223,7 +232,8 @@ class Device : public d3d7::IDirect3DDevice7 {
   // Binds the render target (or its multisampled stand-in) and depth.
   // `full_clear`: the caller will overwrite all of the colour buffer.
   bool BindTarget(bool& has_depth, bool full_clear = false);
-  void ApplyState(bool tl, bool depth_clip, bool has_depth);
+  // `shadow`: the terrain variant with rider shadows (bound by gpushadow.cpp).
+  void ApplyState(bool tl, bool depth_clip, bool has_depth, bool shadow = false);
   ID3D11BlendState* GetBlend(bool a2c);
   // Cut-out draws that write depth, which get alpha-to-coverage when the
   // scene is multisampled (ini AlphaToCoverage):
@@ -284,6 +294,7 @@ class Device : public d3d7::IDirect3DDevice7 {
     FvfLayout layout;
     DWORD nverts = 0;
     unsigned draws = 0;
+    bool receiver = false;  // terrain patches (rider shadows)
   };
   Batch batch_, batch_out_;
   bool flushing_ = false;

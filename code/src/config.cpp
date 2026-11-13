@@ -36,6 +36,14 @@ void LoadConfig() {
   g_config.reg_log = GetPrivateProfileIntA("mcm2fix", "RegLog", 0, ini) != 0;
   g_config.wide_fov = GetPrivateProfileIntA("mcm2fix", "WideFov", 1, ini) != 0;
   g_config.alpha_cut = GetPrivateProfileIntA("mcm2fix", "AlphaCut", 128, ini);
+  g_config.motion_blur = GetPrivateProfileIntA("mcm2fix", "MotionBlur", 0, ini) != 0;
+  g_config.motion_blur_strength = Clamp(GetPrivateProfileIntA("mcm2fix", "MotionBlurStrength", 80, ini), 0, 300);
+  g_config.motion_blur_min_speed = Clamp(GetPrivateProfileIntA("mcm2fix", "MotionBlurMinSpeed", 30, ini), 0, 200);
+  g_config.motion_blur_max_speed = Clamp(GetPrivateProfileIntA("mcm2fix", "MotionBlurMaxSpeed", 70, ini), 1, 250);
+  if (g_config.motion_blur_max_speed <= g_config.motion_blur_min_speed)
+    g_config.motion_blur_max_speed = g_config.motion_blur_min_speed + 1;
+  g_config.motion_blur_center = Clamp(GetPrivateProfileIntA("mcm2fix", "MotionBlurCenter", 60, ini), 0, 95);
+  g_config.motion_blur_log = GetPrivateProfileIntA("mcm2fix", "MotionBlurLog", 0, ini) != 0;
   g_config.alpha_to_coverage = GetPrivateProfileIntA("mcm2fix", "AlphaToCoverage", 2, ini);
   if (g_config.alpha_to_coverage < 0 || g_config.alpha_to_coverage > 2) g_config.alpha_to_coverage = 2;
   g_config.alpha_log = GetPrivateProfileIntA("mcm2fix", "AlphaLog", 0, ini) != 0;
@@ -67,6 +75,13 @@ void LoadConfig() {
   g_config.ai_steer_rate = GetPrivateProfileIntA("mcm2fix", "AiSteerRate", 0, ini);
   if (g_config.ai_steer_rate < 0) g_config.ai_steer_rate = 0;
   g_config.smooth_log = GetPrivateProfileIntA("mcm2fix", "SmoothLog", 0, ini);
+  g_config.rider_shadows = GetPrivateProfileIntA("mcm2fix", "RiderShadows", 2, ini);
+  if (g_config.rider_shadows < 0 || g_config.rider_shadows > 2) g_config.rider_shadows = 2;
+  g_config.shadow_strength = GetPrivateProfileIntA("mcm2fix", "ShadowStrength", 0, ini);
+  if (g_config.shadow_strength < 0 || g_config.shadow_strength > 100) g_config.shadow_strength = 0;
+  g_config.shadow_softness = GetPrivateProfileIntA("mcm2fix", "ShadowSoftness", 100, ini);
+  if (g_config.shadow_softness < 0 || g_config.shadow_softness > 400) g_config.shadow_softness = 100;
+  g_config.shadow_log = GetPrivateProfileIntA("mcm2fix", "ShadowLog", 0, ini);
   g_config.sim_smooth = GetPrivateProfileIntA("mcm2fix", "SimSmooth", 1, ini) != 0;
   g_config.sim_rate = GetPrivateProfileIntA("mcm2fix", "SimRate", 30, ini);
   if (g_config.sim_rate < 0) g_config.sim_rate = 0;

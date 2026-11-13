@@ -228,6 +228,20 @@ ReflectRiderFresnel=0.1
 ReflectRiderBlur=3
 ReflectStrength=1
 
+; Sun highlight: a shiny spot where the sun (the light that sets the riders'
+; shadows) glints off the bodywork, helmet and suit. ...Sun: how bright, 0 =
+; none (bike 0.6, helmet 0.8, rider 0.15). ...Shine: how small and sharp the
+; spot is (bike 40, helmet 60, rider 8; higher = smaller, glossier).
+; ReflectSun multiplies all three (0 = no highlights). Tracks without a sun
+; have none.
+ReflectBikeSun=0.6
+ReflectBikeShine=40
+ReflectHelmetSun=0.8
+ReflectHelmetShine=60
+ReflectRiderSun=0.15
+ReflectRiderShine=8
+ReflectSun=1
+
 ; ReflectSize: the reflection picture's size per cube side in pixels
 ; (default 128; bigger only matters with a low blur).
 ; ReflectLiveFaces: Reflections=2 redraws this many of the six cube sides
@@ -255,6 +269,25 @@ ReflectFrames=
 ; chrome, reflecting the world around it (uses Reflections=2 if Reflections
 ; is 0). Default 0.
 LiquidMetal=0
+; MotionBlur: 1 = speed blur. Above MotionBlurMinSpeed the edges of the 3D
+; scene streak towards the point your bike is heading for, more the faster
+; you go, while the middle of the screen stays sharp. The HUD, text and menus
+; are never blurred. 0 = off (default).
+MotionBlur=0
+
+; MotionBlurStrength: length of the streaks at full speed, in percent (higher
+; = longer streaks), 0 to 300. Default 80.
+MotionBlurStrength=80
+
+; MotionBlurMinSpeed / MotionBlurMaxSpeed: speedometer speeds (mph) where the
+; blur starts and where it is at full strength. Defaults 30 and 70.
+MotionBlurMinSpeed=30
+MotionBlurMaxSpeed=70
+
+; MotionBlurCenter: size of the sharp middle of the screen, in percent of the
+; way from the middle to the screen edges, 0 to 95. Only the part outside it
+; streaks, most at the edges. Default 60.
+MotionBlurCenter=60
 
 ; TrueColorTextures: 1 = load textures in full colour (24-bit, or 32-bit with
 ; alpha) wherever the picture has more than 16 bits of colour (default).
@@ -278,6 +311,26 @@ TextureReplace=1
 ; are saved as <name>.png, others as <16 hex digits>.png. 0 = off (default).
 ; Slows loading while on.
 TextureDump=0
+
+; RiderShadows: how the riders' shadows are drawn. The game drew one shadow,
+; for the rider the camera follows, into a small picture on the CPU.
+;   2 - every rider and bike casts a shadow, drawn by the graphics card at
+;       high resolution with soft edges (default).
+;   1 - the same, but only for the rider the camera follows, like the game.
+;   0 - the game's own shadow.
+; Direct3D 11 only: the Direct3D 9 renderer always uses the game's shadow.
+; Tracks where the game draws no shadow (no sun) still have none.
+RiderShadows=2
+
+; ShadowStrength: how dark the shadows of RiderShadows are, in percent (1 to
+; 100). 0 = as dark as the game's own shadow (default).
+ShadowStrength=0
+
+; ShadowSoftness: how much the shadows of RiderShadows blur and fade as the
+; rider rises above the ground (a jump), in percent (0 to 400). Where the
+; bike touches the ground the shadow stays crisp. 0 = always sharp;
+; 100 = default.
+ShadowSoftness=100
 
 ; ------------------------------------------------------------ Text and HUD ----
 
@@ -715,6 +768,16 @@ ReflectLog=0
 ; ReflectDebug: 1 = draw the reflection alone at full strength on everything
 ; that reflects (no Fresnel), to see what is reflected. Default 0.
 ReflectDebug=0
+
+; MotionBlurLog: with MotionBlur, every 5 s: speed, blur amount and focus
+; point, where in the frame the blur went, and a few whole-frame draw lists.
+; Default 0.
+MotionBlurLog=0
+
+; ShadowLog: RiderShadows counters every 5 s (shadows drawn, vertices, time
+; taken, terrain draws shadowed). 2 = also every shadow's placement for 90
+; frames, 10 s into each race. Default 0.
+ShadowLog=0
 
 ; SmoothLog: SimSmooth tracing. 0 = off (default), 1 = matrices and draws for
 ; a few frames, 2 = camera only (120 frames), 3 = rider shadows, 4 = camera and

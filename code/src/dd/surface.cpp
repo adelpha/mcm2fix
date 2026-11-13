@@ -6,6 +6,7 @@
 #include "device.h"
 #include "../prof.h"
 #include "gdihook.h"
+#include "gpushadow.h"
 #include "gputext.h"
 #include "hudtext.h"
 #include "racetitle.h"
@@ -1339,6 +1340,7 @@ HRESULT Surface::FlipImpl(LPDIRECTDRAWSURFACE7, DWORD flags) {
   if (flags & DDFLIP_NOVSYNC) LogOnce("game flips with DDFLIP_NOVSYNC");
   // VSync in mcm2fix.ini decides, whatever the game asked for.
   PresentFront(GetConfig().vsync ? 1 : 0);
+  ShadowFrameEnd();
   SmoothFrameEnd();
   return DD_OK;
 }

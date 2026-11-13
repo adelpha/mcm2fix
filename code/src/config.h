@@ -57,6 +57,10 @@ struct Config {
   bool frame_fix = true;      // FrameFix: per-frame animation/physics steps scale with frame time
   int ai_rate = 30;           // AiRate: computer riders re-plan this many times a second (0 = every frame)
   int smooth_log = 0;         // SmoothLog: 1 = trace a few frames of matrices and draws, 2 = camera only, 120 frames, 3 = rider shadows
+  int rider_shadows = 2;      // RiderShadows: 0 = the game's CPU shadow, 1 = GPU shadow for the rider the camera follows, 2 = GPU shadows for every rider (dd/gpushadow.cpp)
+  int shadow_strength = 0;    // ShadowStrength: GPU shadow darkness in percent (0 = the game's own)
+  int shadow_softness = 100;  // ShadowSoftness: how much GPU shadows blur and fade with the caster's height above the ground, percent (0 = sharp)
+  int shadow_log = 0;         // ShadowLog: 1 = GPU shadow counters every 5 s, 2 = also trace every shadow window for 90 frames
   int sim_smooth = 1;         // SimSmooth: draw objects between simulation steps (needs SimRate)
   bool fast_sort = true;      // FastSort: replace the CRT qsort (quadratic on equal keys) with a merge sort (fixes_sort.cpp)
   int tree_cache_mb = 32;     // TreeCacheMB: trim the vegetation cache only when this much is unused (0 = original 256 KB)
@@ -81,6 +85,12 @@ struct Config {
   bool restart_log = false;  // RestartLog: log the start grid at race load and Restart Race
   bool alpha_log = false;    // AlphaLog: log each blended/alpha-tested draw combination and whether AlphaCut applied
   int alpha_cut = 128;        // AlphaCut: alpha-tested blended pixels below this (0-255) are dropped
+  int motion_blur = 0;        // MotionBlur: speed-based blur of the 3D scene (not the HUD) at speed (dd/motionblur.cpp)
+  int motion_blur_strength = 80;   // MotionBlurStrength: blur length in percent (100 = 8% of the way to the focus; 0..300)
+  int motion_blur_min_speed = 30;  // MotionBlurMinSpeed: mph where the blur starts
+  int motion_blur_max_speed = 70;  // MotionBlurMaxSpeed: mph where it is full
+  int motion_blur_center = 60;     // MotionBlurCenter: size of the sharp middle, percent of the way to the screen edges
+  bool motion_blur_log = false;    // MotionBlurLog: speed, focus point, where the blur went in the frame, every 5 s
   int alpha_to_coverage = 2;  // AlphaToCoverage: cut-out edges via MSAA coverage (0 off, 1 sharp, 2 soft)
   // Graphics options.
   float fov = 0.0f;           // Fov: camera field of view in degrees at 4:3 (0 = game's own, 77)

@@ -21,6 +21,7 @@
 #include <map>
 
 #include "config.h"
+#include "dd/motionblur.h"
 #include "patch.h"
 #include "smooth.h"
 
@@ -107,6 +108,13 @@ void __stdcall AdjustCue(uintptr_t cue, float* dir) {
   if (*reinterpret_cast<uint32_t*>(cue) != kVisualCueVtable) return;
   const uintptr_t cam = *reinterpret_cast<uintptr_t*>(cue + 0x40);
   if (!cam) return;
+  const Config& cfg = GetConfig();
+  if (!cfg.arrow_heading && cfg.arrow_scale == 1.0f) {
+    // Hooked only so the motion blur can find the arrow: leave it as it is.
+    dd::MotionBlurArrowSpot(*reinterpret_cast<float*>(cue + 0xb4), *reinterpret_cast<float*>(cue + 0xb8),
+                            *reinterpret_cast<float*>(cue + 0x44), *reinterpret_cast<float*>(cue + 0x34));
+    return;
+  }
   bool fresh = false;
   const float raw_h = *reinterpret_cast<float*>(cue + 0xb4), raw_v = *reinterpret_cast<float*>(cue + 0xb8);
   float spot_scale = 1.0f;
@@ -124,6 +132,7 @@ void __stdcall AdjustCue(uintptr_t cue, float* dir) {
   float pos[3];
   for (int i = 0; i < 3; ++i)
     pos[i] = cf[0x170 / 4 + i] + dist * cf[0xb4 / 4 + i * 4] + h * cf[0xac / 4 + i * 4] + v * cf[0xb0 / 4 + i * 4];
+  dd::MotionBlurArrowSpot(h, v, dist, *reinterpret_cast<float*>(cue + 0x34));
   const bool moved = h != raw_h || v != raw_v;
   if (moved && std::isfinite(pos[0]) && std::isfinite(pos[1]) && std::isfinite(pos[2]))
     reinterpret_cast<SetPositionFn>(kSetPosition)(cue, pos);
@@ -219,7 +228,7 @@ void __stdcall AdjustCue(uintptr_t cue, float* dir) {
 
 void ApplyArrowFix() {
   const Config& c = GetConfig();
-  if (!c.arrow_heading && c.arrow_scale == 1.0f) return;
+  if (!c.arrow_heading && c.arrow_scale == 1.0f && !c.motion_blur) return;
   if (!patch::Matches(kSetOrientation, kSetOrientationEntry, sizeof(kSetOrientationEntry))) {
     patch::Log("direction arrow: code differs, not applied");
     return;

@@ -51,6 +51,7 @@
 #include "../xp_compat.h"
 #include "backend.h"
 #include "device.h"
+#include "gpushadow.h"
 #include "surface.h"
 
 namespace dd {
@@ -71,6 +72,8 @@ struct Pattern {
 struct Mat {
   float f0;
   float blur;
+  float sun;    // sun highlight brightness
+  float shine;  // highlight sharpness (Blinn-Phong exponent)
 };
 
 struct RCfg {
@@ -80,7 +83,8 @@ struct RCfg {
   float bike = 1.0f;
   float helmet = 1.0f;
   float rider = 0.25f;
-  Mat mats[3] = {{0.35f, 0.5f}, {0.35f, 0.5f}, {0.1f, 3.0f}};
+  Mat mats[3] = {{0.35f, 0.5f, 0.6f, 40.0f}, {0.35f, 0.5f, 0.8f, 60.0f}, {0.1f, 3.0f, 0.15f, 8.0f}};
+  float sun = 1.0f;  // ReflectSun: multiplies the sun highlights, 0 = none
   bool debug = false;
   bool liquid = false;  // LiquidMetal: bikes and riders all chrome
   int size = 128;
@@ -164,8 +168,13 @@ const RCfg& Cfg() {
       mt.f0 = std::clamp(ReadF(key, mt.f0, ini), 0.0f, 1.0f);
       std::snprintf(key, sizeof(key), "Reflect%sBlur", kNames[m]);
       mt.blur = std::clamp(ReadF(key, mt.blur, ini), 0.0f, 8.0f);
+      std::snprintf(key, sizeof(key), "Reflect%sSun", kNames[m]);
+      mt.sun = std::clamp(ReadF(key, mt.sun, ini), 0.0f, 4.0f);
+      std::snprintf(key, sizeof(key), "Reflect%sShine", kNames[m]);
+      mt.shine = std::clamp(ReadF(key, mt.shine, ini), 1.0f, 2000.0f);
     }
   }
+  g_cfg.sun = std::clamp(ReadF("ReflectSun", 1.0f, ini), 0.0f, 4.0f);
   int size = static_cast<int>(GetPrivateProfileIntA("mcm2fix", "ReflectSize", 128, ini));
   int p = 16;
   while (p < size && p < 1024) p <<= 1;
@@ -204,6 +213,9 @@ const RCfg& Cfg() {
         g_cfg.mode, g_cfg.mode == 1 ? "sky" : "live", g_cfg.strength, g_cfg.mats[0].f0, g_cfg.mats[0].blur,
         g_cfg.mats[1].f0, g_cfg.mats[1].blur, g_cfg.mats[2].f0, g_cfg.mats[2].blur, g_cfg.size, g_cfg.live_faces,
         g_cfg.ground, t.c_str(), f.c_str());
+    Log("reflections: sun highlight x%.2f, brightness/sharpness bike %.2f/%.0f helmet %.2f/%.0f rider %.2f/%.0f",
+        g_cfg.sun, g_cfg.mats[0].sun, g_cfg.mats[0].shine, g_cfg.mats[1].sun, g_cfg.mats[1].shine, g_cfg.mats[2].sun,
+        g_cfg.mats[2].shine);
   }
   return g_cfg;
 }
@@ -359,12 +371,13 @@ cbuffer P : register(b2) {
   float4 cam;     // camera position (world)
   float4 fog;     // start end density mode
   float4 params;  // strength, -, full (1 = no Fresnel, full strength), alpha cut
+  float4 sun;     // towards the sun (unit), w brightness (0 = no sun)
 };
 TextureCube env : register(t3);
 SamplerState envsmp : register(s3);
 Texture2D tex0 : register(t0);
 SamplerState smp0 : register(s0);
-struct VIn { float3 pos : POSITION; float3 n : NORMAL; float2 uv : TEXCOORD0; float k : TEXCOORD1; float2 m : TEXCOORD2; };
+struct VIn { float3 pos : POSITION; float3 n : NORMAL; float2 uv : TEXCOORD0; float k : TEXCOORD1; float4 m : TEXCOORD2; };
 struct VOut {
   float4 pos : SV_Position;
   float3 wpos : TEXCOORD0;
@@ -372,7 +385,7 @@ struct VOut {
   float2 uv : TEXCOORD2;
   float k : TEXCOORD3;
   float fogw : TEXCOORD4;
-  float2 m : TEXCOORD5;  // material: F0, blur level
+  float4 m : TEXCOORD5;  // material: F0, blur level, sun brightness, sharpness
 };
 VOut vs_main(VIn i) {
   VOut o;
@@ -399,14 +412,23 @@ float4 ps_main(VOut i) : SV_Target {
   float c2 = c * c;
   float f0 = params.z >= 1 ? 1 : i.m.x;
   float k = (params.z >= 1 ? (i.k > 0 ? 1 : 0) : i.k) * params.x * (f0 + (1 - f0) * c2 * c2 * c);
+  float f = 1;
   if (fog.w != 0) {
-    float d = i.fogw, f;
+    float d = i.fogw;
     if (fog.w == 3) f = (fog.y - d) / max(fog.y - fog.x, 1e-6);
     else if (fog.w == 1) f = exp(-fog.z * d);
     else f = exp(-(fog.z * d) * (fog.z * d));
-    k *= saturate(f);
+    f = saturate(f);
   }
-  return float4(e, saturate(k));
+  k = saturate(k * f);
+  // Sun highlight (Blinn-Phong), only on the sunny side.
+  float s = 0;
+  if (sun.w > 0 && i.m.z > 0) {
+    float3 h = normalize(sun.xyz - v);
+    float nl = dot(n, sun.xyz);
+    s = sun.w * i.m.z * pow(saturate(dot(n, h)), i.m.w) * saturate(nl * 4) * f;
+  }
+  return float4(e * k + s * float3(1, 0.97, 0.9), k);
 }
 // Sky tiles into the cube.
 cbuffer S : register(b3) { row_major float4x4 svp; };
@@ -425,6 +447,7 @@ struct PassConstants {
   float cam[4];
   float fog[4];
   float params[4];
+  float sun[4];  // towards the sun (world, unit), w = ReflectSun (0: no sun)
 };
 
 // The device's main vertex shader constants (device.cpp VSConstants).
@@ -439,9 +462,9 @@ struct PassVertex {
   float n[3];
   float uv[2];
   float k;
-  float f0, blur;
+  float f0, blur, sun, shine;
 };
-static_assert(sizeof(PassVertex) == 44, "pass vertex");
+static_assert(sizeof(PassVertex) == 52, "pass vertex");
 
 struct SkyVertex {
   float pos[3];
@@ -542,7 +565,7 @@ bool MakeGpu() {
         {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0},
         {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D11_INPUT_PER_VERTEX_DATA, 0},
         {"TEXCOORD", 1, DXGI_FORMAT_R32_FLOAT, 0, 32, D3D11_INPUT_PER_VERTEX_DATA, 0},
-        {"TEXCOORD", 2, DXGI_FORMAT_R32G32_FLOAT, 0, 36, D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"TEXCOORD", 2, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 36, D3D11_INPUT_PER_VERTEX_DATA, 0},
     };
     dev->CreateInputLayout(el, 5, vs->GetBufferPointer(), vs->GetBufferSize(), &g.layout);
     const D3D11_INPUT_ELEMENT_DESC sel[] = {
@@ -576,7 +599,8 @@ bool MakeGpu() {
 
   D3D11_BLEND_DESC bl{};
   bl.RenderTarget[0].BlendEnable = TRUE;
-  bl.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+  // Premultiplied: the reflection by its strength, plus the sun highlight.
+  bl.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
   bl.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
   bl.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
   bl.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ZERO;
@@ -730,11 +754,12 @@ uint64_t WeldKey(const void* verts, DWORD count, const void* idx, DWORD nidx, DW
 // RStats (ReflectLog).
 struct RStats {
   unsigned faces_skipped = 0, frames = 0, passes = 0, tris = 0, skipped_no_tris = 0, faces = 0, replays = 0, replay_stale = 0,
-           sky_tiles_drawn = 0, cube_builds = 0, records = 0;
+           sky_tiles_drawn = 0, cube_builds = 0, records = 0, sun_draws = 0;
   double pass_s = 0, cube_s = 0, record_s = 0;
   unsigned capture_bike = 0, capture_cam = 0;
 } g_st;
 double g_st_since = 0;
+float g_logged_sun[3] = {};  // ReflectLog: the sun direction last logged
 
 std::vector<ReflectReplay> g_replays;
 int g_face_cursor = 0;
@@ -974,6 +999,8 @@ void Device::ReflectPass(const Draw& d) {
     v.k = k;
     v.f0 = Cfg().mats[mat].f0;
     v.blur = Cfg().mats[mat].blur;
+    v.sun = k > 0 ? Cfg().mats[mat].sun : 0.0f;
+    v.shine = Cfg().mats[mat].shine;
     if (k > 0) {
       sum[0] += p[0], sum[1] += p[1], sum[2] += p[2];
       cnt += 1;
@@ -1109,6 +1136,16 @@ void Device::ReflectPass(const Draw& d) {
   pc.params[1] = 0;
   pc.params[2] = full ? 1.0f : 0.0f;
   pc.params[3] = tex_[0] && (rs_[RS_ALPHATESTENABLE] || rs_[RS_COLORKEYENABLE] || rs_[RS_ALPHABLENDENABLE]) ? 0.5f : 0.0f;
+  // The sun highlight: the race's shadow light (gpushadow.cpp).
+  if (!full && Cfg().sun > 0 && ShadowSunDirection(pc.sun)) {
+    pc.sun[3] = Cfg().sun;
+    ++g_st.sun_draws;
+    if (Cfg().log && std::memcmp(g_logged_sun, pc.sun, sizeof(g_logged_sun)) != 0) {
+      std::memcpy(g_logged_sun, pc.sun, sizeof(g_logged_sun));
+      Log("reflections: sun highlight from the race's shadow light: towards the sun (%.3f %.3f %.3f), %.1f deg up",
+          pc.sun[0], pc.sun[1], pc.sun[2], std::asin(std::clamp(pc.sun[1], -1.0f, 1.0f)) * 57.29578f);
+    }
+  }
   b.ctx->UpdateSubresource(g.cb, 0, nullptr, &pc, 0, 0);
   const UINT vstride = sizeof(PassVertex), zero = 0;
   b.ctx->IASetInputLayout(g.layout);
@@ -1354,11 +1391,11 @@ void Device::ReflectEndScene(ID3D11InputLayout* game_layout, UINT game_stride) {
       const double fr = g_st.frames;
       Log("reflections 5s: %u frames; pass %.3f ms/frame (%.1f draws, %.0f tris, %u skipped); cube %.3f ms/frame "
           "(%.2f faces, %u face updates put off, %.1f replayed draws, %u stale, %u sky tiles kept, %u builds), record %.3f ms/frame "
-          "(%.1f draws); cube from bike %u / camera %u; hooks: %u object draws, %u part transforms, %zu ranges",
+          "(%.1f draws); sun highlight on %u of %u draws; cube from bike %u / camera %u; hooks: %u object draws, %u part transforms, %zu ranges",
           g_st.frames, g_st.pass_s * 1000 / fr, g_st.passes / fr, g_st.tris / fr, g_st.skipped_no_tris,
           g_st.cube_s * 1000 / fr, g_st.faces / fr, g_st.faces_skipped, g_st.replays / fr, g_st.replay_stale,
           static_cast<unsigned>(g_sky.size()), g_st.cube_builds, g_st.record_s * 1000 / fr, g_st.records / fr,
-          g_st.capture_bike, g_st.capture_cam, g_obj_draws, g_xforms, g_ranges.size());
+          g_st.sun_draws, g_st.passes, g_st.capture_bike, g_st.capture_cam, g_obj_draws, g_xforms, g_ranges.size());
     }
     g_st = RStats{};
     g_obj_draws = g_xforms = 0;

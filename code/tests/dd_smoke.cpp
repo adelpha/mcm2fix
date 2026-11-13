@@ -21,6 +21,7 @@
 #include "../src/dd/d3d7.h"
 #include "../src/dd/directdraw.h"
 #include "../src/dd/gdihook.h"
+#include "../src/dd/motionblur.h"
 
 using namespace d3d7;
 
@@ -102,6 +103,8 @@ int main(int argc, char** argv) {
     if (std::strncmp(argv[i], "us=", 3) == 0) sample_us = std::atoi(argv[i] + 3);
   bool exclusive = false;  // "exclusive": Fullscreen=Exclusive
   bool plain = false;      // "plain": Simd=0 (no SSE2 paths)
+  bool motion_blur = false;  // "motionblur": MotionBlur=1 and its own scene and checks at the end
+  for (int i = 2; i < argc; ++i) motion_blur |= std::strcmp(argv[i], "motionblur") == 0;
   for (int i = 2; i < argc; ++i) plain |= std::strcmp(argv[i], "plain") == 0;
   for (int i = 2; i < argc; ++i) exclusive |= std::strcmp(argv[i], "exclusive") == 0;
   char ini[MAX_PATH];
@@ -111,8 +114,12 @@ int main(int argc, char** argv) {
   std::fprintf(f, "[mcm2fix]\nRenderer=%s\nAntialiasing=4\nAlphaToCoverage=2\nAlphaLog=1\nVSync=0\nD3D9Log=1\nDDStats=1\nGdiLog=1\nTextLog=1\nGpuText=%d\nTextureReplace=0\nProfile=%d\nProfileSampleUs=%d\n", api,
                gputext ? 1 : 0, profile ? 1 : 0, sample_us);
   if (exclusive) std::fprintf(f, "Fullscreen=Exclusive\n");
+  if (motion_blur) std::fprintf(f, "MotionBlur=1\nMotionBlurLog=1\n");
   std::fprintf(f, "Simd=%d\nSimdLog=1\n", plain ? 0 : 1);
   std::fclose(f);
+  // No game: Mcm2.exe's image range (where the renderer reads game globals
+  // such as the game object pointer at 0x5743ac) reads as zeros.
+  VirtualAlloc(reinterpret_cast<void*>(0x400000), 0x300000, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
   LoadConfig();
   simd::Init();
   prof::Start();
@@ -502,6 +509,101 @@ int main(int argc, char** argv) {
   }
 
   primary->Flip(nullptr, DDFLIP_WAIT);
+  if (motion_blur) {
+    // MotionBlur: a full-screen striped 3D scene, a bike heading straight
+    // into the screen at 68 mph, then a screen-space HUD square. The edges
+    // of the scene must be blurred, the middle and the HUD square sharp.
+    IDirectDrawSurface7* stripes = MakeTexture(dd, 64, 64, 0xf800, 0x07e0, 0x001f, 0);
+    Fill16(stripes, [](UINT x, UINT) -> WORD { return (x / 4) & 1 ? 0xffff : 0x0000; });
+    static uint8_t bike[0x800], race[0x100];
+    *reinterpret_cast<void**>(bike + 0x740) = race;
+    *reinterpret_cast<void**>(race + 0x38) = bike;
+    const float vel[3] = {0.0f, 0.0f, 100.0f};  // ft/s, straight ahead
+    WORD idx[6] = {0, 1, 2, 1, 3, 2};
+    std::memcpy(bike + 0x64, vel, sizeof(vel));
+    for (int fr = 0; fr < 3; ++fr) {
+      dd::MotionBlurBikeStep(bike);
+      dd::MotionBlurArrowSpot(-2.0f, -1.2f, 2.0f, 1.0f);  // the direction arrow, lower left
+      dev->Clear(0, nullptr, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, 0xff202020, 1.0f, 0);
+      dev->BeginScene();
+      dev->SetRenderState(RS_ZENABLE, 1);
+      dev->SetRenderState(RS_ZWRITEENABLE, 1);
+      dev->SetRenderState(RS_ZFUNC, 4);  // less-equal
+      dev->SetTransform(D3DTRANSFORMSTATE_WORLD, &I);
+      dev->SetTransform(D3DTRANSFORMSTATE_VIEW, &I);
+      dev->SetTransform(D3DTRANSFORMSTATE_PROJECTION, &P);
+      dev->SetTextureStageState(0, TSS_COLOROP, 2);  // select texture
+      dev->SetTextureStageState(0, TSS_ALPHAOP, 2);
+      dev->SetTextureStageState(0, TSS_COLORARG1, 2);
+      dev->SetTextureStageState(0, TSS_ALPHAARG1, 2);
+      dev->SetTextureStageState(0, TSS_MAGFILTER, 1);  // point
+      dev->SetTextureStageState(0, TSS_MINFILTER, 1);
+      dev->SetTexture(0, stripes);
+      V3 bg[4] = {{-8, 6, 5, 0xffffffff, 0, 0}, {8, 6, 5, 0xffffffff, 10, 0},
+                  {-8, -6, 5, 0xffffffff, 0, 1}, {8, -6, 5, 0xffffffff, 10, 1}};
+      dev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, fvf_3d, bg, 4, idx, 6, 0);
+      // The direction arrow: an object at its spot in front of the camera
+      // (screen about 44..116, 348..420), drawn in the middle of the scene.
+      D3DMATRIX at = I;
+      at.m[3][0] = -2.0f;
+      at.m[3][1] = -1.2f;
+      at.m[3][2] = 2.0f;
+      dev->SetTransform(D3DTRANSFORMSTATE_WORLD, &at);
+      V3 arrow[4] = {{-0.3f, 0.3f, 0, 0xffffffff, 0, 0}, {0.3f, 0.3f, 0, 0xffffffff, 1, 0},
+                     {-0.3f, -0.3f, 0, 0xffffffff, 0, 1}, {0.3f, -0.3f, 0, 0xffffffff, 1, 1}};
+      dev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, fvf_3d, arrow, 4, idx, 6, 0);
+      dev->SetTransform(D3DTRANSFORMSTATE_WORLD, &I);
+      // More 3D draws (a scene has hundreds), hidden behind the stripes.
+      for (int k = 0; k < 20; ++k) {
+        V3 t[4] = {{0, 0, 50, 0xffffffff, 0, 0}, {0.1f, 0, 50, 0xffffffff, 1, 0},
+                   {0, 0.1f, 50, 0xffffffff, 0, 1}, {0.1f, 0.1f, 50, 0xffffffff, 1, 1}};
+        dev->SetRenderState(RS_ZBIAS, k & 1);  // keeps them from merging
+        dev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, fvf_3d, t, 4, idx, 6, 0);
+      }
+      // HUD: screen space, no depth test, white.
+      dev->SetRenderState(RS_ZENABLE, 0);
+      dev->SetTexture(0, nullptr);
+      dev->SetTextureStageState(0, TSS_COLOROP, 3);  // select diffuse
+      dev->SetTextureStageState(0, TSS_ALPHAOP, 3);
+      TL hud[4] = {{590, 10, 0, 1, 0xffffffff, 0, 0}, {630, 10, 0, 1, 0xffffffff, 0, 0},
+                   {630, 50, 0, 1, 0xffffffff, 0, 0}, {590, 50, 0, 1, 0xffffffff, 0, 0}};
+      dev->DrawPrimitive(D3DPT_TRIANGLEFAN, fvf_tl, hud, 4, 0);
+      dev->EndScene();
+      if (fr == 2) break;
+      primary->Flip(nullptr, DDFLIP_WAIT);
+    }
+    // Stripes are 4 texels of 64 over 1/10 of the quad: about 3.2 pixels.
+    auto spread = [&](int y, int x0, int x1, int& lo, int& hi) {
+      lo = 255, hi = 0;
+      for (int x = x0; x < x1; ++x) {
+        int px[3];
+        ReadRGB(back, x, y, px);
+        lo = px[0] < lo ? px[0] : lo;
+        hi = px[0] > hi ? px[0] : hi;
+      }
+    };
+    int lo = 0, hi = 0;
+    spread(240, 310, 330, lo, hi);
+    std::printf("     motion blur middle: red %d..%d\n", lo, hi);
+    Check(lo < 40 && hi > 215, "motion blur: middle of the screen stays sharp");
+    spread(240, 4, 24, lo, hi);
+    std::printf("     motion blur left edge: red %d..%d\n", lo, hi);
+    Check(lo > 50 && hi < 205, "motion blur: edge of the screen blurred");
+    spread(384, 60, 100, lo, hi);
+    std::printf("     motion blur arrow: red %d..%d\n", lo, hi);
+    Check(lo < 40 && hi > 215, "motion blur: direction arrow drawn after the blur, sharp");
+    spread(330, 60, 100, lo, hi);
+    std::printf("     motion blur above the arrow: red %d..%d\n", lo, hi);
+    Check(lo > 30 && hi < 225, "motion blur: scene around the arrow blurred");
+    int px[3];
+    ReadRGB(back, 610, 30, px);
+    std::printf("     HUD square %d %d %d\n", px[0], px[1], px[2]);
+    Check(Near(px, 255, 255, 255, 8), "motion blur: HUD drawn after the blur, sharp");
+    ReadRGB(back, 591, 11, px);
+    Check(Near(px, 255, 255, 255, 8), "motion blur: HUD corner not smeared");
+    primary->Flip(nullptr, DDFLIP_WAIT);
+    stripes->Release();
+  }
   bool hold = false;
   for (int i = 2; i < argc; ++i) hold |= std::strcmp(argv[i], "hold") == 0;
   if (hold) {
