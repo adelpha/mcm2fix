@@ -84,7 +84,7 @@ struct RCfg {
   float bike = 1.0f;
   float helmet = 1.0f;
   float rider = 0.25f;
-  Mat mats[3] = {{0.35f, 4.0f, 0.6f, 40.0f}, {0.35f, 4.0f, 0.8f, 60.0f}, {0.1f, 4.0f, 0.15f, 8.0f}};
+  Mat mats[3] = {{0.25f, 4.0f, 0.6f, 40.0f}, {0.25f, 4.0f, 0.7f, 40.0f}, {0.1f, 4.0f, 0.15f, 8.0f}};
   float sun = 1.0f;  // ReflectSun: multiplies the sun highlights, 0 = none
   bool debug = false;
   bool liquid = false;  // LiquidMetal: bikes and riders all chrome

@@ -213,16 +213,16 @@ Reflections=0
 ; ReflectBike (bike bodywork, default 1), ReflectHelmet (default 1) and
 ; ReflectRider (the rider's suit, gloves and boots, default 0.25).
 ; ...Fresnel: the share of that seen when you look straight at the surface
-; (bike and helmet 0.35, rider 0.1); real paint and plastic shine mostly at
+; (bike and helmet 0.25, rider 0.1); real paint and plastic shine mostly at
 ; the edges, higher values look more like chrome.
 ; ...Blur: how soft the reflection is, 0 = mirror-sharp, up to 8 (default
 ; 4; lower values show a hard horizon line on the helmet). ReflectStrength
 ; multiplies all of them.
 ReflectBike=1
-ReflectBikeFresnel=0.35
+ReflectBikeFresnel=0.25
 ReflectBikeBlur=4
 ReflectHelmet=1
-ReflectHelmetFresnel=0.35
+ReflectHelmetFresnel=0.25
 ReflectHelmetBlur=4
 ReflectRider=0.25
 ReflectRiderFresnel=0.1
@@ -231,14 +231,14 @@ ReflectStrength=1
 
 ; Sun highlight: a shiny spot where the sun (the light that sets the riders'
 ; shadows) glints off the bodywork, helmet and suit. ...Sun: how bright, 0 =
-; none (bike 0.6, helmet 0.8, rider 0.15). ...Shine: how small and sharp the
-; spot is (bike 40, helmet 60, rider 8; higher = smaller, glossier).
+; none (bike 0.6, helmet 0.7, rider 0.15). ...Shine: how small and sharp the
+; spot is (bike 40, helmet 40, rider 8; higher = smaller, glossier).
 ; ReflectSun multiplies all three (0 = no highlights). Tracks without a sun
 ; have none.
 ReflectBikeSun=0.6
 ReflectBikeShine=40
-ReflectHelmetSun=0.8
-ReflectHelmetShine=60
+ReflectHelmetSun=0.7
+ReflectHelmetShine=40
 ReflectRiderSun=0.15
 ReflectRiderShine=8
 ReflectSun=1
