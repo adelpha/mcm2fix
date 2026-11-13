@@ -100,7 +100,7 @@ void LoadConfig() {
   g_config.input_timing = GetPrivateProfileIntA("mcm2fix", "InputTiming", 1, ini) != 0;
   g_config.input_log = GetPrivateProfileIntA("mcm2fix", "InputLog", 0, ini) != 0;
   g_config.sound_log = GetPrivateProfileIntA("mcm2fix", "SoundLog", 0, ini) != 0;
-  GetPrivateProfileStringA("mcm2fix", "BajaReverb", "Off", g_config.baja_reverb, sizeof(g_config.baja_reverb), ini);
+  GetPrivateProfileStringA("mcm2fix", "BajaReverb", "Mountains", g_config.baja_reverb, sizeof(g_config.baja_reverb), ini);
   g_config.baja_reverb[std::strcspn(g_config.baja_reverb, "\t; ")] = 0;  // drop an inline comment
   g_config.sound_pause_log = GetPrivateProfileIntA("mcm2fix", "SoundPauseLog", 0, ini) != 0;
   g_config.state_cache = GetPrivateProfileIntA("mcm2fix", "StateCache", 1, ini) != 0;

@@ -284,8 +284,14 @@ never turns on.
 back hardware-style 3D sound and EAX. Put its **32-bit (Win32)** DLLs in the
 game folder. The 64-bit ones are silently ignored by the 32-bit game, which
 then falls back to Windows' own DirectSound. With DSOAL the game finds EAX at
-startup and applies its per-track reverb. mcm2fix works with or without
-DSOAL.
+startup and applies its reverb: Arena in Supercross and Moto-Tag. mcm2fix
+works with or without DSOAL.
+
+For every outdoor event the game asks for "reverb off" with a decay time of
+0, which OpenAL Soft rejects, so the reverb from before stayed on instead.
+In Baja events mcm2fix sends the EAX Mountains preset instead
+(`BajaReverb=Mountains`, the default). `BajaReverb=Off` keeps the game's own
+values, and any other EAX 1.0 preset name can be tried.
 
 DSOAL ignores the `DSBCAPS_MUTE3DATMAXDISTANCE` flag that the game sets on
 all its 3D sounds. Riders who were out of earshot then kept playing quiet
