@@ -24,6 +24,7 @@
 #include "framerate.h"
 #include "patch.h"
 #include "config.h"
+#include "simd.h"
 
 namespace {
 
@@ -320,9 +321,7 @@ unsigned g_vtotal = 0, g_vblended = 0, g_vstill = 0, g_vstill_changed = 0;
 // The positions of `verts` are exactly `pos` (3 floats each).
 bool SamePositions(const uint8_t* verts, uint32_t stride, uint32_t count, const std::vector<float>& pos) {
   if (pos.size() != static_cast<size_t>(count) * 3) return false;
-  for (uint32_t i = 0; i < count; ++i)
-    if (std::memcmp(verts + static_cast<size_t>(i) * stride, &pos[i * 3], 12) != 0) return false;
-  return true;
+  return simd::SamePositions(verts, stride, count, pos.data());
 }
 
 // Largest distance a vertex may move apart from the object's average move in
@@ -370,7 +369,7 @@ const uint8_t* SmoothVertices(const uint8_t* verts, uint32_t stride, uint32_t co
     r.tick = tick;
   }
   r.cur.resize(static_cast<size_t>(count) * 3);
-  for (uint32_t i = 0; i < count; ++i) std::memcpy(&r.cur[i * 3], verts + static_cast<size_t>(i) * stride, 12);
+  simd::GatherPositions(verts, stride, count, r.cur.data());
   if (new_tick) {
     r.still = r.has_prev && r.prev_tick + 1 == tick && r.prev == r.cur;
     if (r.still) {
@@ -381,9 +380,8 @@ const uint8_t* SmoothVertices(const uint8_t* verts, uint32_t stride, uint32_t co
   // Centre of this draw, also kept per slot regardless of size: a shadow cast
   // on bumpy ground changes its number of points every step, so for those
   // only the centre can be followed.
-  double centre[3] = {0, 0, 0};
-  for (size_t i = 0; i < r.cur.size(); i += 3)
-    for (int c = 0; c < 3; ++c) centre[c] += r.cur[i + c];
+  double centre[3];
+  simd::SumPositions(r.cur.data(), count, centre);
   for (double& c : centre) c /= count;
   uint64_t loose = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(verts));
   loose = loose * 0x9E3779B97F4A7C15ull ^ static_cast<uint64_t>(reinterpret_cast<uintptr_t>(idx));
@@ -419,28 +417,15 @@ const uint8_t* SmoothVertices(const uint8_t* verts, uint32_t stride, uint32_t co
   // every vertex moved close to the object's average move (a different
   // object that happens to land in the same slot moves every vertex
   // differently, and blending it shows up as flickering triangles).
-  double mean[3] = {0, 0, 0};
-  for (size_t i = 0; i < r.cur.size(); i += 3) {
-    const float dx = r.cur[i] - r.prev[i], dy = r.cur[i + 1] - r.prev[i + 1], dz = r.cur[i + 2] - r.prev[i + 2];
-    if (dx * dx + dy * dy + dz * dz > kMaxStepMove * kMaxStepMove) return verts;
-    mean[0] += dx; mean[1] += dy; mean[2] += dz;
-  }
+  double mean[3];
+  if (!simd::SumMoves(r.prev.data(), r.cur.data(), count, kMaxStepMove * kMaxStepMove, mean)) return verts;
   for (double& m : mean) m /= count;
-  double bend = 0.0;  // largest squared distance from the average move
-  for (size_t i = 0; i < r.cur.size(); i += 3) {
-    const double dx = r.cur[i] - r.prev[i] - mean[0], dy = r.cur[i + 1] - r.prev[i + 1] - mean[1],
-                 dz = r.cur[i + 2] - r.prev[i + 2] - mean[2];
-    const double d2 = dx * dx + dy * dy + dz * dz;
-    if (d2 > bend) bend = d2;
-  }
+  // Largest squared distance from the average move.
+  const double bend = simd::MaxBend(r.prev.data(), r.cur.data(), count, mean);
   if (bend > kMaxBend * kMaxBend) return verts;
   g_vout.assign(verts, verts + static_cast<size_t>(count) * stride);
   if (bend <= kMaxPointBlend * kMaxPointBlend) {
-    for (uint32_t i = 0; i < count; ++i) {
-      float p[3];
-      for (int c = 0; c < 3; ++c) p[c] = r.prev[i * 3 + c] + (r.cur[i * 3 + c] - r.prev[i * 3 + c]) * alpha;
-      std::memcpy(g_vout.data() + static_cast<size_t>(i) * stride, p, 12);
-    }
+    simd::BlendPositions(r.prev.data(), r.cur.data(), count, alpha, g_vout.data(), stride);
   } else {
     // A shape that turns or changes a lot in one step (a wheel spinning while
     // the bike turns) can't be blended point by point without squashing it:

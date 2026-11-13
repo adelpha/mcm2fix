@@ -444,6 +444,18 @@ SoundMaxDistanceMute=1
 ; measurable slowdowns. 0 = the game's own code.
 FastCrt=1
 
+; Simd: 1 = mcm2fix's own per-frame work (converting vertices for the GPU,
+; blending objects between simulation steps, 16-bit texture uploads, the
+; pause menu's copy of the frame) uses SSE2 when the CPU has it (default).
+; The CPU is checked at start-up and a self test makes sure both versions
+; give the same results. 0 = plain code only. The game's own code, physics
+; included, is not affected either way.
+Simd=1
+
+; SimdLog: 1 = log how fast the SSE2 and plain versions run on this CPU at
+; start-up, and how much work went through them every 5 seconds.
+SimdLog=0
+
 ; FastGameCode: 1 = a few of the game's own loops that its 1999 compiler
 ; built badly are rewritten in place with the same maths, so the results are
 ; exactly the same, only faster (default). So far: the loop that unpacks

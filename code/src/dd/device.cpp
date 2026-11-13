@@ -1,6 +1,8 @@
 #include "../prof.h"
 #include "../smooth.h"
 #include "device.h"
+
+#include "../simd.h"
 #include "drawlog.h"
 #include "gputext.h"
 #include "hudtext.h"
@@ -1462,7 +1464,7 @@ HRESULT Device::GetInfo(DWORD, void*, DWORD) { return S_FALSE; }
 
 // ------------------------------------------------------------------- drawing
 
-UINT Device::PushVertices(const void* data, UINT bytes) {
+UINT Device::PushVertices(UINT bytes, void (*fill)(void* ctx, void* dst), void* ctx) {
   Backend& b = B();
   D3D11_MAP map = D3D11_MAP_WRITE_NO_OVERWRITE;
   if (vbuf_pos_ + bytes > vbuf_size_) {
@@ -1471,7 +1473,8 @@ UINT Device::PushVertices(const void* data, UINT bytes) {
   }
   D3D11_MAPPED_SUBRESOURCE m{};
   if (FAILED(b.ctx->Map(vbuf_, 0, map, 0, &m))) return UINT(-1);
-  std::memcpy(static_cast<uint8_t*>(m.pData) + vbuf_pos_, data, bytes);
+  // Write-only memory (often write-combined): fill only stores into it.
+  fill(ctx, static_cast<uint8_t*>(m.pData) + vbuf_pos_);
   b.ctx->Unmap(vbuf_, 0);
   UINT at = vbuf_pos_;
   vbuf_pos_ += bytes;
@@ -2096,40 +2099,40 @@ void Device::SubmitDraw(const Draw& d) {
   prof::Scope prep_zone(prof::kVertexPrep);
   int set0 = static_cast<int>(tss_[0][TSS_TEXCOORDINDEX] & 0xffff);
   int set1 = static_cast<int>(tss_[1][TSS_TEXCOORDINDEX] & 0xffff);
-  scratch_.resize(static_cast<size_t>(d.count) * sizeof(GpuVertex));
-  auto* out = reinterpret_cast<GpuVertex*>(scratch_.data());
   const VertexBuffer::Processed* clip = mode == 2 ? d.vb->ClipData() : nullptr;
-  // Fixed-size copies only (a variable size became a memcpy call per field).
   const int t0 = set0 < l.ntex ? l.tex[set0] : -1, t1 = set1 < l.ntex ? l.tex[set1] : -1;
-  const bool t0_uv = t0 >= 0 && l.tex_dim[set0] >= 2, t1_uv = t1 >= 0 && l.tex_dim[set1] >= 2;
+  simd::VertexIn in;
+  in.stride = l.stride;
+  in.xyzw = l.tl;
+  in.diffuse = l.diffuse;
+  in.specular = l.specular;
+  in.t0 = t0;
+  in.t1 = t1;
+  in.t0_uv = t0 >= 0 && l.tex_dim[set0] >= 2;
+  in.t1_uv = t1 >= 0 && l.tex_dim[set1] >= 2;
   const uint8_t* src = d.verts + static_cast<size_t>(d.first) * l.stride;
-  for (DWORD i = 0; i < d.count; ++i, src += l.stride) {
-    const uint8_t* s = src;
-    GpuVertex& v = out[i];
-    if (clip) {
-      std::memcpy(v.pos, clip[d.first + i].clip, 16);
-    } else if (l.tl) {
-      std::memcpy(v.pos, s, 16);
-    } else {
-      std::memcpy(v.pos, s, 12);
-      v.pos[3] = 1.0f;
-    }
-    v.diffuse = 0xffffffff;
-    v.specular = 0;
-    if (l.diffuse >= 0) std::memcpy(&v.diffuse, s + l.diffuse, 4);
-    if (l.specular >= 0) std::memcpy(&v.specular, s + l.specular, 4);
-    v.t0[0] = v.t0[1] = v.t1[0] = v.t1[1] = 0;
-    if (t0_uv) std::memcpy(v.t0, s + t0, 8);
-    else if (t0 >= 0) std::memcpy(v.t0, s + t0, 4);
-    if (t1_uv) std::memcpy(v.t1, s + t1, 8);
-    else if (t1 >= 0) std::memcpy(v.t1, s + t1, 4);
-  }
   UINT vbytes = d.count * sizeof(GpuVertex);
   if (vbytes > vbuf_size_) {
     LogOnce("draw of %lu vertices too large", d.count);
     return;
   }
-  UINT voff = PushVertices(scratch_.data(), vbytes);
+  // Converted straight into the mapped vertex buffer (no copy through a
+  // scratch buffer); processed vertices then get their clip positions.
+  struct Fill {
+    const simd::VertexIn* in;
+    const uint8_t* src;
+    DWORD count;
+    const VertexBuffer::Processed* clip;
+    DWORD first;
+  } fill{&in, src, d.count, clip, d.first};
+  UINT voff = PushVertices(vbytes, [](void* c, void* dst) {
+    const Fill& f = *static_cast<const Fill*>(c);
+    simd::ConvertVertices(*f.in, f.src, f.count, dst);
+    if (f.clip) {
+      auto* out = static_cast<GpuVertex*>(dst);
+      for (DWORD i = 0; i < f.count; ++i) std::memcpy(out[i].pos, f.clip[f.first + i].clip, 16);
+    }
+  }, &fill);
   if (voff == UINT(-1)) return;
   UINT ioff = 0;
   if (idx) {

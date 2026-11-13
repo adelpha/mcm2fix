@@ -137,6 +137,12 @@ Windows 10 and 11.
 - A few of the game's own loops that its 1999 compiler built badly are
   rewritten in place with identical maths (`FastGameCode`): so far the terrain
   texture coordinate loop, about 13x faster.
+- mcm2fix's own per-frame work uses SSE2 when the CPU has it (`Simd`):
+  converting the game's vertices for the GPU, blending objects between
+  simulation steps, 16-bit texture uploads, the pause menu's copy of the
+  frame and texture edge clean-up. The CPU is checked at start-up, so CPUs
+  without SSE2 (Pentium II/III, early Athlons) use the plain code. The game's
+  own code, physics included, is unchanged.
 - **No freezes on tree-heavy maps** (`FastSort`, `TreeCacheMB`). The game's
   old qsort went quadratic sorting its tree cache, freezing for up to 125 ms
   while turning; it now uses a merge sort and trims that cache far less often.
@@ -419,6 +425,8 @@ troubleshooting.
 | `AsyncSound` | `2` | `0`, `1`, `2` | Where the 3D sound position update runs. The game makes it every physics step, and it's slow on Windows 10/11 because it holds the sound system's lock. `2` = a worker thread, started while the frame waits for VSync. `1` = a worker thread, started at once. `0` = the game thread, as in the original (can cause stutter). |
 | `SoundMaxDistanceMute` | `1` | `0`, `1`, `2`, `3` | `1`: with a replacement DirectSound such as DSOAL, which ignores the rule, mcm2fix mutes 3D sounds beyond their maximum distance itself, as Windows' DirectSound does. With Windows' own DirectSound it leaves them to Windows. `3` mutes them with any DirectSound (with Windows' own, the bike engines then go silent after a pause). `0` never. `2` changes nothing and only logs those sounds. |
 | `FastCrt` | `1` | `0`, `1` | The game's millisecond clock uses `QueryPerformanceCounter` instead of changing the Windows timer period on every call, and its case-insensitive name comparisons use a lookup table. Both were measurable slowdowns. |
+| `Simd` | `1` | `0`, `1` | mcm2fix's own vertex, smoothing and pixel conversion work uses SSE2 when the CPU has it, after a start-up self test that checks it gives the same results as the plain code. `0` = plain code only. The game's own code (physics included) is never changed by this. |
+| `SimdLog` | `0` | `0`, `1` | Log how fast the SSE2 and plain versions run on this CPU at start-up, and how much work went through them every 5 seconds. |
 | `FastGameCode` | `1` | `0`, `1` | A few of the game's own loops that its 1999 compiler built badly are rewritten in place with the same maths, so results are exactly the same, only faster. So far: the terrain texture coordinate loop, which ran every frame and stalled the CPU, and the per-frame tree cache scan, which now reads ahead instead of waiting on memory. |
 | `FastSort` | `1` | `0`, `1` | The game's sorting uses a merge sort instead of the old C library qsort, which slows to a crawl when many items are equal. On tree-heavy maps that froze the game for 35-125 ms when turning the camera. Being stable, it also stops distant riders' engine sounds retriggering as quiet looping snippets. |
 | `TreeCacheMB` | `32` | `0`, 1-512 | The game's cache of built trees is only emptied when more than this many MB of it are unused (the original 256 KB emptied it constantly while turning, and the trees were then rebuilt). `0` = the original. |

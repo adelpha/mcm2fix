@@ -17,6 +17,7 @@
 
 #include "../src/config.h"
 #include "../src/prof.h"
+#include "../src/simd.h"
 #include "../src/dd/d3d7.h"
 #include "../src/dd/directdraw.h"
 #include "../src/dd/gdihook.h"
@@ -100,6 +101,8 @@ int main(int argc, char** argv) {
   for (int i = 2; i < argc; ++i)
     if (std::strncmp(argv[i], "us=", 3) == 0) sample_us = std::atoi(argv[i] + 3);
   bool exclusive = false;  // "exclusive": Fullscreen=Exclusive
+  bool plain = false;      // "plain": Simd=0 (no SSE2 paths)
+  for (int i = 2; i < argc; ++i) plain |= std::strcmp(argv[i], "plain") == 0;
   for (int i = 2; i < argc; ++i) exclusive |= std::strcmp(argv[i], "exclusive") == 0;
   char ini[MAX_PATH];
   GetModuleFileNameA(nullptr, ini, MAX_PATH);
@@ -108,8 +111,10 @@ int main(int argc, char** argv) {
   std::fprintf(f, "[mcm2fix]\nRenderer=%s\nAntialiasing=4\nAlphaToCoverage=2\nAlphaLog=1\nVSync=0\nD3D9Log=1\nDDStats=1\nGdiLog=1\nTextLog=1\nGpuText=%d\nTextureReplace=0\nProfile=%d\nProfileSampleUs=%d\n", api,
                gputext ? 1 : 0, profile ? 1 : 0, sample_us);
   if (exclusive) std::fprintf(f, "Fullscreen=Exclusive\n");
+  std::fprintf(f, "Simd=%d\nSimdLog=1\n", plain ? 0 : 1);
   std::fclose(f);
   LoadConfig();
+  simd::Init();
   prof::Start();
   dd::InstallGdiHooks();
 

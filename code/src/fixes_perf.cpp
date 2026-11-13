@@ -15,6 +15,7 @@
 
 #include "config.h"
 #include "patch.h"
+#include "simd.h"
 
 namespace {
 
@@ -333,6 +334,7 @@ void PatchSoundCommit() {
 // Called by both renderers just before Present: the game thread is about to
 // wait for VSync, so the pending 3D sound commit runs now.
 void PerfBeforePresent() {
+  simd::ReportStats();
   if (g_at_present && g_npending) SetEvent(g_commit_event);
 }
 

@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "config.h"
+#include "simd.h"
 #include "patch.h"
 #include "prof.h"
 #include "video/player.h"
@@ -67,6 +68,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
                  "Renderer=D3D%d RendererLabel=%d D3D9Log=%d",
                  c.fov, c.anisotropy, c.msaa, c.mip_bias, c.fog_scale, c.view_distance, c.model_lod, c.tree_always_near ? 0 : 1,
                  c.texture_replace, c.texture_dump, c.renderer, c.renderer_label, c.d3d9_log);
+      simd::Init();
       if (c.startup) ApplyStartupFixes();
       if (c.registry) ApplyRegistryFixes();
       if (c.files) ApplyFileFixes();
