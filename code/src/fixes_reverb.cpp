@@ -167,7 +167,7 @@ void ApplyReverbFixes() {
   for (int e = 0; e < 6; ++e) {
     g_preset[e] = nullptr;
     const char* want = GetConfig().outdoor_reverb[e];
-    if (!kEventKey[e] || !want[0] || lstrcmpiA(want, "Off") == 0) continue;
+    if (!kEventKey[e] || !want[0] || lstrcmpiA(want, "Default") == 0 || lstrcmpiA(want, "Off") == 0) continue;  // Off: older spelling
     for (const Preset& p : kPresets)
       if (lstrcmpiA(want, p.name) == 0) g_preset[e] = &p;
     if (g_preset[e]) {

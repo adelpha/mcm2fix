@@ -447,15 +447,15 @@ SoundMaxDistanceMute=1
 ; Room, Bathroom, LivingRoom, StoneRoom, Auditorium, ConcertHall, Cave, Arena,
 ; Hangar, CarpetedHallway, Hallway, StoneCorridor, Alley, Forest, City,
 ; Mountains, Quarry, Plain, ParkingLot, SewerPipe, Underwater, Drugged, Dizzy,
-; Psychotic. Off = the game's own values. Needs EAX (DSOAL or an EAX sound
-; card); otherwise they change nothing. Every EAX setting the game makes is
-; written to the log.
+; Psychotic. Default = the game's own values for that event (Arena in
+; Supercross and Moto-Tag). Needs EAX (DSOAL or an EAX sound card); otherwise
+; they change nothing. Every EAX setting the game makes is written to the log.
 BajaReverb=Mountains
 EnduroReverb=Forest
 QuarryReverb=Mountains
 NationalsReverb=Forest
-SupercrossReverb=Off
-TagReverb=Off
+SupercrossReverb=Default
+TagReverb=Default
 
 ; FastCrt: 1 = the game's millisecond clock uses QueryPerformanceCounter
 ; instead of changing the Windows timer period on every call, and its
