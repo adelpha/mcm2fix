@@ -64,21 +64,28 @@ namespace {
 struct Pattern {
   std::string glob;
   float k;
+  int mat = 0;  // material: 0 bike, 1 helmet, 2 rider body
+};
+
+// How a material reflects: share of its strength seen head-on, and how soft.
+struct Mat {
+  float f0;
+  float blur;
 };
 
 struct RCfg {
   bool loaded = false;
   int mode = 0;
   float strength = 1.0f;
-  float bike = 0.6f;
-  float helmet = 0.8f;
-  float f0 = 0.15f;
+  float bike = 1.0f;
+  float helmet = 1.0f;
+  float rider = 0.25f;
+  Mat mats[3] = {{0.35f, 0.5f}, {0.35f, 0.5f}, {0.1f, 3.0f}};
   bool debug = false;
   bool liquid = false;  // LiquidMetal: bikes and riders all chrome
-  float blur = 1.5f;
   int size = 128;
   int live_faces = 1;
-  float ground = 0.5f;
+  float ground = 1.0f;
   bool log = false;
   std::vector<Pattern> textures;  // texture name -> strength (bikes, plus ReflectTextures)
   std::vector<Pattern> frames;    // frame name -> strength (helmet, plus ReflectFrames)
@@ -102,7 +109,7 @@ std::string Trim(std::string s) {
 
 // "a*, b:0.3, c" -> patterns (default strength `k`). An inline "; comment"
 // ends the list.
-void ParseList(const char* text, float k, std::vector<Pattern>& out) {
+void ParseList(const char* text, float k, int mat, std::vector<Pattern>& out) {
   std::string s(text);
   if (size_t semi = s.find(';'); semi != std::string::npos) s.resize(semi);
   size_t at = 0;
@@ -115,7 +122,7 @@ void ParseList(const char* text, float k, std::vector<Pattern>& out) {
         v = static_cast<float>(std::atof(item.c_str() + colon + 1));
         item = Trim(item.substr(0, colon));
       }
-      if (!item.empty()) out.push_back({item, v});
+      if (!item.empty()) out.push_back({item, v, mat});
     }
     if (comma == std::string::npos) break;
     at = comma + 1;
@@ -140,16 +147,31 @@ const RCfg& Cfg() {
   xp::Append(ini, "mcm2fix.ini");
   g_cfg.mode = std::clamp(static_cast<int>(GetPrivateProfileIntA("mcm2fix", "Reflections", 0, ini)), 0, 2);
   g_cfg.strength = std::clamp(ReadF("ReflectStrength", 1.0f, ini), 0.0f, 4.0f);
-  g_cfg.bike = std::clamp(ReadF("ReflectBike", 0.6f, ini), 0.0f, 1.0f);
-  g_cfg.helmet = std::clamp(ReadF("ReflectHelmet", 0.8f, ini), 0.0f, 1.0f);
-  g_cfg.f0 = std::clamp(ReadF("ReflectFresnel", 0.15f, ini), 0.0f, 1.0f);
-  g_cfg.blur = std::clamp(ReadF("ReflectBlur", 1.5f, ini), 0.0f, 8.0f);
+  g_cfg.bike = std::clamp(ReadF("ReflectBike", 1.0f, ini), 0.0f, 1.0f);
+  g_cfg.helmet = std::clamp(ReadF("ReflectHelmet", 1.0f, ini), 0.0f, 1.0f);
+  g_cfg.rider = std::clamp(ReadF("ReflectRider", 0.25f, ini), 0.0f, 1.0f);
+  {
+    // Per material Fresnel and blur; the older shared keys (ReflectFresnel,
+    // ReflectBlur) still set the bike's and helmet's when given.
+    const float f0 = ReadF("ReflectFresnel", -1.0f, ini), blur = ReadF("ReflectBlur", -1.0f, ini);
+    static const char* const kNames[3] = {"Bike", "Helmet", "Rider"};
+    for (int m = 0; m < 3; ++m) {
+      Mat& mt = g_cfg.mats[m];
+      if (m < 2 && f0 >= 0) mt.f0 = f0;
+      if (m < 2 && blur >= 0) mt.blur = blur;
+      char key[64];
+      std::snprintf(key, sizeof(key), "Reflect%sFresnel", kNames[m]);
+      mt.f0 = std::clamp(ReadF(key, mt.f0, ini), 0.0f, 1.0f);
+      std::snprintf(key, sizeof(key), "Reflect%sBlur", kNames[m]);
+      mt.blur = std::clamp(ReadF(key, mt.blur, ini), 0.0f, 8.0f);
+    }
+  }
   int size = static_cast<int>(GetPrivateProfileIntA("mcm2fix", "ReflectSize", 128, ini));
   int p = 16;
   while (p < size && p < 1024) p <<= 1;
   g_cfg.size = p;
   g_cfg.live_faces = std::clamp(static_cast<int>(GetPrivateProfileIntA("mcm2fix", "ReflectLiveFaces", 1, ini)), 1, 6);
-  g_cfg.ground = std::clamp(ReadF("ReflectGround", 0.5f, ini), 0.0f, 2.0f);
+  g_cfg.ground = std::clamp(ReadF("ReflectGround", 1.0f, ini), 0.0f, 2.0f);
   g_cfg.log = GetPrivateProfileIntA("mcm2fix", "ReflectLog", 0, ini) != 0;
   g_cfg.debug = GetPrivateProfileIntA("mcm2fix", "ReflectDebug", 0, ini) != 0;
   g_cfg.liquid = GetPrivateProfileIntA("mcm2fix", "LiquidMetal", 0, ini) != 0;
@@ -157,26 +179,31 @@ const RCfg& Cfg() {
   char buf[1024] = {};
   GetPrivateProfileStringA("mcm2fix", "ReflectBikeTextures",
                            "honda*, ktm*, yamaha*, kazuyuki*, suzuki*, kawasaki*, husq*", buf, sizeof(buf), ini);
-  ParseList(buf, g_cfg.bike, g_cfg.textures);
+  ParseList(buf, g_cfg.bike, 0, g_cfg.textures);
   GetPrivateProfileStringA("mcm2fix", "ReflectTextures", "", buf, sizeof(buf), ini);
-  ParseList(buf, g_cfg.bike, g_cfg.textures);
+  ParseList(buf, g_cfg.bike, 0, g_cfg.textures);
   GetPrivateProfileStringA("mcm2fix", "ReflectHelmetFrames", "Head", buf, sizeof(buf), ini);
-  ParseList(buf, g_cfg.helmet, g_cfg.frames);
+  ParseList(buf, g_cfg.helmet, 1, g_cfg.frames);
+  GetPrivateProfileStringA("mcm2fix", "ReflectRiderFrames",
+                           "PELVIS, LWRTORSO, UPRTORSO, UPRLEG*, LWRLEG*, UPRARM*, LWRARM*, HANDL, HANDR, FOOTL, FOOTR",
+                           buf, sizeof(buf), ini);
+  ParseList(buf, g_cfg.rider, 2, g_cfg.frames);
   GetPrivateProfileStringA("mcm2fix", "ReflectFrames", "", buf, sizeof(buf), ini);
-  ParseList(buf, g_cfg.helmet, g_cfg.frames);
+  ParseList(buf, g_cfg.helmet, 1, g_cfg.frames);
   std::vector<Pattern> ex;
   GetPrivateProfileStringA("mcm2fix", "ReflectExclude", "tire*", buf, sizeof(buf), ini);
-  ParseList(buf, 0, ex);
+  ParseList(buf, 0, 0, ex);
   for (auto& e : ex) g_cfg.exclude.push_back(e.glob);
   if (g_cfg.mode) {
     std::string t, f;
     for (auto& x : g_cfg.textures) t += x.glob + ":" + std::to_string(x.k).substr(0, 4) + " ";
     for (auto& x : g_cfg.frames) f += x.glob + ":" + std::to_string(x.k).substr(0, 4) + " ";
     if (g_cfg.liquid) Log("reflections: LiquidMetal on: bikes and riders are drawn in chrome");
-    Log("reflections: mode %d (%s), strength %.2f, F0 %.2f, blur %.1f, cube %dpx, live faces/frame %d, ground %.2f; "
-        "textures [%s] frames [%s]",
-        g_cfg.mode, g_cfg.mode == 1 ? "sky" : "live", g_cfg.strength, g_cfg.f0, g_cfg.blur, g_cfg.size,
-        g_cfg.live_faces, g_cfg.ground, t.c_str(), f.c_str());
+    Log("reflections: mode %d (%s), strength %.2f, F0/blur bike %.2f/%.1f helmet %.2f/%.1f rider %.2f/%.1f, cube %dpx, "
+        "live faces/frame %d, ground %.2f; textures [%s] frames [%s]",
+        g_cfg.mode, g_cfg.mode == 1 ? "sky" : "live", g_cfg.strength, g_cfg.mats[0].f0, g_cfg.mats[0].blur,
+        g_cfg.mats[1].f0, g_cfg.mats[1].blur, g_cfg.mats[2].f0, g_cfg.mats[2].blur, g_cfg.size, g_cfg.live_faces,
+        g_cfg.ground, t.c_str(), f.c_str());
   }
   return g_cfg;
 }
@@ -188,6 +215,7 @@ const void* g_cur_obj = nullptr;
 struct FrameRange {
   uintptr_t end;
   float k;    // strength from the frame lists, < 0 = not listed
+  int mat;
   int name;   // index into g_frame_names
 };
 std::map<uintptr_t, FrameRange> g_ranges;  // by start address
@@ -228,11 +256,11 @@ int FrameNameId(const void* frame) {
   return id;
 }
 
-float FrameStrength(int id) {
+const Pattern* FramePattern(int id) {
   const std::string& n = g_frame_names[id];
   for (const Pattern& p : Cfg().frames)
-    if (Glob(p.glob.c_str(), n.c_str())) return p.k;
-  return -1.0f;
+    if (Glob(p.glob.c_str(), n.c_str())) return &p;
+  return nullptr;
 }
 
 using XformFn = void(__cdecl*)(void*, const void*, const float*, int, int, int);
@@ -249,7 +277,8 @@ void __cdecl XformHook(void* dst, const void* src, const float* m, int n, int ds
       if (lo != g_ranges.begin() && std::prev(lo)->second.end > a) --lo;
       while (lo != g_ranges.end() && lo->first < e) lo = g_ranges.erase(lo);
       const int id = FrameNameId(reinterpret_cast<const uint8_t*>(m) - 0xf8);
-      g_ranges[a] = FrameRange{e, FrameStrength(id), id};
+      const Pattern* fp = FramePattern(id);
+      g_ranges[a] = FrameRange{e, fp ? fp->k : -1.0f, fp ? fp->mat : 0, id};
       if (g_ranges.size() > 20000) g_ranges.clear();
     }
   }
@@ -329,13 +358,13 @@ cbuffer P : register(b2) {
   float4 vp;      // viewport x y w h
   float4 cam;     // camera position (world)
   float4 fog;     // start end density mode
-  float4 params;  // strength, blur level, F0, alpha cut
+  float4 params;  // strength, -, full (1 = no Fresnel, full strength), alpha cut
 };
 TextureCube env : register(t3);
 SamplerState envsmp : register(s3);
 Texture2D tex0 : register(t0);
 SamplerState smp0 : register(s0);
-struct VIn { float3 pos : POSITION; float3 n : NORMAL; float2 uv : TEXCOORD0; float k : TEXCOORD1; };
+struct VIn { float3 pos : POSITION; float3 n : NORMAL; float2 uv : TEXCOORD0; float k : TEXCOORD1; float2 m : TEXCOORD2; };
 struct VOut {
   float4 pos : SV_Position;
   float3 wpos : TEXCOORD0;
@@ -343,6 +372,7 @@ struct VOut {
   float2 uv : TEXCOORD2;
   float k : TEXCOORD3;
   float fogw : TEXCOORD4;
+  float2 m : TEXCOORD5;  // material: F0, blur level
 };
 VOut vs_main(VIn i) {
   VOut o;
@@ -355,6 +385,7 @@ VOut vs_main(VIn i) {
   o.n = mul(i.n, (float3x3)world);
   o.uv = i.uv;
   o.k = i.k;
+  o.m = i.m;
   return o;
 }
 float4 ps_main(VOut i) : SV_Target {
@@ -363,10 +394,11 @@ float4 ps_main(VOut i) : SV_Target {
   float3 v = normalize(i.wpos - cam.xyz);
   if (dot(n, v) > 0) n = -n;
   float3 r = reflect(v, n);
-  float3 e = env.SampleLevel(envsmp, r, params.y).rgb;
+  float3 e = env.SampleLevel(envsmp, r, params.z >= 1 ? 0.5 : i.m.y).rgb;
   float c = 1 - saturate(dot(-v, n));
   float c2 = c * c;
-  float k = (params.z >= 1 ? (i.k > 0 ? 1 : 0) : i.k) * params.x * (params.z + (1 - params.z) * c2 * c2 * c);
+  float f0 = params.z >= 1 ? 1 : i.m.x;
+  float k = (params.z >= 1 ? (i.k > 0 ? 1 : 0) : i.k) * params.x * (f0 + (1 - f0) * c2 * c2 * c);
   if (fog.w != 0) {
     float d = i.fogw, f;
     if (fog.w == 3) f = (fog.y - d) / max(fog.y - fog.x, 1e-6);
@@ -407,8 +439,9 @@ struct PassVertex {
   float n[3];
   float uv[2];
   float k;
+  float f0, blur;
 };
-static_assert(sizeof(PassVertex) == 36, "pass vertex");
+static_assert(sizeof(PassVertex) == 44, "pass vertex");
 
 struct SkyVertex {
   float pos[3];
@@ -509,8 +542,9 @@ bool MakeGpu() {
         {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0},
         {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D11_INPUT_PER_VERTEX_DATA, 0},
         {"TEXCOORD", 1, DXGI_FORMAT_R32_FLOAT, 0, 32, D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"TEXCOORD", 2, DXGI_FORMAT_R32G32_FLOAT, 0, 36, D3D11_INPUT_PER_VERTEX_DATA, 0},
     };
-    dev->CreateInputLayout(el, 4, vs->GetBufferPointer(), vs->GetBufferSize(), &g.layout);
+    dev->CreateInputLayout(el, 5, vs->GetBufferPointer(), vs->GetBufferSize(), &g.layout);
     const D3D11_INPUT_ELEMENT_DESC sel[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
         {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0},
@@ -647,6 +681,7 @@ UINT Push(ID3D11Buffer* buf, UINT size, UINT& pos, UINT bytes, UINT align, Fill 
 struct TexInfo {
   std::string name;
   float k = 0;
+  int mat = 0;
   bool excluded = false;
 };
 std::unordered_map<const Surface*, TexInfo> g_tex;
@@ -665,6 +700,7 @@ const TexInfo& TexFor(Surface* t) {
       for (const Pattern& p : Cfg().textures)
         if (Glob(p.glob.c_str(), ti.name.c_str())) {
           ti.k = p.k;
+          ti.mat = p.mat;
           break;
         }
   }
@@ -922,6 +958,7 @@ void Device::ReflectPass(const Draw& d) {
       v.uv[0] = v.uv[1] = 0;
     }
     float k = g_liquid_now ? 1.0f : ti.k;
+    int mat = ti.mat;
     if (!g_ranges.empty()) {
       const uintptr_t a = reinterpret_cast<uintptr_t>(gv + i * stride);
       if (it == g_ranges.end() || a < it->first || a >= it->second.end) {
@@ -929,9 +966,14 @@ void Device::ReflectPass(const Draw& d) {
         if (it != g_ranges.begin()) --it;
         if (it != g_ranges.end() && (a < it->first || a >= it->second.end)) it = g_ranges.end();
       }
-      if (it != g_ranges.end() && it->second.k >= 0 && !g_liquid_now) k = it->second.k;
+      if (it != g_ranges.end() && it->second.k >= 0 && !g_liquid_now) {
+        k = it->second.k;
+        mat = it->second.mat;
+      }
     }
     v.k = k;
+    v.f0 = Cfg().mats[mat].f0;
+    v.blur = Cfg().mats[mat].blur;
     if (k > 0) {
       sum[0] += p[0], sum[1] += p[1], sum[2] += p[2];
       cnt += 1;
@@ -1064,8 +1106,8 @@ void Device::ReflectPass(const Draw& d) {
   // see what is reflected.
   const bool full = Cfg().debug || g_liquid_now;
   pc.params[0] = full ? 1.0f : Cfg().strength;
-  pc.params[1] = Cfg().blur;
-  pc.params[2] = full ? 1.0f : Cfg().f0;
+  pc.params[1] = 0;
+  pc.params[2] = full ? 1.0f : 0.0f;
   pc.params[3] = tex_[0] && (rs_[RS_ALPHATESTENABLE] || rs_[RS_COLORKEYENABLE] || rs_[RS_ALPHABLENDENABLE]) ? 0.5f : 0.0f;
   b.ctx->UpdateSubresource(g.cb, 0, nullptr, &pc, 0, 0);
   const UINT vstride = sizeof(PassVertex), zero = 0;

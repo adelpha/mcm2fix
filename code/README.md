@@ -200,8 +200,8 @@ AlphaCut=128
 ; Direct3D 11 only: the Direct3D 9 renderer uses AlphaCut.
 AlphaToCoverage=2
 
-; Reflections: a soft reflection on the bikes' bodywork and the riders'
-; helmets. 0 = off (default). 1 = the track's sky (cheap: the reflection is
+; Reflections: a soft reflection on the bikes' bodywork, the riders' helmets
+; and, more faintly, their suits. 0 = off (default). 1 = the track's sky (cheap: the reflection is
 ; only redrawn when a new piece of sky comes into view). 2 = live: the sky
 ; plus the terrain, trees and track objects around the player's bike, redrawn
 ; every frame from the bike's position (ReflectLiveFaces). Only what is on
@@ -209,34 +209,44 @@ AlphaToCoverage=2
 ; Direct3D 11 only.
 Reflections=0
 
-; ReflectBike / ReflectHelmet: how strongly bikes and helmets reflect, 0 to 1
-; (defaults 0.6 and 0.8). Surfaces facing you reflect a little (ReflectFresnel,
-; default 0.15 = 15% of that) and edges turned away from you the full amount,
-; as a clear-coated surface does. ReflectStrength multiplies both (default 1).
-ReflectBike=0.6
-ReflectHelmet=0.8
-ReflectFresnel=0.15
+; How strongly each kind of surface reflects, 0 to 1, seen edge-on:
+; ReflectBike (bike bodywork, default 1), ReflectHelmet (default 1) and
+; ReflectRider (the rider's suit, gloves and boots, default 0.25).
+; ...Fresnel: the share of that seen when you look straight at the surface
+; (bike and helmet 0.35, rider 0.1); real paint and plastic shine mostly at
+; the edges, higher values look more like chrome.
+; ...Blur: how soft the reflection is, 0 = mirror-sharp, up to 8 (bike and
+; helmet 0.5, rider 3, like fabric). ReflectStrength multiplies all of them.
+ReflectBike=1
+ReflectBikeFresnel=0.35
+ReflectBikeBlur=0.5
+ReflectHelmet=1
+ReflectHelmetFresnel=0.35
+ReflectHelmetBlur=0.5
+ReflectRider=0.25
+ReflectRiderFresnel=0.1
+ReflectRiderBlur=3
 ReflectStrength=1
 
-; ReflectBlur: how soft the reflection is, 0 = mirror-sharp, 1.5 = default,
-; up to 8. ReflectSize: the reflection picture's size per cube side in pixels
-; (default 128; bigger only matters with a low ReflectBlur).
+; ReflectSize: the reflection picture's size per cube side in pixels
+; (default 128; bigger only matters with a low blur).
 ; ReflectLiveFaces: Reflections=2 redraws this many of the six cube sides
 ; per frame, 1 to 6 (default 1: the whole reflection is fresh every six
 ; frames). ReflectGround: brightness of the ground below the horizon in the
-; reflection, as a share of the fog colour (default 0.5).
-ReflectBlur=1.5
+; reflection, as a share of the fog colour (default 1).
 ReflectSize=128
 ReflectLiveFaces=1
-ReflectGround=0.5
+ReflectGround=1
 
 ; Which parts reflect. ReflectBikeTextures: bike textures (name patterns, *
 ; matches anything) that reflect at ReflectBike. ReflectHelmetFrames: model
 ; parts that reflect at ReflectHelmet (the rider's "Head" is the helmet).
+; ReflectRiderFrames: the rider's body parts, at ReflectRider.
 ; ReflectExclude: textures that never reflect (tyres). ReflectTextures /
 ; ReflectFrames: more of either, as name:strength, comma separated.
 ReflectBikeTextures=honda*, ktm*, yamaha*, kazuyuki*, suzuki*, kawasaki*, husq*
 ReflectHelmetFrames=Head
+ReflectRiderFrames=PELVIS, LWRTORSO, UPRTORSO, UPRLEG*, LWRLEG*, UPRARM*, LWRARM*, HANDL, HANDR, FOOTL, FOOTR
 ReflectExclude=tire*
 ReflectTextures=
 ReflectFrames=
