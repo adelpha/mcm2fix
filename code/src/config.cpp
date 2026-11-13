@@ -110,6 +110,7 @@ void LoadConfig() {
   g_config.pause_on_focus_loss = GetPrivateProfileIntA("mcm2fix", "PauseOnFocusLoss", 1, ini) != 0;
   g_config.dpi_aware = GetPrivateProfileIntA("mcm2fix", "DpiAware", 1, ini) != 0;
   g_config.race_power = GetPrivateProfileIntA("mcm2fix", "RacePower", 1, ini);
+  g_config.race_power_async = GetPrivateProfileIntA("mcm2fix", "RacePowerAsync", 1, ini);
   g_config.fast_game_code = GetPrivateProfileIntA("mcm2fix", "FastGameCode", 1, ini) != 0;
   g_config.async_sound = GetPrivateProfileIntA("mcm2fix", "AsyncSound", 2, ini);
   g_config.sound_max_distance_mute = GetPrivateProfileIntA("mcm2fix", "SoundMaxDistanceMute", 1, ini);

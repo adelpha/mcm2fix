@@ -171,34 +171,123 @@ void Restore(const char* why) {
   SaveRestore(nullptr);
 }
 
+// --- worker thread -------------------------------------------------------
+// PowerSetActiveScheme can take ~2 s (seen 2026-11-13 on StOo's PC going back
+// to Balanced: the game froze 1.7-1.9 s during the next race's countdown and
+// in the menus after a race). The calls now run on this thread; the game
+// thread only says which plan it wants. RacePowerAsync=0 runs them on the
+// game thread as before.
+HANDLE g_wake = nullptr;
+HANDLE g_thread = nullptr;
+volatile LONG g_want = 0;      // 1 = High performance wanted, 0 = back to the saved plan
+volatile LONG g_busy = 0;      // a plan call is running on the worker
+volatile LONG g_busy_since = 0;
+
+double Ms(LARGE_INTEGER a, LARGE_INTEGER b) {
+  static LARGE_INTEGER f = {};
+  if (!f.QuadPart) QueryPerformanceFrequency(&f);
+  return static_cast<double>(b.QuadPart - a.QuadPart) * 1000.0 / static_cast<double>(f.QuadPart);
+}
+
+void Apply(bool high, const char* why, const char* where) {
+  if (high == g_switched || (high && g_gave_up)) return;
+  LARGE_INTEGER t0, t1;
+  QueryPerformanceCounter(&t0);
+  if (high) Switch();
+  else Restore(why);
+  QueryPerformanceCounter(&t1);
+  patch::Log("power: %s took %.1f ms (%s)", high ? "switch to High performance" : "switch back", Ms(t0, t1), where);
+}
+
+DWORD WINAPI Worker(void*) {
+  for (;;) {
+    WaitForSingleObject(g_wake, INFINITE);
+    const bool high = InterlockedCompareExchange(&g_want, 0, 0) != 0;
+    EnterCriticalSection(&g_lock);
+    if (high != g_switched && !(high && g_gave_up)) {
+      InterlockedExchange(&g_busy_since, static_cast<LONG>(GetTickCount()));
+      InterlockedExchange(&g_busy, 1);
+      Apply(high, "race over", "power thread");
+      InterlockedExchange(&g_busy, 0);
+    }
+    LeaveCriticalSection(&g_lock);
+  }
+}
+
+bool StartWorker() {
+  g_wake = CreateEventA(nullptr, FALSE, FALSE, nullptr);
+  if (g_wake) g_thread = CreateThread(nullptr, 0, Worker, nullptr, 0, nullptr);
+  if (!g_thread) {
+    patch::Log("power: could not start the power thread (error %lu); plan calls run on the game thread",
+               GetLastError());
+    return false;
+  }
+  SetThreadPriority(g_thread, THREAD_PRIORITY_BELOW_NORMAL);
+  patch::Log("power: plan changes run on their own thread (RacePowerAsync=1)");
+  return true;
+}
+
 }  // namespace
 
 // Each frame from the game thread (not DllMain: loads powrprof.dll).
 void Frame(bool racing) {
   const int mode = GetConfig().race_power;
   static bool started = false;
+  static bool async = false;
   if (!started) {
     started = true;
     InitializeCriticalSection(&g_lock);
     g_lock_ready = true;
     if (Load()) RestoreLeftover();
-    patch::Log("power: RacePower=%d (%s)", mode,
-               mode == 2 ? "High performance while the game runs" : mode ? "High performance while racing" : "off");
+    patch::Log("power: RacePower=%d (%s), RacePowerAsync=%d", mode,
+               mode == 2 ? "High performance while the game runs" : mode ? "High performance while racing" : "off",
+               GetConfig().race_power_async);
+    if (mode && g_get && g_set && GetConfig().race_power_async) async = StartWorker();
   }
+
+  // Game-thread gap watch: logs any frame-to-frame gap over 250 ms with what
+  // the power code was doing, so other stalls show up in the log too.
+  {
+    static LARGE_INTEGER last = {};
+    LARGE_INTEGER t;
+    QueryPerformanceCounter(&t);
+    if (last.QuadPart) {
+      const double gap = Ms(last, t);
+      if (gap > 250.0) {
+        const bool busy = InterlockedCompareExchange(&g_busy, 0, 0) != 0;
+        patch::Log("stall: game thread %.0f ms between frames (racing %d; power call %s)", gap, racing ? 1 : 0,
+                   busy ? "running on the power thread" : "not running");
+      }
+    }
+    last = t;
+  }
+
   if (!mode) return;
   const DWORD now = GetTickCount();
   if (!g_get || !g_set) return;
-  EnterCriticalSection(&g_lock);
+  bool want;
   if (mode == 2 || racing) {
     g_last_race = now;
-    Switch();
-  } else if (g_switched && now - g_last_race >= kRestoreAfterMs) {
-    Restore("race over");
+    want = true;
+  } else {
+    want = InterlockedCompareExchange(&g_want, 0, 0) != 0 && now - g_last_race < kRestoreAfterMs;
   }
+  if (async) {
+    const LONG w = want ? 1 : 0;
+    if (InterlockedExchange(&g_want, w) != w) {
+      patch::Log("power: game thread asks for %s (racing %d)", want ? "High performance" : "the saved plan",
+                 racing ? 1 : 0);
+      SetEvent(g_wake);
+    }
+    return;
+  }
+  InterlockedExchange(&g_want, want ? 1 : 0);
+  EnterCriticalSection(&g_lock);
+  Apply(want, "race over", "game thread");
   LeaveCriticalSection(&g_lock);
 }
 
-// At exit or crash (any thread).
+// At exit or crash (any thread). Waits for a running plan call first.
 void Shutdown(const char* why) {
   if (!g_lock_ready) return;
   EnterCriticalSection(&g_lock);
