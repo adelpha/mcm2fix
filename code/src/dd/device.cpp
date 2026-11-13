@@ -5,6 +5,7 @@
 #include "../simd.h"
 #include "drawlog.h"
 #include "motionblur.h"
+#include "gpushadow.h"
 #include "gputext.h"
 #include "hudtext.h"
 #include "racetitle.h"
@@ -51,6 +52,43 @@ cbuffer PSParams : register(b1) {
   float4 acut;    // x: discard alpha below this (blended draws that write depth)
                   // y: alpha-to-coverage, 1 sharpened at x, 2 alpha as is
 };
+#ifdef SHADOW
+// Rider shadows on the terrain (gpushadow.cpp): each pixel's light-space
+// position is looked up in the riders' tiles of the shadow atlas. The atlas
+// holds coverage (r) and coverage times the casters' lowest surface below
+// their top (g), with mipmaps: the further the ground lies below the caster
+// over it, the blurrier the level read and the fainter the shadow.
+cbuffer ShadowParams : register(b2) {
+  row_major float4x4 lsm;  // world -> light space: x, y across the sun's view, z along its rays
+  float4 sinfo;            // x shadows, y strength, z atlas texel (uv), w reach below the casters' top
+  float4 ssoft;            // x blur per unit of height (tile texels at level 0 per 1/half), y fade per unit, z top level
+  float4 stile[16];        // light-space centre xy, 1 / half size, casters' top (smallest z)
+};
+Texture2D satlas : register(t3);
+SamplerState ssmp : register(s3);
+float ShadowCover(float3 ls) {
+  float cov = 0;
+  int n = (int)sinfo.x;
+  [loop] for (int k = 0; k < n; ++k) {
+    float4 t = stile[k];
+    float2 l = (ls.xy - t.xy) * t.z;
+    if (max(abs(l.x), abs(l.y)) < 0.97 && ls.z > t.w && ls.z < t.w + sinfo.w) {
+      float2 cell = float2(k & 3, k >> 2);
+      float2 uv = (cell + float2(0.5 + 0.5 * l.x, 0.5 - 0.5 * l.y)) * 0.25;
+      // How far below the casters over this spot the ground is.
+      float2 bl = satlas.SampleLevel(ssmp, uv, ssoft.z).rg;
+      float below = bl.x > 0.002 ? bl.y / bl.x : 0;
+      float gap = max(ls.z - t.w - below, 0);
+      float lod = clamp(log2(1 + gap * ssoft.x * t.z), 0, ssoft.z);
+      float o = sinfo.z * (lod > 0.5 ? 0.5 * exp2(lod) : 0.75);
+      float c = satlas.SampleLevel(ssmp, uv + float2(-o, -o), lod).r + satlas.SampleLevel(ssmp, uv + float2(o, -o), lod).r +
+                satlas.SampleLevel(ssmp, uv + float2(-o, o), lod).r + satlas.SampleLevel(ssmp, uv + float2(o, o), lod).r;
+      cov = max(cov, c * 0.25 / (1 + gap * ssoft.y));
+    }
+  }
+  return cov;
+}
+#endif
 Texture2D tex0 : register(t0);
 Texture2D tex1 : register(t1);
 SamplerState smp0 : register(s0);
@@ -70,6 +108,9 @@ struct VSOut {
   float2 t0 : TEXCOORD0;
   float2 t1 : TEXCOORD1;
   float fogw : TEXCOORD2;
+#ifdef SHADOW
+  float3 ls : TEXCOORD3;
+#endif
 };
 VSOut vs_main(VSIn i) {
   VSOut o;
@@ -93,6 +134,9 @@ VSOut vs_main(VSIn i) {
   o.spec = i.spec;
   o.t0 = i.t0;
   o.t1 = i.t1;
+#ifdef SHADOW
+  o.ls = mul(float4(i.pos.xyz, 1), lsm).xyz;
+#endif
   return o;
 }
 float4 Arg(int a, float4 diff, float4 spec, float4 cur, float4 texc) {
@@ -151,6 +195,9 @@ float4 ps_main(VSOut i) : SV_Target {
     float3 k = tex0.Sample(keysmp, i.t0).rgb;
     if (all(abs(k - key0.rgb) < 0.002)) discard;
   }
+#ifdef SHADOW
+  cur.rgb *= 1 - ShadowCover(i.ls) * sinfo.y;
+#endif
   if (atest.z != 0) cur.rgb = saturate(cur.rgb + i.spec.rgb);
   if (fog.w != 0) {
     float d = i.fogw;
@@ -276,6 +323,10 @@ struct Pipeline {
   bool failed = false;
   ID3D11VertexShader* vs[2] = {};
   ID3D11PixelShader* ps[2] = {};
+  // Terrain with rider shadows (gpushadow.cpp), [flat].
+  ID3D11VertexShader* vs_shadow[2] = {};
+  ID3D11PixelShader* ps_shadow[2] = {};
+  bool shadow_ok = false;
   ID3D11InputLayout* layout = nullptr;
   ID3D11VertexShader* clear_vs = nullptr;
   ID3D11PixelShader* clear_ps = nullptr;
@@ -315,6 +366,20 @@ bool InitPipeline() {
     vs->Release();
     ps->Release();
   }
+  // The terrain variant with rider shadows; without it the terrain is drawn
+  // without them.
+  g_pipe.shadow_ok = true;
+  for (int flat = 0; flat < 2; ++flat) {
+    std::string src = std::string("#define SHADOW\n") + (flat ? "#define FLAT\n" : "") + kShader;
+    ID3DBlob* vs = Compile(src.c_str(), "vs_main", "vs_4_0");
+    ID3DBlob* ps = Compile(src.c_str(), "ps_main", "ps_4_0");
+    if (vs) b.device->CreateVertexShader(vs->GetBufferPointer(), vs->GetBufferSize(), nullptr, &g_pipe.vs_shadow[flat]);
+    if (ps) b.device->CreatePixelShader(ps->GetBufferPointer(), ps->GetBufferSize(), nullptr, &g_pipe.ps_shadow[flat]);
+    SafeRelease(vs);
+    SafeRelease(ps);
+    if (!g_pipe.vs_shadow[flat] || !g_pipe.ps_shadow[flat]) g_pipe.shadow_ok = false;
+  }
+  Log("rider shadows: terrain shader variant %s", g_pipe.shadow_ok ? "ready" : "FAILED (no GPU shadows)");
   ID3DBlob* cvs = Compile(kClearShader, "vs_main", "vs_4_0");
   ID3DBlob* cps = Compile(kClearShader, "ps_main", "ps_4_0");
   if (!cvs || !cps) {
@@ -750,13 +815,16 @@ bool Device::BatchAdd(const Draw& d) {
   }
   const size_t tris = d.prim == D3DPT_TRIANGLELIST ? n / 3 : n - 2;
   if (tris * 3 > kBatchMaxIdx) return refuse(3);
+  const bool receiver = ShadowReceiverNow();
   if (batch_.draws) {
-    if (!SameLayout(batch_.layout, d.layout)) FlushBatch(kBreakLayout);
+    if (batch_.receiver != receiver) FlushBatch(kBreakOther);
+    else if (!SameLayout(batch_.layout, d.layout)) FlushBatch(kBreakLayout);
     else if (batch_.nverts + d.count > kBatchMaxVerts || batch_.idx.size() + tris * 3 > kBatchMaxIdx)
       FlushBatch(kBreakFull);
   }
   if (!batch_.draws) {
     batch_.layout = d.layout;
+    batch_.receiver = receiver;
     batch_.verts.clear();
     batch_.idx.clear();
     batch_.nverts = 0;
@@ -1752,7 +1820,7 @@ bool Device::UseAlphaToCoverage(Cutout cutout) {
   return use;
 }
 
-void Device::ApplyState(bool tl, bool depth_clip, bool has_depth) {
+void Device::ApplyState(bool tl, bool depth_clip, bool has_depth, bool shadow) {
   Backend& b = B();
   Bound& bd = Cache(this);
   const Cutout cutout = CutoutDraw();
@@ -1884,8 +1952,10 @@ void Device::ApplyState(bool tl, bool depth_clip, bool has_depth) {
     b.ctx->IASetIndexBuffer(ibuf_, DXGI_FORMAT_R16_UINT, 0);
     bd.pipe = true;
   }
-  if (bd.vs != g_pipe.vs[flat]) b.ctx->VSSetShader(bd.vs = g_pipe.vs[flat], nullptr, 0);
-  if (bd.ps != g_pipe.ps[flat]) b.ctx->PSSetShader(bd.ps = g_pipe.ps[flat], nullptr, 0);
+  ID3D11VertexShader* vs = shadow ? g_pipe.vs_shadow[flat] : g_pipe.vs[flat];
+  ID3D11PixelShader* ps = shadow ? g_pipe.ps_shadow[flat] : g_pipe.ps[flat];
+  if (bd.vs != vs) b.ctx->VSSetShader(bd.vs = vs, nullptr, 0);
+  if (bd.ps != ps) b.ctx->PSSetShader(bd.ps = ps, nullptr, 0);
   (void)tl;
 }
 
@@ -2219,7 +2289,11 @@ void Device::SubmitDraw(const Draw& d) {
     bd.vp = v;
     bd.vp_ok = true;
   }
-  ApplyState(l.tl, mode != 1, has_depth);
+  // Terrain patches get the rider shadows (gpushadow.cpp).
+  const bool receiver = flushing_ ? batch_out_.receiver : ShadowReceiverNow();
+  const bool shadow = receiver && mode == 0 && has_depth && g_pipe.shadow_ok &&
+                      ShadowBindReceiver(&world_.m[0][0], rs_[RS_ALPHABLENDENABLE] != 0, rs_[RS_SRCBLEND], rs_[RS_DESTBLEND]);
+  ApplyState(l.tl, mode != 1, has_depth, shadow);
 
   // The vertex and index buffers stay bound at offset 0 (ApplyState); each
   // draw starts at its own place in them.
