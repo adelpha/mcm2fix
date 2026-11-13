@@ -25,6 +25,7 @@ void ApplyHelpFix();
 void ApplyTextureFixes();
 void ApplyPerfFixes();
 void ApplySoundFixes();
+void ApplyReverbFixes();
 void ApplySortFixes();
 void ApplyAiFixes();
 namespace input { void Apply(); }
@@ -81,6 +82,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
       ApplyTextureFixes();
       ApplyPerfFixes();
       ApplySoundFixes();
+      ApplyReverbFixes();
       ApplySortFixes();
       ApplyAiFixes();
       input::Apply();
