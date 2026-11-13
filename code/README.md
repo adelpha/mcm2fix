@@ -462,10 +462,8 @@ SimdLog=0
 ; mostly on older CPUs). 1 = switch Windows to the High performance power
 ; plan when a race starts and back to your plan after it (also put right at
 ; the next start if the game crashed). 2 = High performance the whole time
-; the game runs. 3 = leave the power plan alone and keep one
-; lowest-priority thread busy while racing instead (uses a bit more power).
-; 0 = off. Nothing is changed on battery or when the plan is already High
-; performance.
+; the game runs. 0 = off. Nothing is changed on battery or when the plan is
+; already High performance.
 RacePower=1
 
 ; FastGameCode: 1 = a few of the game's own loops that its 1999 compiler

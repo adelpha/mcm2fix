@@ -6,10 +6,8 @@
 // Balanced, Windows lowers the clock while the game waits for VSync, and
 // the next frame then runs slowly. On High performance the clock stayed at
 // 3601 MHz and the slow frames went from ~20 to 0-1 per 5 seconds.
-//
-// RacePower=3 instead keeps one lowest-priority thread busy (a pause loop)
-// while racing, so Windows sees load and keeps the clock up; the power plan
-// is never touched. Costs a core's power while racing; off on battery.
+// (Tried instead: an idle-priority busy thread. Clocks only rose to ~1900
+// MHz on average and 5-20 slow frames per 5 s remained, so it was dropped.)
 //
 // RacePower=1 (default) switches the active plan to High performance when a
 // race starts and back 10 seconds after it stops (so pause and restart
@@ -173,49 +171,6 @@ void Restore(const char* why) {
   SaveRestore(nullptr);
 }
 
-// RacePower=3: the busy thread.
-volatile LONG g_spin = 0;
-HANDLE g_spin_wake = nullptr;
-
-DWORD WINAPI SpinThread(LPVOID) {
-  for (;;) {
-    if (!g_spin) {
-      WaitForSingleObject(g_spin_wake, INFINITE);
-      continue;
-    }
-    for (int i = 0; i < 4096; ++i) YieldProcessor();
-  }
-}
-
-bool OnBattery() {
-  SYSTEM_POWER_STATUS ps;
-  return GetSystemPowerStatus(&ps) && ps.ACLineStatus == 0;
-}
-
-void Spin(bool on, const char* why) {
-  if (on == (g_spin != 0)) return;
-  if (on && OnBattery()) {
-    static bool said = false;
-    if (!said) patch::Log("power: on battery; no busy thread");
-    said = true;
-    return;
-  }
-  if (on && !g_spin_wake) {
-    g_spin_wake = CreateEventA(nullptr, FALSE, FALSE, nullptr);
-    HANDLE t = g_spin_wake ? CreateThread(nullptr, 64 * 1024, &SpinThread, nullptr, 0, nullptr) : nullptr;
-    if (!t) {
-      patch::Log("power: busy thread could not be started (%lu)", GetLastError());
-      g_gave_up = true;
-      return;
-    }
-    SetThreadPriority(t, THREAD_PRIORITY_IDLE);
-    CloseHandle(t);
-  }
-  InterlockedExchange(&g_spin, on ? 1 : 0);
-  if (on) SetEvent(g_spin_wake);
-  patch::Log("power: busy thread %s (%s)", on ? "on" : "off", why);
-}
-
 }  // namespace
 
 // Each frame from the game thread (not DllMain: loads powrprof.dll).
@@ -228,23 +183,10 @@ void Frame(bool racing) {
     g_lock_ready = true;
     if (Load()) RestoreLeftover();
     patch::Log("power: RacePower=%d (%s)", mode,
-               mode == 3   ? "busy thread while racing"
-               : mode == 2 ? "High performance while the game runs"
-               : mode      ? "High performance while racing"
-                           : "off");
+               mode == 2 ? "High performance while the game runs" : mode ? "High performance while racing" : "off");
   }
   if (!mode) return;
   const DWORD now = GetTickCount();
-  if (mode == 3) {
-    if (g_gave_up) return;
-    if (racing) {
-      g_last_race = now;
-      Spin(true, "race");
-    } else if (g_spin && now - g_last_race >= kRestoreAfterMs) {
-      Spin(false, "race over");
-    }
-    return;
-  }
   if (!g_get || !g_set) return;
   EnterCriticalSection(&g_lock);
   if (mode == 2 || racing) {
