@@ -70,9 +70,10 @@ struct RCfg {
   bool loaded = false;
   int mode = 0;
   float strength = 1.0f;
-  float bike = 0.5f;
+  float bike = 0.6f;
   float helmet = 0.8f;
-  float f0 = 0.08f;
+  float f0 = 0.15f;
+  bool debug = false;
   float blur = 1.5f;
   int size = 128;
   int live_faces = 1;
@@ -138,9 +139,9 @@ const RCfg& Cfg() {
   xp::Append(ini, "mcm2fix.ini");
   g_cfg.mode = std::clamp(static_cast<int>(GetPrivateProfileIntA("mcm2fix", "Reflections", 0, ini)), 0, 2);
   g_cfg.strength = std::clamp(ReadF("ReflectStrength", 1.0f, ini), 0.0f, 4.0f);
-  g_cfg.bike = std::clamp(ReadF("ReflectBike", 0.5f, ini), 0.0f, 1.0f);
+  g_cfg.bike = std::clamp(ReadF("ReflectBike", 0.6f, ini), 0.0f, 1.0f);
   g_cfg.helmet = std::clamp(ReadF("ReflectHelmet", 0.8f, ini), 0.0f, 1.0f);
-  g_cfg.f0 = std::clamp(ReadF("ReflectFresnel", 0.08f, ini), 0.0f, 1.0f);
+  g_cfg.f0 = std::clamp(ReadF("ReflectFresnel", 0.15f, ini), 0.0f, 1.0f);
   g_cfg.blur = std::clamp(ReadF("ReflectBlur", 1.5f, ini), 0.0f, 8.0f);
   int size = static_cast<int>(GetPrivateProfileIntA("mcm2fix", "ReflectSize", 128, ini));
   int p = 16;
@@ -149,6 +150,7 @@ const RCfg& Cfg() {
   g_cfg.live_faces = std::clamp(static_cast<int>(GetPrivateProfileIntA("mcm2fix", "ReflectLiveFaces", 1, ini)), 1, 6);
   g_cfg.ground = std::clamp(ReadF("ReflectGround", 0.5f, ini), 0.0f, 2.0f);
   g_cfg.log = GetPrivateProfileIntA("mcm2fix", "ReflectLog", 0, ini) != 0;
+  g_cfg.debug = GetPrivateProfileIntA("mcm2fix", "ReflectDebug", 0, ini) != 0;
   char buf[1024] = {};
   GetPrivateProfileStringA("mcm2fix", "ReflectBikeTextures",
                            "honda*, ktm*, yamaha*, kazuyuki*, suzuki*, kawasaki*, husq*", buf, sizeof(buf), ini);
@@ -350,7 +352,7 @@ float4 ps_main(VOut i) : SV_Target {
   float3 e = env.SampleLevel(envsmp, r, params.y).rgb;
   float c = 1 - saturate(dot(-v, n));
   float c2 = c * c;
-  float k = i.k * params.x * (params.z + (1 - params.z) * c2 * c2 * c);
+  float k = (params.z >= 1 ? (i.k > 0 ? 1 : 0) : i.k) * params.x * (params.z + (1 - params.z) * c2 * c2 * c);
   if (fog.w != 0) {
     float d = i.fogw, f;
     if (fog.w == 3) f = (fog.y - d) / max(fog.y - fog.x, 1e-6);
@@ -549,8 +551,8 @@ bool MakeGpu() {
     D3D11_RASTERIZER_DESC r{};
     r.FillMode = D3D11_FILL_SOLID;
     r.CullMode = c == 0 ? D3D11_CULL_NONE : c == 1 ? D3D11_CULL_FRONT : D3D11_CULL_BACK;
-    r.DepthBias = -16;
-    r.SlopeScaledDepthBias = -1.0f;
+    r.DepthBias = -64;
+    r.SlopeScaledDepthBias = -2.0f;
     r.DepthClipEnable = TRUE;
     r.MultisampleEnable = TRUE;
     dev->CreateRasterizerState(&r, &g.raster[c]);
@@ -677,7 +679,7 @@ uint64_t WeldKey(const void* verts, DWORD count, const void* idx, DWORD nidx, DW
 
 // RStats (ReflectLog).
 struct RStats {
-  unsigned frames = 0, passes = 0, tris = 0, skipped_no_tris = 0, faces = 0, replays = 0, replay_stale = 0,
+  unsigned faces_skipped = 0, frames = 0, passes = 0, tris = 0, skipped_no_tris = 0, faces = 0, replays = 0, replay_stale = 0,
            sky_tiles_drawn = 0, cube_builds = 0, records = 0;
   double pass_s = 0, cube_s = 0, record_s = 0;
   unsigned capture_bike = 0, capture_cam = 0;
@@ -690,7 +692,14 @@ unsigned g_frame = 0;
 bool g_saw_3d = false;
 // Where the cube is drawn from: the reflective draw nearest the camera last
 // frame (the player's bike), else the camera.
-float g_cap_next[3] = {}, g_cap_dist = 1e30f;
+// Per object this frame: sum of its reflective vertices (world).
+struct ObjAcc {
+  float sum[3];
+  float n;
+};
+std::unordered_map<const void*, ObjAcc> g_obj_acc;
+float g_last_eye[3] = {};
+bool g_have_eye = false;
 
 std::vector<PassVertex> g_pv;
 std::vector<uint16_t> g_pi;
@@ -974,18 +983,16 @@ void Device::ReflectPass(const Draw& d) {
     }
   }
 
-  // Capture point for the cube: the reflective draw nearest the camera.
+  // Capture point for the cube: the middle of the object (bike or rider)
+  // nearest the camera, from all its reflective vertices.
   float cam[3];
   CameraPos(view_, cam);
   if (cnt > 0) {
     float c[3] = {sum[0] / cnt, sum[1] / cnt, sum[2] / cnt}, wc[3];
     Xform(c, world_, wc);
-    const float dd = (wc[0] - cam[0]) * (wc[0] - cam[0]) + (wc[1] - cam[1]) * (wc[1] - cam[1]) +
-                     (wc[2] - cam[2]) * (wc[2] - cam[2]);
-    if (dd < g_cap_dist) {
-      g_cap_dist = dd;
-      std::memcpy(g_cap_next, wc, sizeof(wc));
-    }
+    ObjAcc& oa = g_obj_acc[g_cur_obj];
+    for (int j = 0; j < 3; ++j) oa.sum[j] += wc[j] * cnt;
+    oa.n += cnt;
   }
 
   if (!g.cube_valid) {
@@ -1020,9 +1027,11 @@ void Device::ReflectPass(const Draw& d) {
     pc.fog[2] = v / scale;
     pc.fog[3] = static_cast<float>(mode & 3);
   }
-  pc.params[0] = Cfg().strength;
+  // ReflectDebug: the reflection alone at full strength (no Fresnel), to
+  // see what is reflected.
+  pc.params[0] = Cfg().debug ? 1.0f : Cfg().strength;
   pc.params[1] = Cfg().blur;
-  pc.params[2] = Cfg().f0;
+  pc.params[2] = Cfg().debug ? 1.0f : Cfg().f0;
   pc.params[3] = (rs_[RS_ALPHATESTENABLE] || rs_[RS_COLORKEYENABLE] || rs_[RS_ALPHABLENDENABLE]) ? 0.5f : 0.0f;
   b.ctx->UpdateSubresource(g.cb, 0, nullptr, &pc, 0, 0);
   const UINT vstride = sizeof(PassVertex), zero = 0;
@@ -1078,21 +1087,49 @@ void Device::ReflectEndScene(ID3D11InputLayout* game_layout, UINT game_stride) {
       for (bool& f : faces) f = true;
       nfaces = 6;
     } else if (Cfg().mode == 2) {
+      // A face is only redrawn when every world draw of the frame can still
+      // be replayed (the device's buffers were not started over meanwhile);
+      // else it keeps its last picture and is redrawn next frame.
+      bool stale = false;
+      for (const ReflectReplay& r : g_replays)
+        if (r.vgen != vgen_ || (r.indexed && r.igen != igen_)) {
+          stale = true;
+          break;
+        }
+      if (stale) {
+        ++g_st.faces_skipped;
+        goto no_faces;
+      }
       for (int i = 0; i < Cfg().live_faces; ++i) {
         faces[g_face_cursor] = true;
         g_face_cursor = (g_face_cursor + 1) % 6;
       }
       nfaces = Cfg().live_faces;
     }
+  no_faces:
     if (g_sky.empty() && g_replays.empty()) nfaces = 0;
     if (nfaces) {
       if (Cfg().mode == 1 || nfaces == 6) g_sky_dirty = false;
-      float eye[3];
-      if (g_cap_dist < 1e29f) {
-        std::memcpy(eye, g_cap_next, sizeof(eye));
+      float eye[3], cam[3], best = 1e30f;
+      CameraPos(view_, cam);
+      for (const auto& kv : g_obj_acc) {
+        if (kv.second.n <= 0) continue;
+        float c[3] = {kv.second.sum[0] / kv.second.n, kv.second.sum[1] / kv.second.n, kv.second.sum[2] / kv.second.n};
+        const float dd = (c[0] - cam[0]) * (c[0] - cam[0]) + (c[1] - cam[1]) * (c[1] - cam[1]) + (c[2] - cam[2]) * (c[2] - cam[2]);
+        if (dd < best) {
+          best = dd;
+          std::memcpy(eye, c, sizeof(eye));
+        }
+      }
+      if (best < 1e29f) {
+        std::memcpy(g_last_eye, eye, sizeof(eye));
+        g_have_eye = true;
+        ++g_st.capture_bike;
+      } else if (g_have_eye) {
+        std::memcpy(eye, g_last_eye, sizeof(eye));
         ++g_st.capture_bike;
       } else {
-        CameraPos(view_, eye);
+        std::memcpy(eye, cam, sizeof(eye));
         ++g_st.capture_cam;
       }
       // Near/far from the game's projection.
@@ -1230,7 +1267,7 @@ void Device::ReflectEndScene(ID3D11InputLayout* game_layout, UINT game_stride) {
     for (auto* s : r.srv)
       if (s) s->Release();
   g_replays.clear();
-  g_cap_dist = 1e30f;
+  g_obj_acc.clear();
   g_st.cube_s += Now() - t0;
 
   if (any) ++g_st.frames;
@@ -1240,10 +1277,10 @@ void Device::ReflectEndScene(ID3D11InputLayout* game_layout, UINT game_stride) {
     if (Cfg().log && g_st.frames) {
       const double fr = g_st.frames;
       Log("reflections 5s: %u frames; pass %.3f ms/frame (%.1f draws, %.0f tris, %u skipped); cube %.3f ms/frame "
-          "(%.2f faces, %.1f replayed draws, %u stale, %u sky tiles kept, %u builds), record %.3f ms/frame "
+          "(%.2f faces, %u face updates put off, %.1f replayed draws, %u stale, %u sky tiles kept, %u builds), record %.3f ms/frame "
           "(%.1f draws); cube from bike %u / camera %u; hooks: %u object draws, %u part transforms, %zu ranges",
           g_st.frames, g_st.pass_s * 1000 / fr, g_st.passes / fr, g_st.tris / fr, g_st.skipped_no_tris,
-          g_st.cube_s * 1000 / fr, g_st.faces / fr, g_st.replays / fr, g_st.replay_stale,
+          g_st.cube_s * 1000 / fr, g_st.faces / fr, g_st.faces_skipped, g_st.replays / fr, g_st.replay_stale,
           static_cast<unsigned>(g_sky.size()), g_st.cube_builds, g_st.record_s * 1000 / fr, g_st.records / fr,
           g_st.capture_bike, g_st.capture_cam, g_obj_draws, g_xforms, g_ranges.size());
     }

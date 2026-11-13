@@ -400,7 +400,7 @@ The file has three parts:
 | `AlphaCut` | `128` | 0-255 | For trees, flags and other cut-out pictures, pixels less opaque than this aren't drawn. This removes the stair-step fringe where tree edges hide what's behind them, a flaw of the original. `0` = the original look. Soft see-through layers (shadows, ground detail, supercross ground) are never affected. With `AlphaToCoverage` on, this is where the smoothed edge sits instead. |
 | `AlphaToCoverage` | `2` | `0`, `1`, `2` | Smooth, antialiased edges on cut-out pictures (tree leaves, flags, fences, metal arches, tents, desert plants) by turning their transparency into MSAA coverage. Only works while `Antialiasing` is 2 or more. `2` = soft: leaves and flags use their transparency as is, so distant trees look fuller and fade smoothly between their far-away and close-up versions; edges are softer (fences and solid models are always sharpened). `1` = sharpened: crisp edges about one pixel wide, but trees switch abruptly between versions. `0` = off. Direct3D 11 only; the Direct3D 9 renderer uses `AlphaCut`. |
 | `Reflections` | `0` | `0`, `1`, `2` | A soft reflection on the bikes' bodywork and the riders' helmets. `1` = the track's sky (cheap: redrawn only when a new piece of sky comes into view). `2` = live: the sky plus the terrain, trees and track objects around the player's bike, redrawn from the bike's position (`ReflectLiveFaces` cube sides per frame). Only what is on screen can be reflected; behind the camera the reflection shows sky. Direct3D 11 only. |
-| `ReflectBike` / `ReflectHelmet` | `0.5` / `0.8` | 0-1 | How strongly bikes and helmets reflect. Surfaces facing you reflect `ReflectFresnel` (default `0.08`) of that, edges turned away the full amount, like a clear coat. `ReflectStrength` (default `1`) multiplies both. |
+| `ReflectBike` / `ReflectHelmet` | `0.6` / `0.8` | 0-1 | How strongly bikes and helmets reflect. Surfaces facing you reflect `ReflectFresnel` (default `0.15`) of that, edges turned away the full amount, like a clear coat. `ReflectStrength` (default `1`) multiplies both. |
 | `ReflectBlur` | `1.5` | 0-8 | How soft the reflection is; `0` = mirror-sharp. |
 | `ReflectSize` | `128` | 16-1024 | Reflection cube side in pixels. |
 | `ReflectLiveFaces` | `1` | 1-6 | With `Reflections=2`, cube sides redrawn per frame. |
@@ -534,6 +534,7 @@ only when asked to. Logs go to `%LOCALAPPDATA%\Motocross Madness 2\logs`.
 | `FovLog` | `0` | Every change to a camera's field of view: who set it and what mcm2fix widened it to. |
 | `AlphaLog` | `0` | Each kind of see-through draw, and whether `AlphaCut` or `AlphaToCoverage` applied to it, plus alpha-to-coverage counts every 10 seconds. |
 | `ReflectLog` | `0` | Which bike and rider textures and model parts reflect, the sky tiles kept for `Reflections`, and every 5 seconds what the reflections cost. |
+| `ReflectDebug` | `0` | `1` = the reflection alone at full strength on everything that reflects (no Fresnel), to see what is reflected. |
 | `SmoothLog` | `0` | `SimSmooth` tracing: `1` = matrices and draws for a few frames, `2` = camera only (120 frames), `3` = rider shadows, `4` = camera and projection after each race start. |
 
 The shipped `mcm2fix.ini` is generated from the block in

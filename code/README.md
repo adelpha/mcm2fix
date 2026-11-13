@@ -210,12 +210,12 @@ AlphaToCoverage=2
 Reflections=0
 
 ; ReflectBike / ReflectHelmet: how strongly bikes and helmets reflect, 0 to 1
-; (defaults 0.5 and 0.8). Surfaces facing you reflect a little (ReflectFresnel,
-; default 0.08 = 8% of that) and edges turned away from you the full amount,
+; (defaults 0.6 and 0.8). Surfaces facing you reflect a little (ReflectFresnel,
+; default 0.15 = 15% of that) and edges turned away from you the full amount,
 ; as a clear-coated surface does. ReflectStrength multiplies both (default 1).
-ReflectBike=0.5
+ReflectBike=0.6
 ReflectHelmet=0.8
-ReflectFresnel=0.08
+ReflectFresnel=0.15
 ReflectStrength=1
 
 ; ReflectBlur: how soft the reflection is, 0 = mirror-sharp, 1.5 = default,
@@ -696,6 +696,10 @@ AlphaLog=0
 ; tiles kept for Reflections, and every 5 s what the reflections cost.
 ; Default 0.
 ReflectLog=0
+
+; ReflectDebug: 1 = draw the reflection alone at full strength on everything
+; that reflects (no Fresnel), to see what is reflected. Default 0.
+ReflectDebug=0
 
 ; SmoothLog: SimSmooth tracing. 0 = off (default), 1 = matrices and draws for
 ; a few frames, 2 = camera only (120 frames), 3 = rider shadows, 4 = camera and
