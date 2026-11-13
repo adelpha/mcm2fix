@@ -200,6 +200,11 @@ class Device : public d3d7::IDirect3DDevice7 {
   void FlushBatch(BatchBreak why);
  private:
   void NoteDrawLog(const Draw& d);  // DrawLog=1 (drawlog.cpp)
+  // MotionBlur (motionblur.cpp): every draw is noted (`tl`: screen-space
+  // vertices); the first screen-space draw without depth test after the 3D
+  // scene blurs the scene before it is drawn, so the HUD stays sharp.
+  void MotionBlurNote(const Draw& d, bool tl);
+  bool MotionBlurPass(float fu, float fv, float len, float inner, float outer);
   bool SubmitWideLine(const Draw& d);
   void SubmitDraw(const Draw& d);
   void OccludeText(const Draw& d);

@@ -51,6 +51,7 @@ add_library(mcm2fix SHARED
   src/dd/gdihook.cpp
   src/dd/gputext.cpp
   src/dd/drawlog.cpp
+  src/dd/motionblur.cpp
   src/dd/hudtext.cpp
   src/dd/racetitle.cpp
   src/dd/oneshot.cpp
@@ -113,6 +114,9 @@ if(MCM2FIX_TESTS)
   target_link_libraries(dd_smoke PRIVATE dxguid gdi32 user32 ole32 windowscodecs winmm shell32 shlwapi)
   target_compile_definitions(dd_smoke PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
   if(NOT MSVC)
-    target_link_options(dd_smoke PRIVATE -static -static-libgcc -static-libstdc++ -Wl,--enable-stdcall-fixup)
+    # Loaded away from Mcm2.exe's addresses, which the test fills with zeros
+    # (no game): the renderer reads a few game globals there.
+    target_link_options(dd_smoke PRIVATE -static -static-libgcc -static-libstdc++ -Wl,--enable-stdcall-fixup
+                        -Wl,--image-base,0x10000000)
   endif()
 endif()

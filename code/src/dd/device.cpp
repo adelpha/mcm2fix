@@ -4,6 +4,7 @@
 
 #include "../simd.h"
 #include "drawlog.h"
+#include "motionblur.h"
 #include "gputext.h"
 #include "hudtext.h"
 #include "racetitle.h"
@@ -2021,10 +2022,12 @@ void Device::Submit(const Draw& d) {
   }
   if (DrawLogOn()) NoteDrawLog(d);
   if (!d.layout.tl) {
+    if (MotionBlurOn()) MotionBlurNote(d, false);
     if (BatchAdd(d)) return;
     return SubmitDraw(d);
   }
   FlushBatch(kBreakScreen);
+  if (MotionBlurOn()) MotionBlurNote(d, true);
   if (SubmitWideLine(d)) return;
   // Race HUD text (hudtext.cpp): the name labels over the riders are drawn
   // larger, about the middle of their bottom edge (which sits over the head).

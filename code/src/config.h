@@ -81,6 +81,12 @@ struct Config {
   bool restart_log = false;  // RestartLog: log the start grid at race load and Restart Race
   bool alpha_log = false;    // AlphaLog: log each blended/alpha-tested draw combination and whether AlphaCut applied
   int alpha_cut = 128;        // AlphaCut: alpha-tested blended pixels below this (0-255) are dropped
+  int motion_blur = 0;        // MotionBlur: speed-based blur of the 3D scene (not the HUD) at speed (dd/motionblur.cpp)
+  int motion_blur_strength = 100;  // MotionBlurStrength: blur length in percent of the default (0..300)
+  int motion_blur_min_speed = 30;  // MotionBlurMinSpeed: mph where the blur starts
+  int motion_blur_max_speed = 70;  // MotionBlurMaxSpeed: mph where it is full
+  int motion_blur_center = 30;     // MotionBlurCenter: size of the sharp middle of the screen, percent of its height
+  bool motion_blur_log = false;    // MotionBlurLog: speed, focus point, where the blur went in the frame, every 5 s
   int alpha_to_coverage = 2;  // AlphaToCoverage: cut-out edges via MSAA coverage (0 off, 1 sharp, 2 soft)
   // Graphics options.
   float fov = 0.0f;           // Fov: camera field of view in degrees at 4:3 (0 = game's own, 77)

@@ -102,6 +102,9 @@ Windows 10 and 11.
 - **View distance, fog distance and model detail** multipliers
   (`ViewDistance`, `FogDistance`, `ModelLod`), plus texture sharpness
   (`MipBias`).
+- **Speed blur** (`MotionBlur`, off by default). At speed, the sides of the
+  3D scene streak towards where the bike is heading while the middle and the
+  HUD stay sharp. Direct3D 11 and Direct3D 9.
 - **True-colour textures** where the game's own art has more than 16 bits
   (`TrueColorTextures`).
 - **Texture dumping and replacement** by name with PNG, JPEG or BMP files of
@@ -399,6 +402,11 @@ The file has three parts:
 | `TreeDetailDistance` | `1` | `0`, `1` | `0` makes every tree use its sparse close-up version at any distance. It looks sparse and is for fun only. |
 | `AlphaCut` | `128` | 0-255 | For trees, flags and other cut-out pictures, pixels less opaque than this aren't drawn. This removes the stair-step fringe where tree edges hide what's behind them, a flaw of the original. `0` = the original look. Soft see-through layers (shadows, ground detail, supercross ground) are never affected. With `AlphaToCoverage` on, this is where the smoothed edge sits instead. |
 | `AlphaToCoverage` | `2` | `0`, `1`, `2` | Smooth, antialiased edges on cut-out pictures (tree leaves, flags, fences, metal arches, tents, desert plants) by turning their transparency into MSAA coverage. Only works while `Antialiasing` is 2 or more. `2` = soft: leaves and flags use their transparency as is, so distant trees look fuller and fade smoothly between their far-away and close-up versions; edges are softer (fences and solid models are always sharpened). `1` = sharpened: crisp edges about one pixel wide, but trees switch abruptly between versions. `0` = off. Direct3D 11 only; the Direct3D 9 renderer uses `AlphaCut`. |
+| `MotionBlur` | `0` | `0`, `1` | Speed blur: above `MotionBlurMinSpeed` the sides of the 3D scene streak towards the point the bike is heading for, more the faster you go, while the middle of the screen stays sharp. The HUD, text and menus are never blurred. Works the same at any frame rate. |
+| `MotionBlurStrength` | `100` | 0-300 | Length of the streaks at full speed, in percent of the default. |
+| `MotionBlurMinSpeed` | `30` | 0-200 | Speed (mph, as the speedometer shows) where the blur starts. |
+| `MotionBlurMaxSpeed` | `70` | 1-250 | Speed (mph) where the blur is at full strength. |
+| `MotionBlurCenter` | `30` | 0-100 | Size of the sharp middle of the screen, in percent of half the screen height. `0` = the blur reaches the middle. |
 | `TrueColorTextures` | `1` | `0`, `1` | Loads textures in full colour (24-bit, or 32-bit with alpha) wherever the picture has more than 16 bits; a bug made the game always use 16-bit. Most of the game's art is stored in 16-bit, so only a few textures change. Changing it renames unnamed dumped textures. |
 | `TextureReplace` | `1` | `0`, `1` | Uses replacement pictures from `textures\` in the game folder or in `%LOCALAPPDATA%\Motocross Madness 2\textures\` (the per-user folder wins). See [Texture dumping and replacement](#texture-dumping-and-replacement). |
 | `TextureDump` | `0` | `0`, `1` | Saves every texture the game loads as a PNG in `%LOCALAPPDATA%\Motocross Madness 2\textures_dump`, to start replacements from. Loading is slower while it's on. |
@@ -526,6 +534,7 @@ only when asked to. Logs go to `%LOCALAPPDATA%\Motocross Madness 2\logs`.
 | `ArrowLog` | `0` | The direction arrow's placement for a few seconds after each race start. |
 | `FovLog` | `0` | Every change to a camera's field of view: who set it and what mcm2fix widened it to. |
 | `AlphaLog` | `0` | Each kind of see-through draw, and whether `AlphaCut` or `AlphaToCoverage` applied to it, plus alpha-to-coverage counts every 10 seconds. |
+| `MotionBlurLog` | `0` | With `MotionBlur`, every 5 seconds: speed, blur amount and focus point, where in the frame the blur went, plus a few whole-frame draw lists. |
 | `SmoothLog` | `0` | `SimSmooth` tracing: `1` = matrices and draws for a few frames, `2` = camera only (120 frames), `3` = rider shadows, `4` = camera and projection after each race start. |
 
 The shipped `mcm2fix.ini` is generated from the block in

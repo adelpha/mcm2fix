@@ -24,6 +24,7 @@
 #include "config.h"
 #include "patch.h"
 #include "xp_compat.h"
+#include "dd/motionblur.h"
 
 namespace {
 
@@ -541,7 +542,45 @@ void FixedTickBody(uintptr_t g) {
   }
 }
 
-void __stdcall NoteBikeSim() { g_bike_seen = Now(); }
+void __stdcall NoteBikeSim(const void* bike) {
+  g_bike_seen = Now();
+  if (dd::MotionBlurOn()) dd::MotionBlurBikeStep(bike);  // reads the player's velocity
+}
+
+// Stub for the bike simulation call at 0x497bd7 (thiscall, ecx = bike):
+// pushad; push ecx; call NoteBikeSim; popad; jmp 414000. Returns null on failure.
+uint8_t* MakeBikeStub(uint8_t* b) {
+  auto rel = [](const uint8_t* from_end, const void* to) {
+    return static_cast<int32_t>(reinterpret_cast<uintptr_t>(to) - reinterpret_cast<uintptr_t>(from_end));
+  };
+  size_t m = 0;
+  b[m++] = 0x60;
+  b[m++] = 0x51;
+  b[m++] = 0xE8;
+  int32_t r = rel(b + m + 4, reinterpret_cast<const void*>(&NoteBikeSim));
+  std::memcpy(b + m, &r, 4);
+  m += 4;
+  b[m++] = 0x61;
+  b[m++] = 0xE9;
+  r = rel(b + m + 4, reinterpret_cast<const void*>(0x414000));
+  std::memcpy(b + m, &r, 4);
+  m += 4;
+  FlushInstructionCache(GetCurrentProcess(), b, m);
+  return b;
+}
+
+// MotionBlur without SimRate: only the bike call is hooked.
+void PatchBikeSimNote() {
+  const uint8_t call_sim[] = {0xE8, 0x24, 0xC4, 0xF7, 0xFF};  // 00497bd7 call 414000
+  if (!patch::Matches(0x497BD7, call_sim, sizeof(call_sim))) {
+    patch::Log("motion blur: bike simulation call differs; no speed, no blur");
+    return;
+  }
+  auto* t = static_cast<uint8_t*>(
+      VirtualAlloc(nullptr, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+  if (!t) return;
+  patch::Call(0x497BD7, MakeBikeStub(t), sizeof(call_sim));
+}
 
 void PatchFixedTick() {
   const uint8_t entry[] = {0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x0C};  // 004694b0 push ebp / mov ebp,esp / sub esp,0Ch
@@ -565,19 +604,8 @@ void PatchFixedTick() {
   std::memcpy(t + n, &r, 4);
   n += 4;
   t[n++] = 0xC3;
-  // Bike stub at t+16: pushad; call NoteBikeSim; popad; jmp 414000
-  uint8_t* b = t + 16;
-  size_t m = 0;
-  b[m++] = 0x60;
-  b[m++] = 0xE8;
-  r = rel(b + m + 4, reinterpret_cast<const void*>(&NoteBikeSim));
-  std::memcpy(b + m, &r, 4);
-  m += 4;
-  b[m++] = 0x61;
-  b[m++] = 0xE9;
-  r = rel(b + m + 4, reinterpret_cast<const void*>(0x414000));
-  std::memcpy(b + m, &r, 4);
-  m += 4;
+  // Bike stub at t+16 (MakeBikeStub).
+  uint8_t* b = MakeBikeStub(t + 16);
   FlushInstructionCache(GetCurrentProcess(), t, 64);
   patch::Jump(0x4694B0, reinterpret_cast<uintptr_t>(t), sizeof(entry));
   patch::Call(0x497BD7, b, sizeof(call_sim));
@@ -632,6 +660,7 @@ void ApplyFramePacing() {
   } else if (c.precise_timer || c.frame_fix || c.ai_steer_rate > 0) {
     PatchFrameTime();
   }
+  if (c.sim_rate <= 0 && c.motion_blur) PatchBikeSimNote();
   patch::Log("frame pacing: VSync=%d FrameCap=%d PreciseTimer=%d FrameFix=%d RefRate=%d AiRate=%d "
              "AiSteerRate=%d SimRate=%d",
              c.vsync, c.frame_cap, c.precise_timer, c.frame_fix, c.ref_rate, c.ai_rate,
