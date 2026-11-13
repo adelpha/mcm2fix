@@ -201,13 +201,13 @@ AlphaCut=128
 AlphaToCoverage=2
 
 ; Reflections: a soft reflection on the bikes' bodywork, the riders' helmets
-; and, more faintly, their suits. 0 = off (default). 1 = the track's sky (cheap: the reflection is
+; and, more faintly, their suits. 0 = off. 1 = the track's sky (cheap: the reflection is
 ; only redrawn when a new piece of sky comes into view). 2 = live: the sky
 ; plus the terrain, trees and track objects around the player's bike, redrawn
 ; every frame from the bike's position (ReflectLiveFaces). Behind the
-; camera it shows what was drawn there recently (ReflectCache).
+; camera it shows what was drawn there recently (ReflectCache). Default 2.
 ; Direct3D 11 only.
-Reflections=0
+Reflections=2
 
 ; How strongly each kind of surface reflects, 0 to 1, seen edge-on:
 ; ReflectBike (bike bodywork, default 1), ReflectHelmet (default 1) and
