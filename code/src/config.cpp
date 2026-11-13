@@ -71,6 +71,8 @@ void LoadConfig() {
   if (g_config.rider_shadows < 0 || g_config.rider_shadows > 2) g_config.rider_shadows = 2;
   g_config.shadow_strength = GetPrivateProfileIntA("mcm2fix", "ShadowStrength", 0, ini);
   if (g_config.shadow_strength < 0 || g_config.shadow_strength > 100) g_config.shadow_strength = 0;
+  g_config.shadow_softness = GetPrivateProfileIntA("mcm2fix", "ShadowSoftness", 100, ini);
+  if (g_config.shadow_softness < 0 || g_config.shadow_softness > 400) g_config.shadow_softness = 100;
   g_config.shadow_log = GetPrivateProfileIntA("mcm2fix", "ShadowLog", 0, ini);
   g_config.sim_smooth = GetPrivateProfileIntA("mcm2fix", "SimSmooth", 1, ini) != 0;
   g_config.sim_rate = GetPrivateProfileIntA("mcm2fix", "SimRate", 30, ini);

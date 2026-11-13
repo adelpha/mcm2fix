@@ -409,6 +409,7 @@ The file has three parts:
 | `TextureDump` | `0` | `0`, `1` | Saves every texture the game loads as a PNG in `%LOCALAPPDATA%\Motocross Madness 2\textures_dump`, to start replacements from. Loading is slower while it's on. |
 | `RiderShadows` | `2` | `0`, `1`, `2` | `2`: every rider and bike casts a shadow, drawn by the graphics card at high resolution with soft edges, following the riders smoothly between simulation steps. `1`: only the rider the camera follows has one, as in the original game, but drawn the same new way. `0`: the game's own shadow (one rider, drawn into a small picture on the CPU). Direct3D 11 only; the Direct3D 9 renderer always uses the game's shadow. Tracks where the game draws no shadow (no sun) still have none. |
 | `ShadowStrength` | `0` | `0`, 1-100 | How dark the `RiderShadows` shadows are, in percent. `0` = as dark as the game's own shadow. |
+| `ShadowSoftness` | `100` | 0-400 | How much the `RiderShadows` shadows blur and fade with the rider's height above the ground, in percent. Crisp where the wheels touch the ground, wide and faint under a high jump. `0` = always sharp. |
 
 #### Text and HUD
 

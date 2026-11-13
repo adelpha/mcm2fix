@@ -35,6 +35,9 @@ constexpr uintptr_t kPsLightDir = 0x38;   // 3 floats, normalised (light mode 3)
 constexpr uintptr_t kPsLightMode = 0x8c;  // 3 = directional (sun), 1 = point
 constexpr uintptr_t kPsShade = 0x94;      // 16-bit shadow texel
 constexpr uintptr_t kPsSrcBlend = 0x9c, kPsDstBlend = 0xa0, kPsFormat = 0xb0, kPsClear = 0xb4;
+// Low byte: the terrain receiver (0x50f1af) draws with vertex alpha 255 - this
+// (0x40 -> 0xbf), modulated with the texel's alpha.
+constexpr uintptr_t kPsDiffuse = 0xac;
 // Terrain receiver (vtable 0x55d658): draws the terrain under the window again with the texture.
 constexpr uintptr_t kReceiverDrawSlot = 0x55D658 + 0x38;  // 0x50f910
 // D3DIMSoultreeShadow (vtable 0x556624, rider self-shadow when the game's detail option asks for
@@ -81,31 +84,49 @@ constexpr size_t kMaxVerts = 262144, kMaxIdx = 786432;
 // (world units, metres): a rider jumping high still has a shadow, while a
 // far hill behind the first ground the shadow falls on gets none.
 constexpr float kReach = 60.0f;
+// Soft shadows: the atlas has mipmaps down to kTopLod (a tile of 16 texels),
+// and the receiver picks a level from the gap between the ground and the
+// casters' lowest surface over it (depth below the top, up to kDepthRange).
+constexpr int kTopLod = 4;
+constexpr float kDepthRange = 32.0f;
+constexpr float kBlurPerUnit = 0.1f;   // blur width per unit of gap, at ShadowSoftness=100
+constexpr float kFadePerUnit = 0.04f;  // darkness / (1 + gap * this)
+constexpr DXGI_FORMAT kAtlasFormat = DXGI_FORMAT_R16G16_FLOAT;
 
 const char kAtlasShader[] = R"(
-cbuffer P : register(b0) { float4 lrow[2]; float4 tile[16]; };
+cbuffer P : register(b0) { float4 lrow[3]; float4 tile[16]; float4 depth; };
 struct VIn { float3 pos : POSITION; uint id : TEXCOORD0; };
+struct VOut { float4 pos : SV_Position; float h : TEXCOORD0; };
 // The window always holds all of its casters (see GpuFrame), so nothing
-// spills into a neighbouring tile.
-float4 vs_main(VIn i) : SV_Position {
+// spills into a neighbouring tile. Depth: the surface furthest from the sun
+// wins (GREATER), so h is the casters' underside over each texel.
+VOut vs_main(VIn i) {
   int id = (int)i.id;
   float4 t = tile[id];
   float2 l = (float2(dot(i.pos, lrow[0].xyz), dot(i.pos, lrow[1].xyz)) - t.xy) * t.z;
+  float h = max(dot(i.pos, lrow[2].xyz) - t.w, 0);
   float2 cell = float2((float)(id & 3), (float)(id >> 2));
   float2 uv = (cell + float2(0.5 + 0.5 * l.x, 0.5 - 0.5 * l.y)) * 0.25;
-  return float4(uv.x * 2 - 1, 1 - uv.y * 2, 0.5, 1);
+  VOut o;
+  o.pos = float4(uv.x * 2 - 1, 1 - uv.y * 2, saturate(h * depth.x), 1);
+  o.h = h;
+  return o;
 }
-float4 ps_main() : SV_Target { return float4(1, 1, 1, 1); }
+// Coverage, and coverage times the depth below the top (resolve and mipmaps
+// average both, so g / r is the mean depth of what covers a texel).
+float4 ps_main(VOut i) : SV_Target { return float4(1, i.h, 0, 1); }
 )";
 
 struct AtlasConsts {
-  float lrow[2][4];
+  float lrow[3][4];
   float tile[kTiles][4];
+  float depth[4];  // x: 1 / kDepthRange
 };
 // Must match ShadowParams in the device shader (device.cpp).
 struct RecvConsts {
   float lsm[16];
   float info[4];  // tiles, strength, atlas texel (uv), reach
+  float soft[4];  // blur per unit gap (x 1/half), fade per unit gap, top level
   float tile[kTiles][4];
 };
 struct ShadowVertex {
@@ -121,6 +142,9 @@ struct Gpu {
   ID3D11RenderTargetView* rtv = nullptr;   // the atlas itself, without MSAA
   ID3D11Texture2D* msaa = nullptr;         // drawn into, then resolved into the atlas
   ID3D11RenderTargetView* msaa_rtv = nullptr;
+  ID3D11Texture2D* depth = nullptr;  // same samples as the target drawn into
+  ID3D11DepthStencilView* dsv = nullptr;
+  ID3D11DepthStencilState* ds = nullptr;  // GREATER: the casters' underside
   ID3D11VertexShader* vs = nullptr;
   ID3D11PixelShader* ps = nullptr;
   ID3D11InputLayout* layout = nullptr;
@@ -166,19 +190,30 @@ bool EnsureGpu() {
 
   D3D11_TEXTURE2D_DESC td{};
   td.Width = td.Height = kAtlasPx;
-  td.MipLevels = td.ArraySize = 1;
-  td.Format = DXGI_FORMAT_R8_UNORM;
+  td.MipLevels = kTopLod + 1;
+  td.ArraySize = 1;
+  td.Format = kAtlasFormat;
   td.SampleDesc.Count = 1;
   td.Usage = D3D11_USAGE_DEFAULT;
   td.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
-  b.device->CreateTexture2D(&td, nullptr, &g_gpu.atlas);
+  td.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
+  HRESULT hr = b.device->CreateTexture2D(&td, nullptr, &g_gpu.atlas);
   if (g_gpu.atlas) {
     b.device->CreateShaderResourceView(g_gpu.atlas, nullptr, &g_gpu.srv);
-    b.device->CreateRenderTargetView(g_gpu.atlas, nullptr, &g_gpu.rtv);
+    D3D11_RENDER_TARGET_VIEW_DESC rv{};
+    rv.Format = kAtlasFormat;
+    rv.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+    rv.Texture2D.MipSlice = 0;
+    b.device->CreateRenderTargetView(g_gpu.atlas, &rv, &g_gpu.rtv);
+  } else {
+    Log("rider shadows: atlas texture (%dx%d, %d levels, R16G16_FLOAT) not created: %08lx", kAtlasPx, kAtlasPx,
+        kTopLod + 1, static_cast<unsigned long>(hr));
   }
   UINT q = 0;
-  if (SUCCEEDED(b.device->CheckMultisampleQualityLevels(DXGI_FORMAT_R8_UNORM, 4, &q)) && q > 0) {
+  if (SUCCEEDED(b.device->CheckMultisampleQualityLevels(kAtlasFormat, 4, &q)) && q > 0) {
     D3D11_TEXTURE2D_DESC md = td;
+    md.MipLevels = 1;
+    md.MiscFlags = 0;
     md.SampleDesc.Count = 4;
     md.BindFlags = D3D11_BIND_RENDER_TARGET;
     if (SUCCEEDED(b.device->CreateTexture2D(&md, nullptr, &g_gpu.msaa)) &&
@@ -187,6 +222,24 @@ bool EnsureGpu() {
     } else {
       SafeRelease(g_gpu.msaa);
     }
+  } else {
+    Log("rider shadows: no 4x MSAA for the atlas format; edges drawn without it");
+  }
+  {
+    D3D11_TEXTURE2D_DESC dd = td;
+    dd.MipLevels = 1;
+    dd.MiscFlags = 0;
+    dd.Format = DXGI_FORMAT_D16_UNORM;
+    dd.SampleDesc.Count = g_gpu.samples;
+    dd.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+    if (SUCCEEDED(b.device->CreateTexture2D(&dd, nullptr, &g_gpu.depth)))
+      b.device->CreateDepthStencilView(g_gpu.depth, nullptr, &g_gpu.dsv);
+    D3D11_DEPTH_STENCIL_DESC dsd{};
+    dsd.DepthEnable = TRUE;
+    dsd.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
+    dsd.DepthFunc = D3D11_COMPARISON_GREATER_EQUAL;
+    b.device->CreateDepthStencilState(&dsd, &g_gpu.ds);
+    if (!g_gpu.dsv || !g_gpu.ds) Log("rider shadows: atlas depth buffer not created");
   }
   D3D11_BUFFER_DESC cd{};
   cd.Usage = D3D11_USAGE_DEFAULT;
@@ -207,10 +260,11 @@ bool EnsureGpu() {
   rd.MultisampleEnable = TRUE;
   b.device->CreateRasterizerState(&rd, &g_gpu.raster);
   g_gpu.ready = g_gpu.vs && g_gpu.ps && g_gpu.layout && g_gpu.srv && g_gpu.rtv && g_gpu.cb && g_gpu.recv_cb &&
-                g_gpu.sampler && g_gpu.raster;
-  Log("rider shadows: GPU shadow atlas %s (%dx%d, %d tiles of %d px, %u samples)",
-      g_gpu.ready ? "ready" : "FAILED, the game's own shadow stays", kAtlasPx, kAtlasPx, kTiles, kTilePx,
-      g_gpu.samples);
+                g_gpu.sampler && g_gpu.raster && g_gpu.dsv && g_gpu.ds;
+  Log("rider shadows: GPU shadow atlas %s (%dx%d R16G16_FLOAT, %d levels, %d tiles of %d px, %u samples, "
+      "depth buffer %s)",
+      g_gpu.ready ? "ready" : "FAILED, the game's own shadow stays", kAtlasPx, kAtlasPx, kTopLod + 1, kTiles, kTilePx,
+      g_gpu.samples, g_gpu.dsv ? "yes" : "no");
   return g_gpu.ready;
 }
 
@@ -300,7 +354,14 @@ float GameStrength(uintptr_t ps, char* why, size_t why_size) {
   } else {
     s = 0.5f;
   }
-  std::snprintf(why, why_size, "shade %04x clear %04x format %x blend %d/%d -> %.2f", shade, clear, fmt, src, dst, s);
+  // The receiver's vertex alpha scales an alpha-blended shadow (format 0x613: 0x7f).
+  const unsigned diffuse = Rd<uint32_t>(ps + kPsDiffuse);
+  float va = 1.0f;
+  if (src != 9) va = fmt == 0x613 ? 127.0f / 255.0f : static_cast<float>(255 - (diffuse & 0xff)) / 255.0f;
+  const float texel = s;
+  s *= va;
+  std::snprintf(why, why_size, "shade %04x clear %04x format %x blend %d/%d -> texel %.2f x vertex alpha %.2f = %.2f",
+                shade, clear, fmt, src, dst, texel, va, s);
   return std::min(0.85f, std::max(0.15f, s));
 }
 
@@ -467,8 +528,9 @@ void RenderAtlas(int tiles, const AtlasConsts& ac) {
   ID3D11ShaderResourceView* none = nullptr;
   ctx->PSSetShaderResources(3, 1, &none);  // the atlas is about to be written
   const float zero[4] = {0, 0, 0, 0};
-  ctx->OMSetRenderTargets(1, &rtv, nullptr);
+  ctx->OMSetRenderTargets(1, &rtv, g_gpu.dsv);
   ctx->ClearRenderTargetView(rtv, zero);
+  ctx->ClearDepthStencilView(g_gpu.dsv, D3D11_CLEAR_DEPTH, 0.0f, 0);
   if (tiles > 0 && !g_idx.empty() && g_gpu.vb && g_gpu.ib) {
     D3D11_MAPPED_SUBRESOURCE m;
     if (SUCCEEDED(ctx->Map(g_gpu.vb, 0, D3D11_MAP_WRITE_DISCARD, 0, &m))) {
@@ -484,7 +546,7 @@ void RenderAtlas(int tiles, const AtlasConsts& ac) {
     ctx->RSSetViewports(1, &vp);
     ctx->RSSetState(g_gpu.raster);
     ctx->OMSetBlendState(nullptr, nullptr, 0xffffffff);
-    ctx->OMSetDepthStencilState(b.no_depth, 0);
+    ctx->OMSetDepthStencilState(g_gpu.ds, 0);
     ctx->IASetInputLayout(g_gpu.layout);
     const UINT stride = sizeof(ShadowVertex), off = 0;
     ctx->IASetVertexBuffers(0, 1, &g_gpu.vb, &stride, &off);
@@ -495,9 +557,10 @@ void RenderAtlas(int tiles, const AtlasConsts& ac) {
     ctx->PSSetShader(g_gpu.ps, nullptr, 0);
     ctx->DrawIndexed(static_cast<UINT>(g_idx.size()), 0, 0);
   }
-  if (g_gpu.msaa_rtv) ctx->ResolveSubresource(g_gpu.atlas, 0, g_gpu.msaa, 0, DXGI_FORMAT_R8_UNORM);
   ID3D11RenderTargetView* nort = nullptr;
   ctx->OMSetRenderTargets(1, &nort, nullptr);
+  if (g_gpu.msaa_rtv) ctx->ResolveSubresource(g_gpu.atlas, 0, g_gpu.msaa, 0, kAtlasFormat);
+  ctx->GenerateMips(g_gpu.srv);
   // The device binds everything again on its next draw (and so do we, below).
   ContextTouched();
 }
@@ -532,18 +595,21 @@ bool GpuFrame(uintptr_t ps) {
     char why[160];
     g_f.strength = GameStrength(ps, why, sizeof(why));
     if (c.shadow_strength > 0) g_f.strength = std::min(100, c.shadow_strength) / 100.0f;
-    Log("rider shadows: race shadow %08x: sun direction (%.3f %.3f %.3f)%s; game's darkness: %s; using %.2f%s",
+    Log("rider shadows: race shadow %08x: sun direction (%.3f %.3f %.3f)%s; game's darkness: %s; using %.2f%s; "
+        "softness %d%% (blur %.3f and fade %.3f per unit of height, up to level %d)",
         static_cast<unsigned>(ps), Rd<float>(ps + kPsLightDir), Rd<float>(ps + kPsLightDir + 4),
         Rd<float>(ps + kPsLightDir + 8), flipped ? " (pointed up, turned round)" : "", why, g_f.strength,
-        c.shadow_strength > 0 ? " (ShadowStrength)" : "");
+        c.shadow_strength > 0 ? " (ShadowStrength)" : "", c.shadow_softness, kBlurPerUnit * c.shadow_softness / 100.0f,
+        kFadePerUnit * c.shadow_softness / 100.0f, kTopLod);
   }
   CollectGroups(ps, c.rider_shadows >= 2);
   g_verts.clear();
   g_idx.clear();
   AtlasConsts ac{};
   RecvConsts& rc = g_f.recv;
-  for (int k = 0; k < 2; ++k)
+  for (int k = 0; k < 3; ++k)
     for (int r = 0; r < 3; ++r) ac.lrow[k][r] = g_f.light[r * 4 + k];
+  ac.depth[0] = 1.0f / kDepthRange;
   int tiles = 0;
   ++g_frame_no;
   for (const Group& g : g_groups) {
@@ -586,6 +652,11 @@ bool GpuFrame(uintptr_t ps) {
   rc.info[1] = g_f.strength;
   rc.info[2] = 1.0f / kAtlasPx;
   rc.info[3] = kReach;
+  const float soft = c.shadow_softness / 100.0f;
+  rc.soft[0] = kBlurPerUnit * soft * kTilePx * 0.5f;  // blur / level-0 texel = gap * this * (1 / half)
+  rc.soft[1] = kFadePerUnit * soft;
+  rc.soft[2] = static_cast<float>(kTopLod);
+  rc.soft[3] = 0;
   g_f.recv_dirty = true;
   g_f.bound_epoch = ~0u;
   g_f.active = true;

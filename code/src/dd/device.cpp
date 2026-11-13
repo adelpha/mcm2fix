@@ -53,10 +53,14 @@ cbuffer PSParams : register(b1) {
 };
 #ifdef SHADOW
 // Rider shadows on the terrain (gpushadow.cpp): each pixel's light-space
-// position is looked up in the riders' tiles of the shadow atlas.
+// position is looked up in the riders' tiles of the shadow atlas. The atlas
+// holds coverage (r) and coverage times the casters' lowest surface below
+// their top (g), with mipmaps: the further the ground lies below the caster
+// over it, the blurrier the level read and the fainter the shadow.
 cbuffer ShadowParams : register(b2) {
   row_major float4x4 lsm;  // world -> light space: x, y across the sun's view, z along its rays
   float4 sinfo;            // x shadows, y strength, z atlas texel (uv), w reach below the casters' top
+  float4 ssoft;            // x blur per unit of height (tile texels at level 0 per 1/half), y fade per unit, z top level
   float4 stile[16];        // light-space centre xy, 1 / half size, casters' top (smallest z)
 };
 Texture2D satlas : register(t3);
@@ -70,10 +74,15 @@ float ShadowCover(float3 ls) {
     if (max(abs(l.x), abs(l.y)) < 0.97 && ls.z > t.w && ls.z < t.w + sinfo.w) {
       float2 cell = float2(k & 3, k >> 2);
       float2 uv = (cell + float2(0.5 + 0.5 * l.x, 0.5 - 0.5 * l.y)) * 0.25;
-      float o = sinfo.z * 0.75;
-      float c = satlas.SampleLevel(ssmp, uv + float2(-o, -o), 0).r + satlas.SampleLevel(ssmp, uv + float2(o, -o), 0).r +
-                satlas.SampleLevel(ssmp, uv + float2(-o, o), 0).r + satlas.SampleLevel(ssmp, uv + float2(o, o), 0).r;
-      cov = max(cov, c * 0.25);
+      // How far below the casters over this spot the ground is.
+      float2 bl = satlas.SampleLevel(ssmp, uv, ssoft.z).rg;
+      float below = bl.x > 0.002 ? bl.y / bl.x : 0;
+      float gap = max(ls.z - t.w - below, 0);
+      float lod = clamp(log2(1 + gap * ssoft.x * t.z), 0, ssoft.z);
+      float o = sinfo.z * 0.75 * exp2(lod);
+      float c = satlas.SampleLevel(ssmp, uv + float2(-o, -o), lod).r + satlas.SampleLevel(ssmp, uv + float2(o, -o), lod).r +
+                satlas.SampleLevel(ssmp, uv + float2(-o, o), lod).r + satlas.SampleLevel(ssmp, uv + float2(o, o), lod).r;
+      cov = max(cov, c * 0.25 / (1 + gap * ssoft.y));
     }
   }
   return cov;

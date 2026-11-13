@@ -59,6 +59,7 @@ struct Config {
   int smooth_log = 0;         // SmoothLog: 1 = trace a few frames of matrices and draws, 2 = camera only, 120 frames, 3 = rider shadows
   int rider_shadows = 2;      // RiderShadows: 0 = the game's CPU shadow, 1 = GPU shadow for the rider the camera follows, 2 = GPU shadows for every rider (dd/gpushadow.cpp)
   int shadow_strength = 0;    // ShadowStrength: GPU shadow darkness in percent (0 = the game's own)
+  int shadow_softness = 100;  // ShadowSoftness: how much GPU shadows blur and fade with the caster's height above the ground, percent (0 = sharp)
   int shadow_log = 0;         // ShadowLog: 1 = GPU shadow counters every 5 s, 2 = also trace every shadow window for 90 frames
   int sim_smooth = 1;         // SimSmooth: draw objects between simulation steps (needs SimRate)
   bool fast_sort = true;      // FastSort: replace the CRT qsort (quadratic on equal keys) with a merge sort (fixes_sort.cpp)

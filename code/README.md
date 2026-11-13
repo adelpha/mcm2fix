@@ -237,6 +237,12 @@ RiderShadows=2
 ; 100). 0 = as dark as the game's own shadow (default).
 ShadowStrength=0
 
+; ShadowSoftness: how much the shadows of RiderShadows blur and fade as the
+; rider rises above the ground (a jump), in percent (0 to 400). Where the
+; bike touches the ground the shadow stays crisp. 0 = always sharp;
+; 100 = default.
+ShadowSoftness=100
+
 ; ------------------------------------------------------------ Text and HUD ----
 
 ; GpuText: 1 = the game's menu and HUD text is drawn by the graphics card,
