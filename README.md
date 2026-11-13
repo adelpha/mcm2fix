@@ -66,6 +66,7 @@ Windows 10 and 11.
 | Trees and flags show a stair-step fringe that hides things behind them. | Fixed by alpha-test threshold (`AlphaCut`) or, with MSAA, alpha-to-coverage (`AlphaToCoverage`), and transparent texels no longer bleed grey into leaf edges. |
 | Texture formats are always 16-bit, because of a bug in the game's 32-bit format description. | Fixed (`TrueColorTextures`), plus full 32-bit texture replacements. |
 | Distant riders' engines play quiet looping snippets of old sounds. The game re-sorts its engine voices on every update with the C library's qsort, which is unstable: riders with equal priority swap places, so their voices are handed around and restarted. | The game's sorts use a stable merge sort (`FastSort`), so voices stay with their rider. |
+| With EAX (DSOAL or an EAX sound card), outdoor events ask for "reverb off" with values OpenAL Soft rejects, so the previous event's reverb (often Arena) carries over. | Each outdoor event gets a real outdoor reverb preset (`BajaReverb` and the other `*Reverb` settings). |
 | DSOAL ignores the game's "mute at max distance" flag, so riders out of earshot can still be heard quietly. | With a replacement DirectSound such as DSOAL, mcm2fix mutes 3D sounds past their max distance itself (`SoundMaxDistanceMute`). |
 
 ## Features
@@ -120,6 +121,11 @@ Windows 10 and 11.
   They come in the release's `SOUNDS\` folder (`five.wav` ... `one.wav`,
   `airhorn.wav`, `finallap.wav`, `podium.wav`); replace any of them with your
   own WAV of the same name.
+- **EAX reverb per event** (`BajaReverb`, `EnduroReverb`, `QuarryReverb`,
+  `NationalsReverb`, `SupercrossReverb`, `TagReverb`). With EAX, outdoor
+  events get Mountains (Baja, Stunt Quarry) or Forest (Enduro, Nationals)
+  reverb; any EAX 1.0 preset can be chosen per event. See
+  [Sound, EAX and DSOAL](#sound-eax-and-dsoal).
 
 ### Frame pacing and smoothness
 - **Fixed-rate simulation** (`SimRate=30`). The game's physics and AI were
@@ -402,6 +408,12 @@ The file has three parts:
 | `RaceTitleSize` | `1` | 0.5-2 | Size of that title. |
 | `Announcer` | `1` | `0`, `1` | Plays the WAV files in `SOUNDS\` in the game folder (the release includes all eight; replace any with your own of the same name): `five.wav` ... `one.wav` as the countdown passes 5 ... 1 seconds left, `airhorn.wav` when the race starts, `finallap.wav` when FINAL LAP shows (not in one-lap races, where it would play over the start) and `podium.wav` when the podium cutscene starts. Missing files are skipped. 8 or 16-bit PCM. |
 | `AnnouncerVolume` | `100` | 0-100 | Volume of those sounds, in percent. |
+| `BajaReverb` | `Mountains` | preset name, `Default` | EAX reverb in Baja events. The presets are the 26 EAX 1.0 environments: `Generic`, `PaddedCell`, `Room`, `Bathroom`, `LivingRoom`, `StoneRoom`, `Auditorium`, `ConcertHall`, `Cave`, `Arena`, `Hangar`, `CarpetedHallway`, `Hallway`, `StoneCorridor`, `Alley`, `Forest`, `City`, `Mountains`, `Quarry`, `Plain`, `ParkingLot`, `SewerPipe`, `Underwater`, `Drugged`, `Dizzy`, `Psychotic`. `Default` = the game's own values. Applies to every track raced as that event, add-on tracks included. Needs EAX (DSOAL or an EAX sound card); otherwise it changes nothing. |
+| `EnduroReverb` | `Forest` | preset name, `Default` | The same for Enduro events. |
+| `QuarryReverb` | `Mountains` | preset name, `Default` | The same for Stunt Quarry events. |
+| `NationalsReverb` | `Forest` | preset name, `Default` | The same for Nationals events. |
+| `SupercrossReverb` | `Default` | preset name, `Default` | The same for Supercross events. `Default` keeps the game's Arena reverb. |
+| `TagReverb` | `Default` | preset name, `Default` | The same for Moto-Tag events. `Default` keeps the game's Arena reverb. |
 
 #### Race direction arrow
 
