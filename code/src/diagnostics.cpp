@@ -57,10 +57,29 @@ void ClockActivate(bool active) {
 // handler (0x4c4a60) shows it again only for flag +0x2d4 bit 1, which isn't
 // set in our windowed modes, so over the inactive window the cursor stayed
 // invisible (StOo, 2026-11-13). Shown while inactive, hidden again on return.
+// The window class cursor is also blank.cur (an empty cursor, 0x4a21ed
+// LoadCursorFromFileA), so while inactive the class gets the arrow instead.
 int g_cursor_raised = 0;
+HCURSOR g_class_cursor = nullptr;  // the game's, while we swapped in the arrow
+bool g_class_swapped = false;
+
+void SwapClassCursor(bool to_arrow) {
+  HWND game = *reinterpret_cast<HWND*>(kMainWindow);
+  if (!game) return;
+  if (to_arrow && !g_class_swapped) {
+    g_class_cursor = reinterpret_cast<HCURSOR>(
+        SetClassLongPtrA(game, GCLP_HCURSOR, reinterpret_cast<LONG_PTR>(LoadCursor(nullptr, IDC_ARROW))));
+    g_class_swapped = true;
+    patch::Log("focus: window class cursor %p (the game's blank.cur) swapped for the arrow", g_class_cursor);
+  } else if (!to_arrow && g_class_swapped) {
+    SetClassLongPtrA(game, GCLP_HCURSOR, reinterpret_cast<LONG_PTR>(g_class_cursor));
+    g_class_swapped = false;
+  }
+}
 
 void CursorActivate(bool active) {
   if (!GetConfig().alt_tab_fix) return;
+  SwapClassCursor(!active);
   if (!active) {
     if (g_cursor_raised) return;
     int c = ShowCursor(TRUE), n = 1;
