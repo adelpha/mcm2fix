@@ -58,7 +58,8 @@ Windows 10 and 11.
 | The race direction arrow leans toward the screen centre instead of pointing at the next gate. | Fixed, with a slight top-down tilt and a larger size (`Arrow*`). |
 | Trees and flags show a stair-step fringe that hides things behind them. | Fixed by alpha-test threshold (`AlphaCut`) or, with MSAA, alpha-to-coverage (`AlphaToCoverage`), and transparent texels no longer bleed grey into leaf edges. |
 | Texture formats are always 16-bit, because of a bug in the game's 32-bit format description. | Fixed (`TrueColorTextures`), plus full 32-bit texture replacements. |
-| With DSOAL, distant riders leave quiet looping snippets of old sounds. | With a replacement DirectSound such as DSOAL, mcm2fix mutes 3D sounds past their max distance itself (`SoundMaxDistanceMute`). |
+| Distant riders' engines play quiet looping snippets of old sounds. The game re-sorts its engine voices on every update with the C library's qsort, which is unstable: riders with equal priority swap places, so their voices are handed around and restarted. | The game's sorts use a stable merge sort (`FastSort`), so voices stay with their rider. |
+| DSOAL ignores the game's "mute at max distance" flag, so riders out of earshot can still be heard quietly. | With a replacement DirectSound such as DSOAL, mcm2fix mutes 3D sounds past their max distance itself (`SoundMaxDistanceMute`). |
 
 ## Features
 
@@ -295,14 +296,21 @@ Mountains preset instead, the environment the game itself names for them.
 EAX 1.0 preset name, or `Off` for the game's own values.
 
 DSOAL ignores the `DSBCAPS_MUTE3DATMAXDISTANCE` flag that the game sets on
-all its 3D sounds. Riders who were out of earshot then kept playing quiet
-looping fragments of old sounds. `SoundMaxDistanceMute=1` (the default) has
+all its 3D sounds, so riders who are out of earshot can still be heard
+quietly. `SoundMaxDistanceMute=1` (the default) has
 mcm2fix mute 3D sounds beyond their max distance itself, as Windows'
 DirectSound does, when the game is using a replacement DirectSound. With
 Windows' own DirectSound mcm2fix leaves this to Windows: muting on top of it
 made the bike engines go silent after every pause. The game's own sounds fade
 to -20 dB at max distance and then cut off, so a slight snap-off at the edge
 is original behaviour.
+
+The quiet looping snippets of old sounds from distant riders, which first
+looked like a DSOAL problem, came from the game itself and happen with any
+DirectSound. The game re-sorts its engine voices on every update with the C
+library's qsort, which doesn't keep equal entries in order, so voices were
+handed between riders and restarted. `FastSort=1` (the default) replaces
+that sort with a stable one and stops it.
 
 ## mcm2fix.ini reference
 
