@@ -11,9 +11,11 @@
 // hair below 0) gives -1, the lookup reads before the patch array and the
 // game reads through a garbage pointer.
 //
-// Both lookups (0x485440 and 0x485609) now clamp col and row to 0..15,
-// which is what the game's other patch lookups do (e.g. 0x48490e). Points
-// on the map give the same indices as before. Each clamp outside the
+// The patch lookup (0x485440) now clamps col and row to 0..15, which is
+// what the game's other patch lookups do (e.g. 0x48490e); the vertex grid
+// lookup (0x485609, 17 x 17 points) only raises a negative index to 0, as
+// the game never limited its top. Points on the map give the same indices
+// as before. Each clamp outside the
 // original 16 -> 15 is logged (the first 20, then a count every 100).
 #include <windows.h>
 
@@ -29,8 +31,15 @@ long g_clamps = 0;
 
 extern "C" void __cdecl GridClampSlow(uint32_t caller, int32_t* col, int32_t* row, uint32_t site) {
   const int32_t c = *col, r = *row;
-  if (c > 15 || c < 0) *col = c < 0 ? 0 : 15;
-  if (r > 15 || r < 0) *row = r < 0 ? 0 : 15;
+  if (site == 0x485609) {
+    // The vertex grid (17 x 17 points): only the bottom is mended; the game
+    // never clamped its top, and reads there stay as they were.
+    if (c < 0) *col = 0;
+    if (r < 0) *row = 0;
+  } else {
+    if (c > 15 || c < 0) *col = c < 0 ? 0 : 15;
+    if (r > 15 || r < 0) *row = r < 0 ? 0 : 15;
+  }
   if (c == 16 && r >= 0 && r <= 16) return;  // the game's own case
   if (r == 16 && c >= 0 && c <= 16) return;
   const long n = ++g_clamps;
@@ -73,10 +82,10 @@ __declspec(naked) void GridClampB() {
   __asm {
     mov ecx, [ebp-14h]
     mov eax, [ebp-0Ch]
-    cmp ecx, 15
-    ja slow
-    cmp eax, 15
-    ja slow
+    test ecx, ecx
+    js slow
+    test eax, eax
+    js slow
     xor ebx, ebx
     ret
   slow:
@@ -99,15 +108,12 @@ __declspec(naked) void GridClampB() {
 #else
 extern "C" void GridClampA();
 extern "C" void GridClampB();
-#define MCM2FIX_GRID_STUB(NAME, SITE, TAIL)        \
+#define MCM2FIX_GRID_STUB(NAME, SITE, TEST, TAIL)  \
   ".globl _" NAME "\n"                             \
   "_" NAME ":\n"                                   \
   "  movl -0x14(%ebp), %ecx\n"                     \
   "  movl -0xc(%ebp), %eax\n"                      \
-  "  cmpl $15, %ecx\n"                             \
-  "  ja 1f\n"                                      \
-  "  cmpl $15, %eax\n"                             \
-  "  ja 1f\n"                                      \
+  TEST                                             \
   TAIL                                             \
   "  ret\n"                                        \
   "1:\n"                                           \
@@ -126,8 +132,9 @@ extern "C" void GridClampB();
   TAIL                                             \
   "  ret\n"
 asm(".text\n"
-    MCM2FIX_GRID_STUB("GridClampA", "0x485440", "")
-    MCM2FIX_GRID_STUB("GridClampB", "0x485609", "  xorl %ebx, %ebx\n"));
+    MCM2FIX_GRID_STUB("GridClampA", "0x485440", "  cmpl $15, %ecx\n  ja 1f\n  cmpl $15, %eax\n  ja 1f\n", "")
+    MCM2FIX_GRID_STUB("GridClampB", "0x485609", "  testl %ecx, %ecx\n  js 1f\n  testl %eax, %eax\n  js 1f\n",
+                      "  xorl %ebx, %ebx\n"));
 #endif
 
 void ApplyGridFix() {
@@ -142,6 +149,6 @@ void ApplyGridFix() {
   const bool ok_b = patch::Matches(0x485609, b, sizeof(b));
   if (ok_a) patch::Call(0x485440, reinterpret_cast<const void*>(&GridClampA), sizeof(a));
   if (ok_b) patch::Call(0x485609, reinterpret_cast<const void*>(&GridClampB), 8);
-  patch::Log("grid: terrain patch lookups clamped to 0..15: 485440 %s, 485609 %s", ok_a ? "patched" : "NOT patched (bytes differ)",
+  patch::Log("grid: terrain patch lookup clamped to 0..15 at 485440 %s, vertex grid kept from going below 0 at 485609 %s", ok_a ? "patched" : "NOT patched (bytes differ)",
              ok_b ? "patched" : "NOT patched (bytes differ)");
 }
