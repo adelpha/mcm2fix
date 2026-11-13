@@ -40,5 +40,7 @@ bool IsSkyTextureName(const std::string& n);
 const void* ReflectCurrentObject();
 // Install the game hooks (object draw, part transform); once.
 void ReflectInstallHooks();
+// A device is going away: drop the draw cache (it holds the device's states).
+void ReflectForget();
 
 }  // namespace dd

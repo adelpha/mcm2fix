@@ -91,6 +91,12 @@ struct RCfg {
   int live_faces = 1;
   float ground = 1.0f;
   bool log = false;
+  // ReflectCache: world draws kept for later frames, so the live cube shows
+  // what is around the bike behind the camera too.
+  bool cache = true;
+  int cache_mb = 32;
+  float cache_secs = 20.0f;
+  float cache_radius = 0.0f;  // 0: the game's fog end
   std::vector<Pattern> textures;  // texture name -> strength (bikes, plus ReflectTextures)
   std::vector<Pattern> frames;    // frame name -> strength (helmet, plus ReflectFrames)
   std::vector<std::string> exclude;
@@ -175,6 +181,10 @@ const RCfg& Cfg() {
     }
   }
   g_cfg.sun = std::clamp(ReadF("ReflectSun", 1.0f, ini), 0.0f, 4.0f);
+  g_cfg.cache = GetPrivateProfileIntA("mcm2fix", "ReflectCache", 1, ini) != 0;
+  g_cfg.cache_mb = std::clamp(static_cast<int>(GetPrivateProfileIntA("mcm2fix", "ReflectCacheMB", 32, ini)), 4, 512);
+  g_cfg.cache_secs = std::clamp(ReadF("ReflectCacheSecs", 20.0f, ini), 0.5f, 600.0f);
+  g_cfg.cache_radius = std::clamp(ReadF("ReflectCacheRadius", 0.0f, ini), 0.0f, 1e6f);
   int size = static_cast<int>(GetPrivateProfileIntA("mcm2fix", "ReflectSize", 128, ini));
   int p = 16;
   while (p < size && p < 1024) p <<= 1;
@@ -213,6 +223,9 @@ const RCfg& Cfg() {
         g_cfg.mode, g_cfg.mode == 1 ? "sky" : "live", g_cfg.strength, g_cfg.mats[0].f0, g_cfg.mats[0].blur,
         g_cfg.mats[1].f0, g_cfg.mats[1].blur, g_cfg.mats[2].f0, g_cfg.mats[2].blur, g_cfg.size, g_cfg.live_faces,
         g_cfg.ground, t.c_str(), f.c_str());
+    if (g_cfg.mode == 2)
+      Log("reflections: draw cache %s, %d MB, kept %.1f s, radius %s", g_cfg.cache ? "on" : "off", g_cfg.cache_mb,
+          g_cfg.cache_secs, g_cfg.cache_radius > 0 ? std::to_string(g_cfg.cache_radius).c_str() : "fog end");
     Log("reflections: sun highlight x%.2f, brightness/sharpness bike %.2f/%.0f helmet %.2f/%.0f rider %.2f/%.0f",
         g_cfg.sun, g_cfg.mats[0].sun, g_cfg.mats[0].shine, g_cfg.mats[1].sun, g_cfg.mats[1].shine, g_cfg.mats[2].sun,
         g_cfg.mats[2].shine);
@@ -502,6 +515,11 @@ struct Gpu {
   ID3D11Texture2D* zt = nullptr;
   ID3D11DepthStencilView* dsv = nullptr;
   bool cube_valid = false;  // drawn at least once
+  // ReflectCache: copies of world draws (the device's vertex layout).
+  ID3D11Buffer* cvb = nullptr;
+  ID3D11Buffer* cib = nullptr;
+  UINT cvb_size = 0, cib_size = 0, cvb_pos = 0, cib_pos = 0;
+  bool cache_failed = false;
 } g;
 
 template <class T>
@@ -518,6 +536,9 @@ void FreeGpu() {
   Rel(g.env_smp), Rel(g.clamp_smp);
   Rel(g.cube_srv), Rel(g.cube), Rel(g.zt), Rel(g.dsv);
   for (auto*& r : g.face_rtv) Rel(r);
+  Rel(g.cvb), Rel(g.cib);
+  g.cvb_size = g.cib_size = g.cvb_pos = g.cib_pos = 0;
+  g.cache_failed = false;
   g.cube_valid = false;
   g.size = 0;
 }
@@ -538,11 +559,99 @@ void ClearSky() {
   g_sky_dirty = true;
 }
 
+// ReflectCache: a world draw kept on the GPU (copied out of the device's
+// vertex and index buffers, which are reused every frame), with its state
+// and world-space bounds.
+struct CacheEntry {
+  ReflectReplay st;  // state; srv AddRef'd
+  UINT vbyte = 0, vbytes = 0;  // in g.cvb
+  UINT ibyte = 0, ibytes = 0;  // in g.cib (0 bytes: not indexed)
+  INT vstart = 0;   // the indices' own first vertex (subtracted when drawn)
+  UINT count = 0, nidx = 0;
+  float lo[3], hi[3];
+  double seen = 0;
+  unsigned seen_frame = 0;
+};
+std::unordered_map<uint64_t, CacheEntry> g_cache;
+std::vector<const CacheEntry*> g_cache_draw;  // this cube update's
+float g_cache_radius_used = 0;
+unsigned g_cache_frame = 1;  // frames recorded (the cache's own count)
+struct CStats {
+  unsigned hits = 0, inserts = 0, evicted = 0, aged = 0, too_big = 0, drawn = 0, culled_view = 0, culled_far = 0,
+           culled_old = 0;
+  double copied = 0;  // bytes
+} g_cs;
+
+void ReleaseEntry(CacheEntry& e) {
+  for (auto*& s : e.st.srv) Rel(s);
+}
+
+void ClearCache() {
+  for (auto& kv : g_cache) ReleaseEntry(kv.second);
+  g_cache.clear();
+  g.cvb_pos = g.cib_pos = 0;
+}
+
+// Room for `bytes` in a ring buffer of `size`: the offset (wrapping to the
+// start), entries in the way are dropped.
+UINT CacheAlloc(UINT& pos, UINT size, UINT bytes, UINT align, bool vertex) {
+  UINT at = (pos + align - 1) / align * align;
+  if (at + bytes > size) at = 0;
+  pos = at + bytes;
+  for (auto it = g_cache.begin(); it != g_cache.end();) {
+    const CacheEntry& e = it->second;
+    const UINT a = vertex ? e.vbyte : e.ibyte, n = vertex ? e.vbytes : e.ibytes;
+    if (n && a < at + bytes && at < a + n) {
+      ReleaseEntry(it->second);
+      it = g_cache.erase(it);
+      ++g_cs.evicted;
+    } else {
+      ++it;
+    }
+  }
+  return at;
+}
+
+uint64_t Fnv(uint64_t h, const void* p, size_t n) {
+  const uint8_t* b = static_cast<const uint8_t*>(p);
+  for (size_t i = 0; i < n; ++i) h = (h ^ b[i]) * 1099511628211ull;
+  return h;
+}
+
+// Is the box entirely outside the view (row-vector matrix vp)?
+bool BoxOutside(const float lo[3], const float hi[3], const float* vp) {
+  int out[6] = {};
+  for (int c = 0; c < 8; ++c) {
+    const float p[3] = {c & 1 ? hi[0] : lo[0], c & 2 ? hi[1] : lo[1], c & 4 ? hi[2] : lo[2]};
+    float q[4];
+    for (int k = 0; k < 4; ++k) q[k] = p[0] * vp[k] + p[1] * vp[4 + k] + p[2] * vp[8 + k] + vp[12 + k];
+    out[0] += q[0] < -q[3];
+    out[1] += q[0] > q[3];
+    out[2] += q[1] < -q[3];
+    out[3] += q[1] > q[3];
+    out[4] += q[2] < 0;
+    out[5] += q[2] > q[3];
+  }
+  for (int k : out)
+    if (k == 8) return true;
+  return false;
+}
+
+float BoxDist2(const float lo[3], const float hi[3], const float p[3]) {
+  float d = 0;
+  for (int k = 0; k < 3; ++k) {
+    const float e = p[k] < lo[k] ? lo[k] - p[k] : p[k] > hi[k] ? p[k] - hi[k] : 0.0f;
+    d += e * e;
+  }
+  return d;
+}
+
 bool MakeGpu() {
   Backend& b = B();
   if (g.device == b.device && g.vs) return true;
   if (g.device == b.device && g.failed) return false;
   if (g.device != b.device) {
+    ClearCache();
     FreeGpu();
     ClearSky();
     g.failed = false;
@@ -1183,7 +1292,117 @@ void Device::ReflectRecord(const ReflectReplay& r) {
   g_st.record_s += Now() - t0;
 }
 
+void ReflectForget() {
+  ClearCache();
+}
+
 bool Device::ReflectRecording() const { return Cfg().mode == 2 && !IsD3D9(); }
+
+void Device::ReflectCache(const ReflectReplay& r, const uint8_t* cpu, UINT cpu_stride, const ReflectSub* subs,
+                          size_t nsubs, UINT gpu_stride) {
+  if (!Cfg().cache || Cfg().mode != 2 || !cpu || !nsubs || !vbuf_ || (r.indexed && !ibuf_)) return;
+  if (!MakeGpu() || g.cache_failed) return;
+  const double t0 = Now();
+  Backend& b = B();
+  if (!g.cvb) {
+    const UINT total = static_cast<UINT>(Cfg().cache_mb) << 20;
+    g.cvb_size = total / 4 * 3 / gpu_stride * gpu_stride;
+    g.cib_size = total / 4 / 4 * 4;
+    D3D11_BUFFER_DESC bd{};
+    bd.Usage = D3D11_USAGE_DEFAULT;
+    bd.ByteWidth = g.cvb_size;
+    bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+    HRESULT hr = b.device->CreateBuffer(&bd, nullptr, &g.cvb);
+    bd.ByteWidth = g.cib_size;
+    bd.BindFlags = D3D11_BIND_INDEX_BUFFER;
+    if (SUCCEEDED(hr)) hr = b.device->CreateBuffer(&bd, nullptr, &g.cib);
+    if (FAILED(hr)) {
+      Log("reflections: draw cache buffers (%d MB) failed %08lx; no cache", Cfg().cache_mb, hr);
+      Rel(g.cvb), Rel(g.cib);
+      g.cache_failed = true;
+      return;
+    }
+    g.cvb_pos = g.cib_pos = 0;
+    if (Cfg().log) Log("reflections: draw cache %u KB vertices, %u KB indices", g.cvb_size >> 10, g.cib_size >> 10);
+  }
+  const double now = Now();
+  float w[16];
+  std::memcpy(w, r.world, sizeof(w));
+  for (size_t si = 0; si < nsubs; ++si) {
+    const ReflectSub& sd = subs[si];
+    if (!sd.nverts || (r.indexed && !sd.nidx)) continue;
+    const uint8_t* pv = cpu + static_cast<size_t>(sd.vstart) * cpu_stride;
+    // Key: texture, world, sizes and a few positions.
+    uint64_t h = 1469598103934665603ull;
+    h = Fnv(h, &r.srv[0], sizeof(r.srv[0]));
+    h = Fnv(h, w, sizeof(w));
+    h = Fnv(h, &sd.nverts, sizeof(sd.nverts));
+    h = Fnv(h, &sd.nidx, sizeof(sd.nidx));
+    h = Fnv(h, &r.topo, sizeof(r.topo));
+    const DWORD step = sd.nverts > 16 ? sd.nverts / 16 : 1;
+    for (DWORD i = 0; i < sd.nverts; i += step) h = Fnv(h, pv + static_cast<size_t>(i) * cpu_stride, 12);
+    h = Fnv(h, pv + static_cast<size_t>(sd.nverts - 1) * cpu_stride, 12);
+    auto it = g_cache.find(h);
+    if (it != g_cache.end()) {
+      CacheEntry& e = it->second;
+      e.seen = now;
+      e.seen_frame = g_cache_frame;
+      // Latest state (the textures are part of the key, the second may change).
+      ID3D11ShaderResourceView* old[2] = {e.st.srv[0], e.st.srv[1]};
+      e.st = r;
+      for (auto* sv : e.st.srv)
+        if (sv) sv->AddRef();
+      for (auto* sv : old)
+        if (sv) sv->Release();
+      ++g_cs.hits;
+      continue;
+    }
+    const UINT vbytes = sd.nverts * gpu_stride, ibytes = r.indexed ? sd.nidx * 2 : 0;
+    if (vbytes > g.cvb_size / 8 || ibytes > g.cib_size / 8) {
+      ++g_cs.too_big;
+      continue;
+    }
+    CacheEntry e;
+    e.st = r;
+    e.count = sd.nverts;
+    e.nidx = r.indexed ? sd.nidx : 0;
+    e.vstart = static_cast<INT>(sd.vstart);
+    // World-space bounds.
+    for (int k = 0; k < 3; ++k) e.lo[k] = 1e30f, e.hi[k] = -1e30f;
+    for (DWORD i = 0; i < sd.nverts; ++i) {
+      float p[3];
+      std::memcpy(p, pv + static_cast<size_t>(i) * cpu_stride, 12);
+      for (int k = 0; k < 3; ++k) {
+        const float q = p[0] * w[k] + p[1] * w[4 + k] + p[2] * w[8 + k] + w[12 + k];
+        e.lo[k] = std::min(e.lo[k], q);
+        e.hi[k] = std::max(e.hi[k], q);
+      }
+    }
+    if (!(e.lo[0] <= e.hi[0])) continue;
+    e.vbyte = CacheAlloc(g.cvb_pos, g.cvb_size, vbytes, gpu_stride, true);
+    e.vbytes = vbytes;
+    if (ibytes) {
+      e.ibyte = CacheAlloc(g.cib_pos, g.cib_size, ibytes, 4, false);
+      e.ibytes = ibytes;
+    }
+    const UINT src_v = static_cast<UINT>(r.base_vertex + static_cast<INT>(sd.vstart)) * gpu_stride;
+    D3D11_BOX box{src_v, 0, 0, src_v + vbytes, 1, 1};
+    b.ctx->CopySubresourceRegion(g.cvb, 0, e.vbyte, 0, 0, vbuf_, 0, &box);
+    if (ibytes) {
+      const UINT src_i = r.ioff + sd.istart * 2;
+      D3D11_BOX ib{src_i, 0, 0, src_i + ibytes, 1, 1};
+      b.ctx->CopySubresourceRegion(g.cib, 0, e.ibyte, 0, 0, ibuf_, 0, &ib);
+    }
+    for (auto* sv : e.st.srv)
+      if (sv) sv->AddRef();
+    e.seen = now;
+    e.seen_frame = g_cache_frame;
+    g_cache.emplace(h, e);
+    ++g_cs.inserts;
+    g_cs.copied += vbytes + ibytes;
+  }
+  g_st.record_s += Now() - t0;
+}
 
 void Device::ReflectEndScene(ID3D11InputLayout* game_layout, UINT game_stride) {
   if (!Cfg().mode || IsD3D9()) return;
@@ -1252,6 +1471,40 @@ void Device::ReflectEndScene(ID3D11InputLayout* game_layout, UINT game_stride) {
         f = -proj_.m[3][2] / (proj_.m[2][2] - 1);
         if (!(n > 0.01f && n < 100.0f)) n = 1.0f;
         if (!(f > n * 2 && f < 1e6f)) f = 10000.0f;
+      }
+      // Cached draws (ReflectCache) for this update: not drawn this frame,
+      // recent, near the bike, and out of the camera's view (what is in view
+      // was drawn this frame if the game still draws it).
+      g_cache_draw.clear();
+      if (Cfg().cache && !g_cache.empty() && g.cvb) {
+        float radius = Cfg().cache_radius;
+        if (radius <= 0) {
+          float fe = 0;
+          std::memcpy(&fe, &rs_[RS_FOGEND], 4);
+          fe *= GetConfig().fog_scale;
+          radius = rs_[RS_FOGENABLE] && fe > 1 ? fe : f;
+        }
+        g_cache_radius_used = radius;
+        float cvp[16];
+        Mul(&view_.m[0][0], &proj_.m[0][0], cvp);
+        const double now = Now();
+        for (auto& kv : g_cache) {
+          const CacheEntry& e = kv.second;
+          if (e.seen_frame == g_cache_frame) continue;
+          if (now - e.seen > Cfg().cache_secs) {
+            ++g_cs.culled_old;
+            continue;
+          }
+          if (BoxDist2(e.lo, e.hi, eye) > radius * radius) {
+            ++g_cs.culled_far;
+            continue;
+          }
+          if (!BoxOutside(e.lo, e.hi, cvp)) {
+            ++g_cs.culled_view;
+            continue;
+          }
+          g_cache_draw.push_back(&e);
+        }
       }
       float proj[16], sky_proj[16];
       FaceProj(n, f, proj);
@@ -1367,6 +1620,47 @@ void Device::ReflectEndScene(ID3D11InputLayout* game_layout, UINT game_stride) {
             ++g_st.replays;
           }
         }
+        // Cached draws from earlier frames (behind the camera).
+        if (Cfg().mode == 2 && !g_cache_draw.empty() && game_layout) {
+          float view[16], vpm[16];
+          FaceView(face, eye, view);
+          Mul(view, proj, vpm);
+          b.ctx->IASetInputLayout(game_layout);
+          const UINT zero = 0;
+          b.ctx->IASetVertexBuffers(0, 1, &g.cvb, &game_stride, &zero);
+          b.ctx->IASetIndexBuffer(g.cib, DXGI_FORMAT_R16_UINT, 0);
+          b.ctx->VSSetConstantBuffers(0, 1, &g.game_vs_cb);
+          b.ctx->PSSetConstantBuffers(1, 1, &ps_cb_);
+          b.ctx->RSSetState(g.raster_none);
+          GameVSConstants vc{};
+          vc.vp[2] = vc.vp[3] = static_cast<float>(g.size);
+          float last_world[16];
+          bool have_world = false;
+          const ReflectReplay* prev = nullptr;
+          for (const CacheEntry* ce : g_cache_draw) {
+            const ReflectReplay& r = ce->st;
+            if (!have_world || std::memcmp(last_world, r.world, sizeof(last_world)) != 0) {
+              Mul(r.world, vpm, vc.wvp);
+              b.ctx->UpdateSubresource(g.game_vs_cb, 0, nullptr, &vc, 0, 0);
+              std::memcpy(last_world, r.world, sizeof(last_world));
+              have_world = true;
+            }
+            if (!prev || prev->blend != r.blend) b.ctx->OMSetBlendState(r.blend, nullptr, 0xffffffff);
+            if (!prev || prev->depth != r.depth) b.ctx->OMSetDepthStencilState(r.depth, 0);
+            if (!prev || std::memcmp(prev->srv, r.srv, sizeof(r.srv)) != 0) b.ctx->PSSetShaderResources(0, 2, r.srv);
+            if (!prev || std::memcmp(prev->smp, r.smp, sizeof(r.smp)) != 0) b.ctx->PSSetSamplers(0, 3, r.smp);
+            if (!prev || prev->vs != r.vs) b.ctx->VSSetShader(r.vs, nullptr, 0);
+            if (!prev || prev->ps != r.ps) b.ctx->PSSetShader(r.ps, nullptr, 0);
+            if (!prev || prev->pc_size != r.pc_size || std::memcmp(prev->pc, r.pc, r.pc_size) != 0)
+              b.ctx->UpdateSubresource(ps_cb_, 0, nullptr, r.pc, 0, 0);
+            if (!prev || prev->topo != r.topo) b.ctx->IASetPrimitiveTopology(r.topo);
+            const INT vat = static_cast<INT>(ce->vbyte / game_stride);
+            if (ce->ibytes) b.ctx->DrawIndexed(ce->nidx, ce->ibyte / 2, vat - ce->vstart);
+            else b.ctx->Draw(ce->count, static_cast<UINT>(vat));
+            prev = &r;
+            ++g_cs.drawn;
+          }
+        }
       }
       ID3D11RenderTargetView* no_rt = nullptr;
       b.ctx->OMSetRenderTargets(1, &no_rt, nullptr);
@@ -1381,6 +1675,20 @@ void Device::ReflectEndScene(ID3D11InputLayout* game_layout, UINT game_stride) {
       if (s) s->Release();
   g_replays.clear();
   g_obj_acc.clear();
+  ++g_cache_frame;
+  // Old entries go (their textures with them), a little at a time.
+  if (g_cache_frame % 30 == 0 && !g_cache.empty()) {
+    const double now = Now();
+    for (auto it = g_cache.begin(); it != g_cache.end();) {
+      if (now - it->second.seen > Cfg().cache_secs) {
+        ReleaseEntry(it->second);
+        it = g_cache.erase(it);
+        ++g_cs.aged;
+      } else {
+        ++it;
+      }
+    }
+  }
   g_st.cube_s += Now() - t0;
 
   if (any) ++g_st.frames;
@@ -1396,7 +1704,19 @@ void Device::ReflectEndScene(ID3D11InputLayout* game_layout, UINT game_stride) {
           g_st.cube_s * 1000 / fr, g_st.faces / fr, g_st.faces_skipped, g_st.replays / fr, g_st.replay_stale,
           static_cast<unsigned>(g_sky.size()), g_st.cube_builds, g_st.record_s * 1000 / fr, g_st.records / fr,
           g_st.sun_draws, g_st.passes, g_st.capture_bike, g_st.capture_cam, g_obj_draws, g_xforms, g_ranges.size());
+      if (Cfg().mode == 2 && Cfg().cache) {
+        size_t vb = 0, ib = 0;
+        for (const auto& kv : g_cache) vb += kv.second.vbytes, ib += kv.second.ibytes;
+        Log("reflections 5s cache: %zu draws kept (%.1f MB of %.1f), radius %.0f; per frame: %.1f found again, %.1f new "
+            "(%.1f KB copied), %.1f cached draws drawn per cube update; left out: %u in view, %u too far, %u too old; "
+            "%u pushed out (full), %u aged out, %u too big",
+            g_cache.size(), (vb + ib) / 1048576.0, (g.cvb_size + g.cib_size) / 1048576.0, g_cache_radius_used,
+            g_cs.hits / fr, g_cs.inserts / fr, g_cs.copied / 1024 / fr,
+            g_st.cube_builds ? double(g_cs.drawn) / g_st.faces : 0.0, g_cs.culled_view, g_cs.culled_far,
+            g_cs.culled_old, g_cs.evicted, g_cs.aged, g_cs.too_big);
+      }
     }
+    g_cs = CStats{};
     g_st = RStats{};
     g_obj_draws = g_xforms = 0;
     g_st_since = now;

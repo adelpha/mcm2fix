@@ -204,8 +204,8 @@ AlphaToCoverage=2
 ; and, more faintly, their suits. 0 = off (default). 1 = the track's sky (cheap: the reflection is
 ; only redrawn when a new piece of sky comes into view). 2 = live: the sky
 ; plus the terrain, trees and track objects around the player's bike, redrawn
-; every frame from the bike's position (ReflectLiveFaces). Only what is on
-; screen can be reflected; behind the camera the reflection shows sky.
+; every frame from the bike's position (ReflectLiveFaces). Behind the
+; camera it shows what was drawn there recently (ReflectCache).
 ; Direct3D 11 only.
 Reflections=0
 
@@ -251,6 +251,18 @@ ReflectSun=1
 ReflectSize=128
 ReflectLiveFaces=1
 ReflectGround=1
+
+; ReflectCache: with Reflections=2, terrain, trees and track objects drawn
+; in recent frames are kept on the graphics card, so the reflection also
+; shows what is around the bike behind the camera (1, default), not just sky
+; (0). ReflectCacheMB: memory for it (default 32). ReflectCacheSecs: how long
+; something not drawn any more is kept (default 20). ReflectCacheRadius: how
+; far from the bike kept things are reflected (0 = as far as the fog ends,
+; the default).
+ReflectCache=1
+ReflectCacheMB=32
+ReflectCacheSecs=20
+ReflectCacheRadius=0
 
 ; Which parts reflect. ReflectBikeTextures: bike textures (name patterns, *
 ; matches anything) that reflect at ReflectBike. ReflectHelmetFrames: model

@@ -219,6 +219,16 @@ class Device : public d3d7::IDirect3DDevice7 {
   void ReflectSky(const Draw& d);
   void ReflectPass(const Draw& d);
   void ReflectRecord(const ReflectReplay& r);
+  // Reflections=2 with ReflectCache: one of the game's draws inside a sent
+  // draw (a batch holds several): vertices [vstart, +nverts) and indices
+  // [istart, +nidx) of it.
+  struct ReflectSub {
+    DWORD vstart, nverts, istart, nidx;
+  };
+  // Keep the sent draw `r` (its game draws `subs`, whose positions are at
+  // `cpu` with `cpu_stride`) in the reflection's draw cache.
+  void ReflectCache(const ReflectReplay& r, const uint8_t* cpu, UINT cpu_stride, const ReflectSub* subs, size_t nsubs,
+                    UINT gpu_stride);
   bool ReflectRecording() const;
  public:
   void ReflectEndScene(ID3D11InputLayout* game_layout, UINT game_stride);
@@ -295,6 +305,7 @@ class Device : public d3d7::IDirect3DDevice7 {
     DWORD nverts = 0;
     unsigned draws = 0;
     bool receiver = false;  // terrain patches (rider shadows)
+    std::vector<ReflectSub> subs;  // the game's draws in it (reflection cache)
   };
   Batch batch_, batch_out_;
   bool flushing_ = false;

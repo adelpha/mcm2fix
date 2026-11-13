@@ -828,6 +828,7 @@ bool Device::BatchAdd(const Draw& d) {
     batch_.receiver = receiver;
     batch_.verts.clear();
     batch_.idx.clear();
+    batch_.subs.clear();
     batch_.nverts = 0;
   }
   const size_t stride = d.layout.stride;
@@ -854,6 +855,7 @@ bool Device::BatchAdd(const Draw& d) {
       out[t * 3 + 2] = at(a + 2);
     }
   }
+  batch_.subs.push_back({batch_.nverts, d.count, static_cast<DWORD>(o), static_cast<DWORD>(tris * 3)});
   batch_.nverts += d.count;
   ++batch_.draws;
   ++g_bs.merged;
@@ -937,6 +939,7 @@ Device::~Device() {
     }
   if (rt_) rt_->Unhold();
   rt_ = nullptr;
+  ReflectForget();  // the reflection cache holds this device's states
   for (auto& kv : blend_cache_) kv.second->Release();
   for (auto& kv : depth_cache_) kv.second->Release();
   for (auto& kv : raster_cache_) kv.second->Release();
@@ -2362,6 +2365,17 @@ void Device::SubmitDraw(const Draw& d) {
     r.vgen = vgen_;
     r.igen = igen_;
     ReflectRecord(r);
+    // Kept for later frames (behind the camera), when the draw writes depth.
+    if (rs_[RS_ZWRITEENABLE] && d.verts && d.layout.stride) {
+      if (flushing_) {
+        ReflectCache(r, batch_out_.verts.data(), d.layout.stride, batch_out_.subs.data(), batch_out_.subs.size(),
+                     sizeof(GpuVertex));
+      } else {
+        const ReflectSub one{0, d.count, 0, idx ? nidx : 0};
+        ReflectCache(r, d.verts + static_cast<size_t>(d.first) * d.layout.stride, d.layout.stride, &one, 1,
+                     sizeof(GpuVertex));
+      }
+    }
   }
 }
 
