@@ -438,6 +438,17 @@ AsyncSound=2
 ; distance, and how often the game restarts a sound that is still playing.
 SoundMaxDistanceMute=1
 
+; BajaReverb: experimental. The game turns EAX reverb off for every outdoor
+; event, but with values (decay time 0) that OpenAL Soft / DSOAL rejects, so
+; whatever reverb was set before stays on. Give an EAX 1.0 preset name to use
+; it in Baja events instead: Generic, PaddedCell, Room, Bathroom, LivingRoom,
+; StoneRoom, Auditorium, ConcertHall, Cave, Arena, Hangar, CarpetedHallway,
+; Hallway, StoneCorridor, Alley, Forest, City, Mountains, Quarry, Plain,
+; ParkingLot, SewerPipe, Underwater, Drugged, Dizzy, Psychotic. Needs EAX
+; (DSOAL or an EAX sound card). Off = the game's own values (default). Every
+; EAX setting the game makes is written to the log.
+BajaReverb=Off
+
 ; FastCrt: 1 = the game's millisecond clock uses QueryPerformanceCounter
 ; instead of changing the Windows timer period on every call, and its
 ; case-insensitive name comparisons use a lookup table (default). Both were
