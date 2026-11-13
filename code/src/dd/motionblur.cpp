@@ -25,6 +25,11 @@
 //    is a fraction of the screen, not a per-frame distance: it looks the same
 //    at 60 or 240 Hz.
 //
+//  - The race direction arrow (VisualCue) is a 3D object in the scene, so it
+//    would be blurred with it. Its spot in front of the camera comes from
+//    fixes_arrow.cpp; 3D draws whose object sits there are kept back (their
+//    vertices and the device state copied) and drawn right after the blur.
+//
 // Direct3D 11: one full-screen pass (shader below) from a copy of the scene
 // (resolved from the MSAA buffer when antialiasing is on) back into it.
 // Direct3D 9 (fixed function): the copy is drawn again 7 times, each zoomed a
@@ -37,6 +42,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -54,6 +60,9 @@ constexpr float kBaseLength = 0.08f;  // MotionBlurStrength=100 at full speed: 8
 constexpr unsigned kMin3D = 16;       // 3D draws before a screen draw counts as the HUD
 constexpr double kStaleSecs = 0.2;    // no bike step for this long (pause, replay, menus): no blur
 constexpr int kLayers9 = 8;
+constexpr double kArrowStaleSecs = 0.5;  // arrow spot older than this: no arrow in the race
+constexpr float kArrowMatch = 0.3f;      // how near the spot (fraction of its distance) a draw must be
+constexpr DWORD kArrowMaxVerts = 2000;   // bigger draws are not the arrow
 
 LONGLONG Qpc() {
   LARGE_INTEGER t;
@@ -92,7 +101,38 @@ struct FrameState {
   d3d7::D3DVIEWPORT7 vp{};
   bool have_mats = false;
   UINT rt_w = 0, rt_h = 0;
+  bool arrow_spot = false;   // the arrow's spot was known this frame
+  unsigned arrow_draws = 0;  // draws kept back as the arrow
+  float arrow_best = 1e9f;   // nearest a 3D draw came to the spot (MotionBlurLog)
 } g_frame;
+
+// The arrow's spot in front of the camera (fixes_arrow.cpp).
+struct ArrowSpot {
+  float h = 0, v = 0, dist = 0, size = 0;
+  LONGLONG at = 0;
+} g_arrow;
+
+// Draws kept back until after the blur, with the device state they had.
+struct Deferred {
+  DWORD prim = 0;
+  FvfLayout layout{};
+  DWORD count = 0;
+  std::vector<uint8_t> verts;
+  std::vector<WORD> idx;
+  bool indexed = false;
+  const Surface* rt = nullptr;
+  DWORD rs[256];
+  DWORD tss[8][32];
+  Surface* tex[8];
+  d3d7::D3DMATRIX world, view, proj;
+  d3d7::D3DVIEWPORT7 vp;
+  d3d7::D3DMATERIAL7 mat;
+  std::map<DWORD, d3d7::D3DLIGHT7> lights;
+  std::map<DWORD, BOOL> light_on;
+};
+std::vector<Deferred> g_deferred;  // reused; the first g_ndeferred are pending
+size_t g_ndeferred = 0;
+unsigned g_arrow_logged = 0;
 
 // Filtered values.
 struct Filter {
@@ -122,11 +162,16 @@ struct Window {
   unsigned samples = 0;
   double pass_us = 0;
   std::string trigger;  // texture of the HUD draw the blur went before
+  unsigned spot_frames = 0, arrow_frames = 0, arrow_draws = 0, arrow_dropped = 0, arrow_late = 0;
+  // The nearest miss in frames where the spot was known but no draw matched.
+  float miss = 1e9f, miss_x = 0, miss_y = 0, miss_z = 0;
+  DWORD miss_count = 0;
+  std::string miss_tex;
 } g_win;
 
 // MotionBlurLog: whole-frame draw sequences (a few per run).
 struct DumpEvent {
-  int kind;  // 0 3D, 1 processed (3D), 2 screen + depth test, 3 screen, 4 BLUR
+  int kind;  // 0 3D, 1 processed (3D), 2 screen + depth test, 3 screen, 4 BLUR, 5 arrow kept back, 6 arrow drawn
   std::string tex;
   unsigned n;
 };
@@ -259,6 +304,15 @@ void FlushWindow(LONGLONG now) {
                w.amount_sum / n, w.blurred ? w.len_sum / w.blurred : 0.0, w.len_max, w.fu_sum / n, w.fv_sum / n,
                w.fwd_sum / n, w.after3d_draws, w.after3d_frames, w.tlz, w.blurred ? w.pass_us / w.blurred : 0.0,
                w.trigger.c_str());
+    if (w.spot_frames || w.arrow_draws || w.arrow_dropped) {
+      patch::Log("motionblur: arrow: spot known in %u frames, kept back and drawn after the blur in %u frames (%u draws), "
+                 "%u dropped (frame ended without a draw point), %u frames with the spot but nothing matched%s",
+                 w.spot_frames, w.arrow_frames, w.arrow_draws, w.arrow_dropped, w.spot_frames - w.arrow_frames,
+                 w.arrow_late ? " (some after the blur: drawn sharp anyway)" : "");
+      if (w.miss < 1e8f && w.spot_frames > w.arrow_frames)
+        patch::Log("motionblur: arrow: nearest unmatched 3D draw %.2f (match < %.2f): %lu verts '%s' at view %.2f %.2f %.2f",
+                   w.miss, kArrowMatch, w.miss_count, w.miss_tex.c_str(), w.miss_x, w.miss_y, w.miss_z);
+    }
   }
   w = Window();
   w.start = now;
@@ -270,6 +324,8 @@ const char* KindName(int k) {
     case 1: return "3D (processed)";
     case 2: return "screen+depthtest";
     case 3: return "screen";
+    case 5: return "arrow (kept back)";
+    case 6: return "arrow (drawn)";
     default: return "== MOTION BLUR ==";
   }
 }
@@ -301,6 +357,11 @@ void EndFrame() {
       g_win.after3d_draws += f.after3d;
     }
     g_win.tlz += f.tlz;
+    if (f.arrow_spot) ++g_win.spot_frames;
+    if (f.arrow_draws) {
+      ++g_win.arrow_frames;
+      g_win.arrow_draws += f.arrow_draws;
+    }
   }
   if (g_dumping) {
     g_dumping = false;
@@ -316,6 +377,10 @@ void NewFrameIfNeeded(UINT w, UINT h) {
   const unsigned flips = Counters().flips;
   if (flips == g_frame.flips) return;
   if (g_frame.flips != ~0u) EndFrame();
+  if (g_ndeferred) {  // kept back and never drawn (no end of scene seen): gone
+    g_win.arrow_dropped += static_cast<unsigned>(g_ndeferred);
+    g_ndeferred = 0;
+  }
   const LONGLONG now = Qpc();
   g_frame = FrameState();
   g_frame.flips = flips;
@@ -376,8 +441,20 @@ void MotionBlurDeviceLost() {
   g_gpu.scratch.Reset();
 }
 
-void Device::MotionBlurNote(const Draw& d, bool tl) {
-  if (!rt_ || !rt_->ZBuffer()) return;  // menus, offscreen pictures: not the race scene
+void MotionBlurArrowSpot(float h, float v, float dist, float size) {
+  if (!MotionBlurOn()) return;
+  if (!std::isfinite(h) || !std::isfinite(v) || !std::isfinite(dist) || !(std::fabs(dist) > 1e-3f)) return;
+  if (!g_arrow.at && GetConfig().motion_blur_log)
+    patch::Log("motionblur: arrow spot h %.3f v %.3f dist %.3f size %.3f", h, v, dist, size);
+  g_arrow.h = h;
+  g_arrow.v = v;
+  g_arrow.dist = dist;
+  g_arrow.size = size;
+  g_arrow.at = Qpc();
+}
+
+bool Device::MotionBlurNote(const Draw& d, bool tl) {
+  if (!rt_ || !rt_->ZBuffer()) return false;  // menus, offscreen pictures: not the race scene
   NewFrameIfNeeded(rt_->Width(), rt_->Height());
   FrameState& f = g_frame;
   const bool processed = tl && d.vb && d.vb->HasClipData(d.first, d.count);
@@ -389,21 +466,27 @@ void Device::MotionBlurNote(const Draw& d, bool tl) {
       f.proj = proj_;
       f.vp = viewport_;
       f.have_mats = true;
+      if (ArrowKeepBack(d)) return true;
     }
     if (g_dumping) DumpEventAdd(processed ? 1 : 0, nullptr);
-    return;
+    return false;
   }
   const bool depth_test = rs_[d3d7::RS_ZENABLE] && rs_[d3d7::RS_ZFUNC] != 8;  // 8 = D3DCMP_ALWAYS
   if (depth_test) {
     ++f.tlz;
     if (g_dumping) DumpEventAdd(2, tex_[0]);
-    return;
+    return false;
   }
   if (f.done || f.n3d < kMin3D) {
     if (g_dumping) DumpEventAdd(3, tex_[0]);
-    return;
+    return false;
   }
   f.done = true;
+  // Whatever happens below (blurred or not), the arrow is drawn next.
+  struct ReplayAfter {
+    Device* dev;
+    ~ReplayAfter() { dev->MotionBlurReplay(); }
+  } replay_after{this};
   const Config& c = GetConfig();
   const LONGLONG now = Qpc();
   const double freq = QpcFreq();
@@ -473,7 +556,7 @@ void Device::MotionBlurNote(const Draw& d, bool tl) {
   if (len < 0.002f) {
     if (!stale) ++g_win.slow;
     if (g_dumping) DumpEventAdd(3, tex_[0]);
-    return;
+    return false;
   }
   // Sharp inside MotionBlurCenter (percent of the way to the screen edge),
   // full strength from a little past it to the edges and corners.
@@ -502,6 +585,138 @@ void Device::MotionBlurNote(const Draw& d, bool tl) {
                mph, len, fu, fv, fwd, bu, bv, bw, f.n3d, tex_[0] ? tex_[0]->TextureName().c_str() : "(no texture)",
                f.rt_w, f.rt_h, f.vp.dwX, f.vp.dwY, f.vp.dwWidth, f.vp.dwHeight);
   }
+  return false;
+}
+
+bool Device::ArrowKeepBack(const Draw& d) {
+  FrameState& f = g_frame;
+  if (!g_arrow.at || !d.verts || !d.count || d.count > kArrowMaxVerts || !d.layout.stride) return false;
+  const LONGLONG now = Qpc();
+  if (now - g_arrow.at > static_cast<LONGLONG>(kArrowStaleSecs * QpcFreq())) return false;
+  f.arrow_spot = true;
+  // Where the object is in front of the camera: its origin (the arrow's
+  // position is set to the spot) and its first vertex, in view space.
+  // Compared without signs, as the view's axes may point either way.
+  const float dist = std::fabs(g_arrow.dist), ah = std::fabs(g_arrow.h), av = std::fabs(g_arrow.v);
+  auto off = [&](const float p[4]) {
+    const float dx = std::fabs(std::fabs(p[0]) - ah), dy = std::fabs(std::fabs(p[1]) - av),
+                dz = std::fabs(std::fabs(p[2]) - dist);
+    return std::max(dx, std::max(dy, dz)) / dist;
+  };
+  const float origin[3] = {world_.m[3][0], world_.m[3][1], world_.m[3][2]};
+  float a[4], w[4], b[4];
+  Mul3(origin, view_, 1.0f, a);
+  const float* p0 = reinterpret_cast<const float*>(d.verts + static_cast<size_t>(d.first) * d.layout.stride);
+  Mul3(p0, world_, 1.0f, w);
+  Mul3(w, view_, 1.0f, b);
+  const float oa = off(a), ob = off(b);
+  const float score = std::min(oa, ob);
+  const float* at = oa <= ob ? a : b;
+  const Config& c = GetConfig();
+  if (score >= kArrowMatch) {
+    if (c.motion_blur_log && score < g_win.miss && !f.arrow_draws) {
+      g_win.miss = score;
+      g_win.miss_x = at[0], g_win.miss_y = at[1], g_win.miss_z = at[2];
+      g_win.miss_count = d.count;
+      g_win.miss_tex = tex_[0] ? tex_[0]->TextureName() : "(no texture)";
+    }
+    return false;
+  }
+  if (c.motion_blur_log && g_arrow_logged < 12) {
+    ++g_arrow_logged;
+    patch::Log("motionblur: arrow draw: %lu verts %lu indices prim %lu '%s' z %lu/%lu blend %lu, view %.2f %.2f %.2f "
+               "(%s), spot %.2f %.2f %.2f, off %.3f%s",
+               d.count, d.idx ? d.nidx : 0, d.prim, tex_[0] ? tex_[0]->TextureName().c_str() : "(no texture)",
+               rs_[d3d7::RS_ZENABLE], rs_[d3d7::RS_ZWRITEENABLE], rs_[d3d7::RS_ALPHABLENDENABLE], at[0], at[1],
+               at[2], oa <= ob ? "origin" : "vertex", g_arrow.h, g_arrow.v, g_arrow.dist, score,
+               f.done ? ", after the blur already" : "");
+  }
+  if (f.done) {  // the blur is already drawn: nothing to do
+    ++g_win.arrow_late;
+    return false;
+  }
+  ++f.arrow_draws;
+  if (g_ndeferred == g_deferred.size()) g_deferred.emplace_back();
+  Deferred& k = g_deferred[g_ndeferred++];
+  const size_t stride = d.layout.stride;
+  const uint8_t* src = d.verts + static_cast<size_t>(d.first) * stride;
+  k.verts.assign(src, src + static_cast<size_t>(d.count) * stride);
+  k.indexed = d.idx != nullptr;
+  if (d.idx) k.idx.assign(d.idx, d.idx + d.nidx);
+  else k.idx.clear();
+  k.prim = d.prim;
+  k.layout = d.layout;
+  k.count = d.count;
+  k.rt = rt_;
+  std::memcpy(k.rs, rs_, sizeof(k.rs));
+  std::memcpy(k.tss, tss_, sizeof(k.tss));
+  std::memcpy(k.tex, tex_, sizeof(k.tex));
+  k.world = world_;
+  k.view = view_;
+  k.proj = proj_;
+  k.vp = viewport_;
+  k.mat = material_;
+  k.lights = lights_;
+  k.light_on = light_on_;
+  if (g_dumping) DumpEventAdd(5, tex_[0]);
+  return true;
+}
+
+void Device::MotionBlurReplay() {
+  if (!g_ndeferred) return;
+  const size_t n = g_ndeferred;
+  g_ndeferred = 0;
+  // The device's own state, put back afterwards.
+  static Deferred s;
+  std::memcpy(s.rs, rs_, sizeof(s.rs));
+  std::memcpy(s.tss, tss_, sizeof(s.tss));
+  std::memcpy(s.tex, tex_, sizeof(s.tex));
+  s.world = world_;
+  s.view = view_;
+  s.proj = proj_;
+  s.vp = viewport_;
+  s.mat = material_;
+  s.lights.swap(lights_);
+  s.light_on.swap(light_on_);
+  for (size_t i = 0; i < n; ++i) {
+    Deferred& k = g_deferred[i];
+    if (k.rt != rt_) {
+      ++g_win.arrow_dropped;
+      continue;
+    }
+    std::memcpy(rs_, k.rs, sizeof(rs_));
+    std::memcpy(tss_, k.tss, sizeof(tss_));
+    std::memcpy(tex_, k.tex, sizeof(tex_));
+    world_ = k.world;
+    view_ = k.view;
+    proj_ = k.proj;
+    viewport_ = k.vp;
+    material_ = k.mat;
+    lights_ = k.lights;
+    light_on_ = k.light_on;
+    wvp_dirty_ = true;
+    Draw d;
+    d.prim = k.prim;
+    d.verts = k.verts.data();
+    d.layout = k.layout;
+    d.first = 0;
+    d.count = k.count;
+    d.idx = k.indexed ? k.idx.data() : nullptr;
+    d.nidx = static_cast<DWORD>(k.idx.size());
+    SubmitDraw(d);
+    if (g_dumping) DumpEventAdd(6, tex_[0]);
+  }
+  std::memcpy(rs_, s.rs, sizeof(rs_));
+  std::memcpy(tss_, s.tss, sizeof(tss_));
+  std::memcpy(tex_, s.tex, sizeof(tex_));
+  world_ = s.world;
+  view_ = s.view;
+  proj_ = s.proj;
+  viewport_ = s.vp;
+  material_ = s.mat;
+  lights_.swap(s.lights);
+  light_on_.swap(s.light_on);
+  wvp_dirty_ = true;
 }
 
 bool Device::MotionBlurPass(float fu, float fv, float len, float inner, float outer) {

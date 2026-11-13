@@ -999,6 +999,7 @@ HRESULT Device::BeginScene() {
 }
 HRESULT Device::EndScene() {
   FlushBatch(kBreakScene);
+  if (MotionBlurOn()) MotionBlurReplay();  // the arrow, if no HUD draw came after the scene
   RaceTitleDraw(rt_);  // countdown race title, under the HUD panels' text
   HudTextFlush();  // race HUD text goes over everything the scene drew
   return D3D_OK;
@@ -2022,7 +2023,7 @@ void Device::Submit(const Draw& d) {
   }
   if (DrawLogOn()) NoteDrawLog(d);
   if (!d.layout.tl) {
-    if (MotionBlurOn()) MotionBlurNote(d, false);
+    if (MotionBlurOn() && MotionBlurNote(d, false)) return;
     if (BatchAdd(d)) return;
     return SubmitDraw(d);
   }

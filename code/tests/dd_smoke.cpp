@@ -523,6 +523,7 @@ int main(int argc, char** argv) {
     std::memcpy(bike + 0x64, vel, sizeof(vel));
     for (int fr = 0; fr < 3; ++fr) {
       dd::MotionBlurBikeStep(bike);
+      dd::MotionBlurArrowSpot(-2.0f, -1.2f, 2.0f, 1.0f);  // the direction arrow, lower left
       dev->Clear(0, nullptr, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, 0xff202020, 1.0f, 0);
       dev->BeginScene();
       dev->SetRenderState(RS_ZENABLE, 1);
@@ -541,6 +542,17 @@ int main(int argc, char** argv) {
       V3 bg[4] = {{-8, 6, 5, 0xffffffff, 0, 0}, {8, 6, 5, 0xffffffff, 10, 0},
                   {-8, -6, 5, 0xffffffff, 0, 1}, {8, -6, 5, 0xffffffff, 10, 1}};
       dev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, fvf_3d, bg, 4, idx, 6, 0);
+      // The direction arrow: an object at its spot in front of the camera
+      // (screen about 44..116, 348..420), drawn in the middle of the scene.
+      D3DMATRIX at = I;
+      at.m[3][0] = -2.0f;
+      at.m[3][1] = -1.2f;
+      at.m[3][2] = 2.0f;
+      dev->SetTransform(D3DTRANSFORMSTATE_WORLD, &at);
+      V3 arrow[4] = {{-0.3f, 0.3f, 0, 0xffffffff, 0, 0}, {0.3f, 0.3f, 0, 0xffffffff, 1, 0},
+                     {-0.3f, -0.3f, 0, 0xffffffff, 0, 1}, {0.3f, -0.3f, 0, 0xffffffff, 1, 1}};
+      dev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, fvf_3d, arrow, 4, idx, 6, 0);
+      dev->SetTransform(D3DTRANSFORMSTATE_WORLD, &I);
       // More 3D draws (a scene has hundreds), hidden behind the stripes.
       for (int k = 0; k < 20; ++k) {
         V3 t[4] = {{0, 0, 50, 0xffffffff, 0, 0}, {0.1f, 0, 50, 0xffffffff, 1, 0},
@@ -577,6 +589,12 @@ int main(int argc, char** argv) {
     spread(240, 4, 24, lo, hi);
     std::printf("     motion blur left edge: red %d..%d\n", lo, hi);
     Check(lo > 50 && hi < 205, "motion blur: edge of the screen blurred");
+    spread(384, 60, 100, lo, hi);
+    std::printf("     motion blur arrow: red %d..%d\n", lo, hi);
+    Check(lo < 40 && hi > 215, "motion blur: direction arrow drawn after the blur, sharp");
+    spread(330, 60, 100, lo, hi);
+    std::printf("     motion blur above the arrow: red %d..%d\n", lo, hi);
+    Check(lo > 30 && hi < 225, "motion blur: scene around the arrow blurred");
     int px[3];
     ReadRGB(back, 610, 30, px);
     std::printf("     HUD square %d %d %d\n", px[0], px[1], px[2]);
