@@ -223,6 +223,26 @@ TextureReplace=1
 ; Slows loading while on.
 TextureDump=0
 
+; RiderShadows: how the riders' shadows are drawn. The game drew one shadow,
+; for the rider the camera follows, into a small picture on the CPU.
+;   2 - every rider and bike casts a shadow, drawn by the graphics card at
+;       high resolution with soft edges (default).
+;   1 - the same, but only for the rider the camera follows, like the game.
+;   0 - the game's own shadow.
+; Direct3D 11 only: the Direct3D 9 renderer always uses the game's shadow.
+; Tracks where the game draws no shadow (no sun) still have none.
+RiderShadows=2
+
+; ShadowStrength: how dark the shadows of RiderShadows are, in percent (1 to
+; 100). 0 = as dark as the game's own shadow (default).
+ShadowStrength=0
+
+; ShadowSoftness: how much the shadows of RiderShadows blur and fade as the
+; rider rises above the ground (a jump), in percent (0 to 400). Where the
+; bike touches the ground the shadow stays crisp. 0 = always sharp;
+; 100 = default.
+ShadowSoftness=100
+
 ; ------------------------------------------------------------ Text and HUD ----
 
 ; GpuText: 1 = the game's menu and HUD text is drawn by the graphics card,
@@ -650,6 +670,11 @@ FovLog=0
 ; AlphaToCoverage applied to it, plus alpha-to-coverage counts every 10 s.
 ; Default 0.
 AlphaLog=0
+
+; ShadowLog: RiderShadows counters every 5 s (shadows drawn, vertices, time
+; taken, terrain draws shadowed). 2 = also every shadow's placement for 90
+; frames, 10 s into each race. Default 0.
+ShadowLog=0
 
 ; SmoothLog: SimSmooth tracing. 0 = off (default), 1 = matrices and draws for
 ; a few frames, 2 = camera only (120 frames), 3 = rider shadows, 4 = camera and

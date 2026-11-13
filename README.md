@@ -104,6 +104,11 @@ Windows 10 and 11.
   (`MipBias`).
 - **True-colour textures** where the game's own art has more than 16 bits
   (`TrueColorTextures`).
+- **Shadows for every rider, drawn by the graphics card** (`RiderShadows`).
+  The game drew one blurry shadow, for the rider the camera follows, into a
+  small picture on the CPU. Now every rider and bike casts a sharp,
+  soft-edged shadow on the ground, drawn on the GPU and moving smoothly with
+  the riders between simulation steps (Direct3D 11).
 - **Texture dumping and replacement** by name with PNG, JPEG or BMP files of
   any size (`TextureDump`, `TextureReplace`). See
   [below](#texture-dumping-and-replacement).
@@ -402,6 +407,9 @@ The file has three parts:
 | `TrueColorTextures` | `1` | `0`, `1` | Loads textures in full colour (24-bit, or 32-bit with alpha) wherever the picture has more than 16 bits; a bug made the game always use 16-bit. Most of the game's art is stored in 16-bit, so only a few textures change. Changing it renames unnamed dumped textures. |
 | `TextureReplace` | `1` | `0`, `1` | Uses replacement pictures from `textures\` in the game folder or in `%LOCALAPPDATA%\Motocross Madness 2\textures\` (the per-user folder wins). See [Texture dumping and replacement](#texture-dumping-and-replacement). |
 | `TextureDump` | `0` | `0`, `1` | Saves every texture the game loads as a PNG in `%LOCALAPPDATA%\Motocross Madness 2\textures_dump`, to start replacements from. Loading is slower while it's on. |
+| `RiderShadows` | `2` | `0`, `1`, `2` | `2`: every rider and bike casts a shadow, drawn by the graphics card at high resolution with soft edges, following the riders smoothly between simulation steps. `1`: only the rider the camera follows has one, as in the original game, but drawn the same new way. `0`: the game's own shadow (one rider, drawn into a small picture on the CPU). Direct3D 11 only; the Direct3D 9 renderer always uses the game's shadow. Tracks where the game draws no shadow (no sun) still have none. |
+| `ShadowStrength` | `0` | `0`, 1-100 | How dark the `RiderShadows` shadows are, in percent. `0` = as dark as the game's own shadow. |
+| `ShadowSoftness` | `100` | 0-400 | How much the `RiderShadows` shadows blur and fade with the rider's height above the ground, in percent. Crisp where the wheels touch the ground, wide and faint under a high jump. `0` = always sharp. |
 
 #### Text and HUD
 
@@ -526,6 +534,7 @@ only when asked to. Logs go to `%LOCALAPPDATA%\Motocross Madness 2\logs`.
 | `ArrowLog` | `0` | The direction arrow's placement for a few seconds after each race start. |
 | `FovLog` | `0` | Every change to a camera's field of view: who set it and what mcm2fix widened it to. |
 | `AlphaLog` | `0` | Each kind of see-through draw, and whether `AlphaCut` or `AlphaToCoverage` applied to it, plus alpha-to-coverage counts every 10 seconds. |
+| `ShadowLog` | `0` | `RiderShadows` counters every 5 seconds: shadows drawn, vertices, time taken, terrain draws shadowed. `2` also logs every shadow's placement for 90 frames, 10 s into each race. |
 | `SmoothLog` | `0` | `SimSmooth` tracing: `1` = matrices and draws for a few frames, `2` = camera only (120 frames), `3` = rider shadows, `4` = camera and projection after each race start. |
 
 The shipped `mcm2fix.ini` is generated from the block in

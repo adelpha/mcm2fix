@@ -34,6 +34,7 @@ void ApplyAiFixes();
 namespace input { void Apply(); }
 void LogTextureSummary();
 namespace crash { void Apply(); }
+namespace dd { void InstallGpuShadows(); }
 namespace power { void Shutdown(const char* why); }
 
 namespace {
@@ -93,6 +94,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved) {
       ApplyReverbFixes();
       ApplySortFixes();
       ApplyAiFixes();
+      dd::InstallGpuShadows();  // after the smoothing and restart hooks it chains
       input::Apply();
       video::ApplyVideoPlayer();
       ApplyDiagnostics();  // WM_ACTIVATEAPP hook: logs focus changes, tells input and sound
