@@ -200,7 +200,7 @@ AlphaCut=128
 ; Direct3D 11 only: the Direct3D 9 renderer uses AlphaCut.
 AlphaToCoverage=2
 
-; MotionBlur: 1 = speed blur. Above MotionBlurMinSpeed the sides of the 3D
+; MotionBlur: 1 = speed blur. Above MotionBlurMinSpeed the edges of the 3D
 ; scene streak towards the point your bike is heading for, more the faster
 ; you go, while the middle of the screen stays sharp. The HUD, text and menus
 ; are never blurred. 0 = off (default).
@@ -215,9 +215,10 @@ MotionBlurStrength=100
 MotionBlurMinSpeed=30
 MotionBlurMaxSpeed=70
 
-; MotionBlurCenter: size of the sharp middle of the screen, in percent of half
-; the screen height, 0 to 100 (0 = blur reaches the middle). Default 30.
-MotionBlurCenter=30
+; MotionBlurCenter: size of the sharp middle of the screen, in percent of the
+; way from the middle to the screen edges, 0 to 95. Only the part outside it
+; streaks, most at the edges. Default 60.
+MotionBlurCenter=60
 
 ; TrueColorTextures: 1 = load textures in full colour (24-bit, or 32-bit with
 ; alpha) wherever the picture has more than 16 bits of colour (default).

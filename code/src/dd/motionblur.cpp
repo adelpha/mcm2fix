@@ -2,9 +2,10 @@
 //
 // A zoom (radial) blur centred on the point the player's bike is heading
 // for, whose length grows with the bike's speed between MotionBlurMinSpeed
-// and MotionBlurMaxSpeed. The middle of the screen (MotionBlurCenter) stays
-// sharp, so the rider and the track just ahead are clear while the sides
-// stream past. It is a post-process of the finished 3D scene only:
+// and MotionBlurMaxSpeed. Only the outer part of the picture streaks
+// (outside MotionBlurCenter), so the rider and the track ahead stay clear
+// while the edges stream past. The streak is evenly sampled (no noise) and
+// trails off, so it reads as a line rather than a soft blur. It is a post-process of the finished 3D scene only:
 //
 //  - Where: every draw is noted (Device::Submit). The first screen-space draw
 //    without a depth test after the frame's 3D scene (16 or more 3D draws
@@ -139,7 +140,7 @@ unsigned g_frames_without = 0;  // scene frames in a row with no HUD draw found
 const char kShader[] = R"(
 cbuffer P : register(b0) {
   float4 focus;  // xy = focus (0..1), z = blur length (fraction of the way to the focus), w = taps
-  float4 shape;  // x = sharp radius, y = full radius (half-heights from the centre), z = width / height
+  float4 shape;  // x = sharp radius, y = full radius (1 = middle of a screen edge)
   float4 px;     // xy = 1 / size, z = most blur in pixels
 };
 Texture2D src : register(t0);
@@ -156,23 +157,26 @@ VSOut vs_main(uint id : SV_VertexID) {
 }
 float4 ps_main(VSOut i) : SV_Target {
   float4 here = src.SampleLevel(smp, i.uv, 0);
-  float2 c = (i.uv - 0.5) * 2.0;
-  float r = length(c * float2(shape.z, 1));
+  // Distance from the middle with the screen as a circle (1 = edge middles):
+  // only the outer part of the picture streaks.
+  float r = length((i.uv - 0.5) * 2.0);
   float w = smoothstep(shape.x, shape.y, r);
   float2 v = (i.uv - focus.xy) * focus.z * w;  // towards the focus
   float lp = length(v / px.xy);
   if (lp < 0.75) return here;
   if (lp > px.z) v *= px.z / lp;
-  // Taps spread along the streak, offset per pixel (interleaved gradient
-  // noise) so the steps between them don't band.
-  float j = frac(52.9829189 * frac(dot(i.pos.xy, float2(0.06711056, 0.00583715))));
+  // Evenly spaced taps along the streak (no noise, so it reads as a line),
+  // weighted towards this pixel so the streak trails off.
   int n = (int)focus.w;
   float3 sum = 0;
+  float wsum = 0;
   [loop] for (int k = 0; k < n; ++k) {
-    float t = (k + j) / n;
-    sum += src.SampleLevel(smp, i.uv - v * t, 0).rgb;
+    float t = (k + 0.5) / n;
+    float kw = 1.0 - 0.6 * t;
+    sum += src.SampleLevel(smp, i.uv - v * t, 0).rgb * kw;
+    wsum += kw;
   }
-  return float4(sum / n, here.a);
+  return float4(sum / wsum, here.a);
 }
 )";
 
@@ -471,8 +475,10 @@ void Device::MotionBlurNote(const Draw& d, bool tl) {
     if (g_dumping) DumpEventAdd(3, tex_[0]);
     return;
   }
+  // Sharp inside MotionBlurCenter (percent of the way to the screen edge),
+  // full strength from a little past it to the edges and corners.
   const float inner = c.motion_blur_center / 100.0f;
-  const float outer = inner + 0.8f;
+  const float outer = inner + std::max(0.25f, (1.1f - inner) * 0.8f);
   const LONGLONG t0 = Qpc();
   const bool ok = MotionBlurPass(fu, fv, len, inner, outer);
   const LONGLONG t1 = Qpc();
@@ -542,9 +548,9 @@ bool Device::MotionBlurPass(float fu, float fv, float len, float inner, float ou
     return false;
   }
   const float max_px = std::max(w, h) * 0.12f;
-  // About one tap per 3 pixels of the longest streak, 6 to 24.
-  float taps = std::ceil(std::min(max_px, len * 1.5f * std::max(w, h)) / 3.0f);
-  taps = taps < 6 ? 6 : taps > 24 ? 24 : taps;
+  // About one tap per 2 pixels of the longest streak, 8 to 32.
+  float taps = std::ceil(std::min(max_px, len * 1.5f * std::max(w, h)) / 2.0f);
+  taps = taps < 8 ? 8 : taps > 32 ? 32 : taps;
   const float cb[12] = {fu, fv, len, taps, inner, outer, static_cast<float>(w) / h, 0,
                         1.0f / w, 1.0f / h, max_px, 0};
   b.ctx->UpdateSubresource(g_gpu.cb, 0, nullptr, cb, 0, 0);

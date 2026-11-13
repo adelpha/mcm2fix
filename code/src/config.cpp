@@ -42,7 +42,7 @@ void LoadConfig() {
   g_config.motion_blur_max_speed = Clamp(GetPrivateProfileIntA("mcm2fix", "MotionBlurMaxSpeed", 70, ini), 1, 250);
   if (g_config.motion_blur_max_speed <= g_config.motion_blur_min_speed)
     g_config.motion_blur_max_speed = g_config.motion_blur_min_speed + 1;
-  g_config.motion_blur_center = Clamp(GetPrivateProfileIntA("mcm2fix", "MotionBlurCenter", 30, ini), 0, 100);
+  g_config.motion_blur_center = Clamp(GetPrivateProfileIntA("mcm2fix", "MotionBlurCenter", 60, ini), 0, 95);
   g_config.motion_blur_log = GetPrivateProfileIntA("mcm2fix", "MotionBlurLog", 0, ini) != 0;
   g_config.alpha_to_coverage = GetPrivateProfileIntA("mcm2fix", "AlphaToCoverage", 2, ini);
   if (g_config.alpha_to_coverage < 0 || g_config.alpha_to_coverage > 2) g_config.alpha_to_coverage = 2;

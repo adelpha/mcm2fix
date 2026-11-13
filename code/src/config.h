@@ -85,7 +85,7 @@ struct Config {
   int motion_blur_strength = 100;  // MotionBlurStrength: blur length in percent of the default (0..300)
   int motion_blur_min_speed = 30;  // MotionBlurMinSpeed: mph where the blur starts
   int motion_blur_max_speed = 70;  // MotionBlurMaxSpeed: mph where it is full
-  int motion_blur_center = 30;     // MotionBlurCenter: size of the sharp middle of the screen, percent of its height
+  int motion_blur_center = 60;     // MotionBlurCenter: size of the sharp middle, percent of the way to the screen edges
   bool motion_blur_log = false;    // MotionBlurLog: speed, focus point, where the blur went in the frame, every 5 s
   int alpha_to_coverage = 2;  // AlphaToCoverage: cut-out edges via MSAA coverage (0 off, 1 sharp, 2 soft)
   // Graphics options.

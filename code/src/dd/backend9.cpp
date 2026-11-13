@@ -1174,8 +1174,8 @@ void BlitQuads9(const BlitParams& p, const BlitQuad* q, size_t n) {
 // drawn again `layers - 1` times over p.dst9, each time zoomed a little more
 // towards the focus point (fu, fv in 0..1), blended so that the result is the
 // average of all the layers. A grid carries the zoom per vertex, so the
-// middle of the screen (inside `inner`, ramping to full at `outer`, measured
-// from the screen centre in half-heights) stays sharp, as in the D3D11 shader.
+// middle of the screen (inside `inner`, ramping to full at `outer`, with the
+// screen as a circle: 1 = middle of an edge) stays sharp, as in the D3D11 shader.
 void ZoomBlur9(const BlitParams& p_in, float fu, float fv, float len, float inner, float outer,
                int layers) {
   Backend& b = B();
@@ -1199,11 +1199,10 @@ void ZoomBlur9(const BlitParams& p_in, float fu, float fv, float len, float inne
         idx.insert(idx.end(), q, q + 6);
       }
   }
-  const float aspect = static_cast<float>(p.dst_w) / p.dst_h;
   for (int y = 0; y <= GY; ++y)
     for (int x = 0; x <= GX; ++x) {
       const float u = static_cast<float>(x) / GX, vv = static_cast<float>(y) / GY;
-      const float dx = (u - 0.5f) * 2.0f * aspect, dy = (vv - 0.5f) * 2.0f;
+      const float dx = (u - 0.5f) * 2.0f, dy = (vv - 0.5f) * 2.0f;
       const float r = std::sqrt(dx * dx + dy * dy);
       float t = outer > inner ? (r - inner) / (outer - inner) : (r >= inner ? 1.0f : 0.0f);
       t = t < 0 ? 0 : t > 1 ? 1 : t;
