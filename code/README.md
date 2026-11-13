@@ -215,8 +215,8 @@ Reflections=0
 ; ...Fresnel: the share of that seen when you look straight at the surface
 ; (bike and helmet 0.35, rider 0.1); real paint and plastic shine mostly at
 ; the edges, higher values look more like chrome.
-; ...Blur: how soft the reflection is, 0 = mirror-sharp, up to 8 (bike and
-; all 4; lower values show a hard horizon line on the helmet). ReflectStrength
+; ...Blur: how soft the reflection is, 0 = mirror-sharp, up to 8 (default
+; 4; lower values show a hard horizon line on the helmet). ReflectStrength
 ; multiplies all of them.
 ReflectBike=1
 ReflectBikeFresnel=0.35
