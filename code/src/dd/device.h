@@ -212,7 +212,8 @@ class Device : public d3d7::IDirect3DDevice7 {
   // Binds the render target (or its multisampled stand-in) and depth.
   // `full_clear`: the caller will overwrite all of the colour buffer.
   bool BindTarget(bool& has_depth, bool full_clear = false);
-  void ApplyState(bool tl, bool depth_clip, bool has_depth);
+  // `shadow`: the terrain variant with rider shadows (bound by gpushadow.cpp).
+  void ApplyState(bool tl, bool depth_clip, bool has_depth, bool shadow = false);
   ID3D11BlendState* GetBlend(bool a2c);
   // Cut-out draws that write depth, which get alpha-to-coverage when the
   // scene is multisampled (ini AlphaToCoverage):
@@ -271,6 +272,7 @@ class Device : public d3d7::IDirect3DDevice7 {
     FvfLayout layout;
     DWORD nverts = 0;
     unsigned draws = 0;
+    bool receiver = false;  // terrain patches (rider shadows)
   };
   Batch batch_, batch_out_;
   bool flushing_ = false;

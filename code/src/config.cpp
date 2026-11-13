@@ -67,6 +67,11 @@ void LoadConfig() {
   g_config.ai_steer_rate = GetPrivateProfileIntA("mcm2fix", "AiSteerRate", 0, ini);
   if (g_config.ai_steer_rate < 0) g_config.ai_steer_rate = 0;
   g_config.smooth_log = GetPrivateProfileIntA("mcm2fix", "SmoothLog", 0, ini);
+  g_config.rider_shadows = GetPrivateProfileIntA("mcm2fix", "RiderShadows", 2, ini);
+  if (g_config.rider_shadows < 0 || g_config.rider_shadows > 2) g_config.rider_shadows = 2;
+  g_config.shadow_strength = GetPrivateProfileIntA("mcm2fix", "ShadowStrength", 0, ini);
+  if (g_config.shadow_strength < 0 || g_config.shadow_strength > 100) g_config.shadow_strength = 0;
+  g_config.shadow_log = GetPrivateProfileIntA("mcm2fix", "ShadowLog", 0, ini);
   g_config.sim_smooth = GetPrivateProfileIntA("mcm2fix", "SimSmooth", 1, ini) != 0;
   g_config.sim_rate = GetPrivateProfileIntA("mcm2fix", "SimRate", 30, ini);
   if (g_config.sim_rate < 0) g_config.sim_rate = 0;

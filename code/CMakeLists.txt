@@ -57,6 +57,7 @@ add_library(mcm2fix SHARED
   src/dd/hook.cpp
   src/dd/msaa.cpp
   src/dd/texreplace.cpp
+  src/dd/gpushadow.cpp
   src/video/avi.cpp
   src/video/adpcm.cpp
   src/video/audio_out.cpp
