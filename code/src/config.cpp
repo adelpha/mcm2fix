@@ -91,6 +91,7 @@ void LoadConfig() {
   g_config.fast_crt = GetPrivateProfileIntA("mcm2fix", "FastCrt", 1, ini) != 0;
   g_config.simd = GetPrivateProfileIntA("mcm2fix", "Simd", 1, ini) != 0;
   g_config.simd_log = GetPrivateProfileIntA("mcm2fix", "SimdLog", 0, ini) != 0;
+  g_config.thread_boost = GetPrivateProfileIntA("mcm2fix", "ThreadBoost", 0, ini);
   g_config.fast_game_code = GetPrivateProfileIntA("mcm2fix", "FastGameCode", 1, ini) != 0;
   g_config.async_sound = GetPrivateProfileIntA("mcm2fix", "AsyncSound", 2, ini);
   g_config.sound_max_distance_mute = GetPrivateProfileIntA("mcm2fix", "SoundMaxDistanceMute", 1, ini);

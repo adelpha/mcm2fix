@@ -456,6 +456,12 @@ Simd=1
 ; start-up, and how much work went through them every 5 seconds.
 SimdLog=0
 
+; ThreadBoost: 1 = ask Windows to keep the game running smoothly: the game
+; thread joins the multimedia scheduler's "Games" class (as many newer games
+; do) and Windows' power throttling is turned off for the game. 0 = leave
+; it to Windows (default while this is being tested).
+ThreadBoost=0
+
 ; FastGameCode: 1 = a few of the game's own loops that its 1999 compiler
 ; built badly are rewritten in place with the same maths, so the results are
 ; exactly the same, only faster (default). So far: the loop that unpacks
