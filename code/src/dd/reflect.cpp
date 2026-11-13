@@ -100,6 +100,7 @@ struct RCfg {
   float cache_radius = 0.0f;  // 0: the game's fog end
   std::vector<Pattern> textures;  // texture name -> strength (bikes, plus ReflectTextures)
   std::vector<Pattern> frames;    // frame name -> strength (helmet, plus ReflectFrames)
+  std::vector<Pattern> skip_objects;  // ReflectSkipObjects: objects with any of these frames get no reflections
   std::vector<std::string> exclude;
 } g_cfg;
 
@@ -210,6 +211,8 @@ const RCfg& Cfg() {
   ParseList(buf, g_cfg.rider, 2, g_cfg.frames);
   GetPrivateProfileStringA("mcm2fix", "ReflectFrames", "", buf, sizeof(buf), ini);
   ParseList(buf, g_cfg.helmet, 1, g_cfg.frames);
+  GetPrivateProfileStringA("mcm2fix", "ReflectSkipObjects", "Five, Four, Three, Two, One", buf, sizeof(buf), ini);
+  ParseList(buf, 1, 0, g_cfg.skip_objects);
   std::vector<Pattern> ex;
   GetPrivateProfileStringA("mcm2fix", "ReflectExclude", "tire*", buf, sizeof(buf), ini);
   ParseList(buf, 0, 0, ex);
@@ -251,6 +254,19 @@ std::unordered_map<const void*, bool> g_obj_rider;  // objects found to be bikes
 bool g_liquid_now = false;  // this draw is a LiquidMetal one
 std::unordered_map<std::string, int> g_frame_ids;
 unsigned g_xforms = 0, g_obj_draws = 0;
+
+// Frames seen per drawn object. The start-line man holding the board is the
+// rider model (same PELVIS..HEAD frames) with board frames added, so without
+// this his head got the helmet reflection. An object with any
+// ReflectSkipObjects frame gets no reflections at all.
+struct ObjFrames {
+  std::vector<int> ids;
+  bool skip = false;       // seen in this draw of the object
+  bool skip_last = false;  // seen in its previous draw (frames come in during the draw)
+  bool logged = false;
+};
+std::unordered_map<const void*, ObjFrames> g_obj_frames;
+unsigned g_obj_logged = 0;
 
 int FrameNameId(const void* frame) {
   char name[33] = {};
@@ -307,6 +323,16 @@ void __cdecl XformHook(void* dst, const void* src, const float* m, int n, int ds
       g_ranges[a] = FrameRange{e, fp ? fp->k : -1.0f, fp ? fp->mat : 0, id};
       if (g_ranges.size() > 20000) g_ranges.clear();
     }
+    if (g_cur_obj) {
+      if (g_obj_frames.size() > 4096) g_obj_frames.clear();
+      ObjFrames& of = g_obj_frames[g_cur_obj];
+      const int id = g_ranges[a].name;
+      if (std::find(of.ids.begin(), of.ids.end(), id) == of.ids.end() && of.ids.size() < 64) {
+        of.ids.push_back(id);
+        for (const Pattern& p : Cfg().skip_objects)
+          if (Glob(p.glob.c_str(), g_frame_names[id].c_str())) of.skip = true;
+      }
+    }
   }
   g_xform_next(dst, src, m, n, ds, ss);
 }
@@ -317,8 +343,29 @@ void __fastcall ObjDrawHook(void* self, void* edx) {
   ++g_obj_draws;
   const void* was = g_cur_obj;
   g_cur_obj = self;
+  {
+    // Start this draw afresh (object memory is reused across races).
+    auto st = g_obj_frames.find(self);
+    if (st != g_obj_frames.end()) {
+      st->second.skip_last = st->second.skip;
+      st->second.skip = false;
+      st->second.ids.clear();
+    }
+  }
   g_obj_next(self, edx);
   g_cur_obj = was;
+  auto it = g_obj_frames.find(self);
+  if (it != g_obj_frames.end() && !it->second.logged && !it->second.ids.empty() && g_obj_logged < 80) {
+    it->second.logged = true;
+    ++g_obj_logged;
+    std::string names;
+    for (int id : it->second.ids) {
+      if (!names.empty()) names += ' ';
+      names += g_frame_names[id];
+    }
+    Log("reflections: object %08x frames: %s%s", static_cast<unsigned>(reinterpret_cast<uintptr_t>(self)),
+        names.c_str(), it->second.skip ? " -> no reflections (ReflectSkipObjects)" : "");
+  }
 }
 
 uintptr_t CallTarget(uintptr_t site) {
@@ -968,6 +1015,10 @@ bool Device::ReflectWants(const Draw& d) {
   g_liquid_now = false;
   if (!Cfg().mode || IsD3D9() || !d.verts || d.layout.tl) return false;
   Surface* t = tex_[0];
+  if (g_cur_obj) {
+    auto of = g_obj_frames.find(g_cur_obj);
+    if (of != g_obj_frames.end() && (of->second.skip || of->second.skip_last)) return false;
+  }
   if (Cfg().liquid && g_cur_obj) {
     // LiquidMetal: every draw of an object that has bike or rider parts.
     bool& rider = g_obj_rider[g_cur_obj];

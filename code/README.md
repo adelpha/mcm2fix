@@ -275,6 +275,11 @@ ReflectBikeTextures=honda*, ktm*, yamaha*, kazuyuki*, suzuki*, kawasaki*, husq*
 ReflectHelmetFrames=Head
 ReflectRiderFrames=PELVIS, LWRTORSO, UPRTORSO, UPRLEG*, LWRLEG*, UPRARM*, LWRARM*, HANDL, HANDR, FOOTL, FOOTR
 ReflectExclude=tire*
+
+; ReflectSkipObjects: models with any of these parts get no reflections at
+; all. The man at the start line holding the countdown board is the rider
+; model with board parts added, so without this his head shone like a helmet.
+ReflectSkipObjects=Five, Four, Three, Two, One
 ReflectTextures=
 ReflectFrames=
 
