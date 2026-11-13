@@ -957,6 +957,19 @@ void HudTextAfterDraw(Surface* rt, Surface* tex, const uint8_t* verts, DWORD fir
   if (!FindSource(tex, texels, &self, &c)) return;
   auto pit = g_panels.find(self);
   if (pit == g_panels.end()) return;
+  // During the countdown the game draws the riders' name labels parked at the
+  // screen origin (about -12,-5 to 62,11). Its own quads end up under the
+  // stats panel drawn after them, but our text is drawn at the end of the
+  // scene, over everything, so it showed in the top-left corner. A real
+  // label over a rider is never off both the left and the top edge.
+  if (x0 < 0 && y0 < 0) {
+    static unsigned parked = 0;
+    if (++parked <= 8 || parked % 1000 == 0)
+      Log("hud text: label at screen %.1f,%.1f-%.1f,%.1f is parked at the corner (countdown): its text not drawn (%u "
+          "so far)",
+          x0, y0, x1, y1, parked);
+    return;
+  }
   ++g_st.labels;
   // Screen = sx0 + (texel - u0) * kx; texel = dr.left + (panel - sr.left) * cs.
   const float kx = (x1 - x0) / (u1 - u0), ky = (y1 - y0) / (v1 - v0);
