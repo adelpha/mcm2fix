@@ -11,7 +11,7 @@
 // QuarryReverb / BajaReverb / NationalsReverb / EnduroReverb = <EAX 1.0 preset
 // name> replace those "off" values with the preset's values in that event
 // (game+0x2d78: 0 Quarry, 1 Baja, 2 Nationals, 5 Enduro); SupercrossReverb
-// replaces the game's Arena in Supercross (3). Moto-Tag (4) is left alone. Every EAX set the
+// and TagReverb replace the game's Arena in Supercross (3) and Moto-Tag (4). Every EAX set the
 // game makes (ALL and ENVIRONMENT) is logged with the gate flags and the result.
 #include <windows.h>
 
@@ -80,7 +80,7 @@ constexpr uintptr_t kZoneEnvCall = 0x403758;
 using SetAllFn = int(__thiscall*)(uintptr_t self, const EaxProps* p);
 using SetEnvFn = int(__thiscall*)(uintptr_t self, DWORD env);
 
-const char* const kEventKey[6] = {"QuarryReverb", "BajaReverb", "NationalsReverb", "SupercrossReverb", nullptr, "EnduroReverb"};
+const char* const kEventKey[6] = {"QuarryReverb", "BajaReverb", "NationalsReverb", "SupercrossReverb", "TagReverb", "EnduroReverb"};
 const Preset* g_preset[6] = {};  // per event number, null = game's own values
 int g_env_logs = 0;              // ENVIRONMENT sets logged (zone updates could be per frame)
 
@@ -112,7 +112,7 @@ int SetAll(const char* who, uintptr_t self, const EaxProps* p) {
   LogProps("game wants", *p);
   EaxProps use = *p;
   const bool game_off = p->environment == 17 && p->volume == 0.0f && p->decay == 0.0f;
-  const bool game_arena = ev78 == 3 && p->environment == 9;  // Supercross: the game's Arena
+  const bool game_arena = (ev78 == 3 || ev78 == 4) && p->environment == 9;  // Supercross / Moto-Tag: the game's Arena
   const Preset* want = ev78 >= 0 && ev78 < 6 ? g_preset[ev78] : nullptr;
   if (want && (game_off || game_arena)) {
     use = want->p;

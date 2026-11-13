@@ -438,23 +438,24 @@ AsyncSound=2
 ; distance, and how often the game restarts a sound that is still playing.
 SoundMaxDistanceMute=1
 
-; BajaReverb, EnduroReverb, QuarryReverb, NationalsReverb, SupercrossReverb:
-; the EAX 1.0 reverb preset used in each kind of event. The game turns reverb
-; off for every outdoor event, but with values (decay time 0) that OpenAL Soft
-; / DSOAL rejects, so whatever reverb was set before stayed on. Supercross uses
-; the game's own Arena reverb unless SupercrossReverb names a preset (Moto-Tag
-; always keeps Arena). Presets: Generic, PaddedCell, Room, Bathroom,
-; LivingRoom, StoneRoom, Auditorium, ConcertHall, Cave, Arena, Hangar,
-; CarpetedHallway, Hallway, StoneCorridor, Alley, Forest, City, Mountains,
-; Quarry, Plain, ParkingLot, SewerPipe, Underwater, Drugged, Dizzy, Psychotic.
-; Off = the game's own values. Needs EAX (DSOAL or an EAX sound card);
-; otherwise they change nothing. Every EAX setting the game makes is written
-; to the log.
+; BajaReverb, EnduroReverb, QuarryReverb, NationalsReverb, SupercrossReverb,
+; TagReverb: the EAX 1.0 reverb preset used in each kind of event. The game
+; turns reverb off for every outdoor event, but with values (decay time 0) that
+; OpenAL Soft / DSOAL rejects, so whatever reverb was set before stayed on.
+; Supercross and Moto-Tag use the game's own Arena reverb unless
+; SupercrossReverb or TagReverb names a preset. Presets: Generic, PaddedCell,
+; Room, Bathroom, LivingRoom, StoneRoom, Auditorium, ConcertHall, Cave, Arena,
+; Hangar, CarpetedHallway, Hallway, StoneCorridor, Alley, Forest, City,
+; Mountains, Quarry, Plain, ParkingLot, SewerPipe, Underwater, Drugged, Dizzy,
+; Psychotic. Off = the game's own values. Needs EAX (DSOAL or an EAX sound
+; card); otherwise they change nothing. Every EAX setting the game makes is
+; written to the log.
 BajaReverb=Mountains
 EnduroReverb=Forest
 QuarryReverb=Mountains
 NationalsReverb=Forest
 SupercrossReverb=Off
+TagReverb=Off
 
 ; FastCrt: 1 = the game's millisecond clock uses QueryPerformanceCounter
 ; instead of changing the Windows timer period on every call, and its

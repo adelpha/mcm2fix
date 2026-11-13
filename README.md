@@ -314,8 +314,9 @@ For every outdoor event the game asks for "reverb off" with a decay time of
 mcm2fix sends a real outdoor preset instead: Mountains for Baja and Stunt
 Quarry, Forest for Enduro and Nationals. `BajaReverb`, `EnduroReverb`,
 `QuarryReverb` and `NationalsReverb` take any EAX 1.0 preset name, or `Off`
-for the game's own values. `SupercrossReverb` can replace the game's Arena
-reverb in Supercross too; it is `Off` (the game's Arena) by default.
+for the game's own values. `SupercrossReverb` and `TagReverb` can replace
+the game's Arena reverb in Supercross and Moto-Tag too; both are `Off` (the
+game's Arena) by default.
 
 DSOAL ignores the `DSBCAPS_MUTE3DATMAXDISTANCE` flag that the game sets on
 all its 3D sounds, so riders who are out of earshot can still be heard
