@@ -101,12 +101,13 @@ void LoadConfig() {
   g_config.input_log = GetPrivateProfileIntA("mcm2fix", "InputLog", 0, ini) != 0;
   g_config.sound_log = GetPrivateProfileIntA("mcm2fix", "SoundLog", 0, ini) != 0;
   {
-    // Event numbers as in game+0x2d74/0x2d78: 0 Quarry, 1 Baja, 2 Nationals, 5 Enduro (3 SX, 4 Tag are indoor).
-    const char* keys[6] = {"QuarryReverb", "BajaReverb", "NationalsReverb", nullptr, nullptr, "EnduroReverb"};
+    // Event numbers as in game+0x2d74/0x2d78: 0 Quarry, 1 Baja, 2 Nationals, 3 Supercross, 4 Moto-Tag (not configurable), 5 Enduro.
+    const char* keys[6] = {"QuarryReverb", "BajaReverb", "NationalsReverb", "SupercrossReverb", nullptr, "EnduroReverb"};
+    const char* defs[6] = {"Mountains", "Mountains", "Forest", "Off", nullptr, "Forest"};
     for (int e = 0; e < 6; ++e) {
       char* v = g_config.outdoor_reverb[e];
       if (!keys[e]) continue;
-      GetPrivateProfileStringA("mcm2fix", keys[e], "Mountains", v, sizeof(g_config.outdoor_reverb[e]), ini);
+      GetPrivateProfileStringA("mcm2fix", keys[e], defs[e], v, sizeof(g_config.outdoor_reverb[e]), ini);
       v[std::strcspn(v, "\t; ")] = 0;  // drop an inline comment
     }
   }
