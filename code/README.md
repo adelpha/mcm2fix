@@ -285,8 +285,8 @@ LiquidMetal=0
 ; MotionBlur: 1 = speed blur. Above MotionBlurMinSpeed the edges of the 3D
 ; scene streak towards the point your bike is heading for, more the faster
 ; you go, while the middle of the screen stays sharp. The HUD, text and menus
-; are never blurred. 0 = off (default).
-MotionBlur=0
+; are never blurred. 0 = off. Default 1.
+MotionBlur=1
 
 ; MotionBlurStrength: length of the streaks at full speed, in percent (higher
 ; = longer streaks), 0 to 300. Default 80.
