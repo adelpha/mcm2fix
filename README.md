@@ -102,9 +102,9 @@ Windows 10 and 11.
 - **View distance, fog distance and model detail** multipliers
   (`ViewDistance`, `FogDistance`, `ModelLod`), plus texture sharpness
   (`MipBias`).
-- **Speed blur** (`MotionBlur`, off by default). At speed, the sides of the
+- **Speed blur** (`MotionBlur`, on by default). At speed, the sides of the
   3D scene streak towards where the bike is heading while the middle and the
-  HUD stay sharp. Direct3D 11 and Direct3D 9.
+  HUD stay sharp. Direct3D 11 and Direct3D 9. Set `MotionBlur=0` to turn it off.
 - **True-colour textures** where the game's own art has more than 16 bits
   (`TrueColorTextures`).
 - **Shadows for every rider, drawn by the graphics card** (`RiderShadows`).
@@ -431,7 +431,7 @@ The file has three parts:
 | `ReflectBikeTextures` / `ReflectHelmetFrames` / `ReflectRiderFrames` / `ReflectExclude` / `ReflectTextures` / `ReflectFrames` | see ini | names | Which parts reflect: bike textures by name pattern (`*` matches anything), model parts by frame name (the rider's `Head` is the helmet; `ReflectRiderFrames` lists the body parts), textures that never reflect (`tire*`), and extra `name:strength` entries. |
 | `ReflectSkipObjects` | `SIGN*, FLAG*` | frame names | Models with any of these parts get no reflections: the board man at the start line (`SIGN01`) and the flag man (`FLAG01`-`FLAG03`) are the rider model with extra parts, so their bare heads would shine like helmets. |
 | `LiquidMetal` | `0` | `0`, `1` | "T-1000 mode": every bike and rider is drawn in liquid chrome, reflecting the world around it (uses `Reflections=2` if `Reflections` is `0`). |
-| `MotionBlur` | `0` | `0`, `1` | Speed blur: above `MotionBlurMinSpeed` the edges of the 3D scene streak towards the point the bike is heading for, more the faster you go, while the middle of the screen stays sharp. The HUD, text and menus are never blurred. Works the same at any frame rate. |
+| `MotionBlur` | `1` | `0`, `1` | Speed blur: above `MotionBlurMinSpeed` the edges of the 3D scene streak towards the point the bike is heading for, more the faster you go, while the middle of the screen stays sharp. The HUD, text and menus are never blurred. Works the same at any frame rate. |
 | `MotionBlurStrength` | `80` | 0-300 | Length of the streaks at full speed, in percent (higher = longer streaks). |
 | `MotionBlurMinSpeed` | `30` | 0-200 | Speed (mph, as the speedometer shows) where the blur starts. |
 | `MotionBlurMaxSpeed` | `70` | 1-250 | Speed (mph) where the blur is at full strength. |
