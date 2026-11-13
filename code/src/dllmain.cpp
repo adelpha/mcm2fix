@@ -25,6 +25,7 @@ void ApplyRestartFixes();
 void ApplyHelpFix();
 void ApplyTextureFixes();
 void ApplyPerfFixes();
+void ApplyGridFix();
 void ApplySoundFixes();
 void ApplySortFixes();
 void ApplyAiFixes();
@@ -82,6 +83,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
       ApplyHelpFix();
       ApplyTextureFixes();
       ApplyPerfFixes();
+      ApplyGridFix();
       ApplySoundFixes();
       ApplySortFixes();
       ApplyAiFixes();

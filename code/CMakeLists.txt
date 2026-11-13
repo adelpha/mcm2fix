@@ -22,6 +22,7 @@ add_library(mcm2fix SHARED
   src/fixes_restart.cpp
   src/fixes_help.cpp
   src/fixes_textures.cpp
+  src/fixes_grid.cpp
   src/fixes_perf.cpp
   src/fixes_sound.cpp
   src/fixes_sort.cpp
