@@ -18,5 +18,11 @@ void RaceStart(uintptr_t race);
 void RaceEnd(uintptr_t race);
 // A game video started (true) or stopped (false) playing.
 void VideoPlaying(bool playing);
+// The game opened a video file (the menus' first one ends the intro).
+void VideoOpened(const char* path);
+// The game set a display mode (menus are 640x480; a race's mode = loading).
+void DisplayMode(unsigned w, unsigned h);
+// The player crossed the finish line (finish text queued).
+void RaceFinished();
 
 }  // namespace music

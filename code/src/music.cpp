@@ -63,9 +63,10 @@ const FolderEvent kFolders[] = {{"baja", "Baja"},         {"enduro", "Enduro"}, 
 // [Music] keys that are settings, not music.
 const char* const kSettingKeys[] = {"Volume", "RaceVolume", "Shuffle", "PauseInRace", "FadeTime", "Log"};
 
-constexpr DWORD kVideoGapMs = 1500;    // after a video, before menu music
-constexpr DWORD kStartupWaitMs = 2000;  // after the first frame, before menu music (intro videos)
-constexpr DWORD kRacePauseMs = 250;     // simulation stopped this long = race paused
+constexpr DWORD kVideoGapMs = 1500;  // after a video, before menu music
+constexpr DWORD kRacePauseMs = 250;   // simulation stopped this long = race paused
+constexpr int kQuickFadeMs = 300;     // loading a track, race finished
+constexpr uintptr_t kPodium = 0x3430;  // game: podium cutscene running (see dd/racetitle.cpp)
 
 std::string Lower(std::string s) {
   for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -206,6 +207,7 @@ struct Want {
   std::vector<std::string> files;
   int volume = 0;
   bool paused = false;
+  int fade_ms = 1000;  // fade out the old music over this long when the key changes
   std::string why;
 };
 
@@ -550,12 +552,12 @@ void Player::Run() {
                    key_.c_str(), static_cast<int>(mode_));
       want_ = w;
       if (want_.key != key_) {
-        if (out_ && (mode_ == kPlaying || mode_ == kFadePause || mode_ == kFadeSwitch) && amp_ > 0 && S.fade_ms > 0) {
-          if (mode_ != kFadeSwitch)
-            patch::Log("music: fading out \"%s\" over %d ms for \"%s\"", key_.c_str(), S.fade_ms, want_.key.c_str());
+        if (out_ && (mode_ == kPlaying || mode_ == kFadePause || mode_ == kFadeSwitch) && amp_ > 0 && want_.fade_ms > 0) {
+          patch::Log("music: fading out \"%s\" over %d ms for \"%s\"", key_.c_str(), want_.fade_ms,
+                     want_.key.empty() ? "silence" : want_.key.c_str());
           mode_ = kFadeSwitch;
           amp_target_ = 0;
-          amp_step_ = std::max(amp_, 0.001f) / (S.fade_ms / 1000.0f * rate_);
+          amp_step_ = std::max(amp_, 0.001f) / (want_.fade_ms / 1000.0f * rate_);
         } else {
           StartList(want_);
         }
@@ -669,6 +671,11 @@ bool g_active = true;
 LONG g_videos = 0;
 DWORD g_video_end = 0;
 DWORD g_first_frame = 0;
+bool g_menus_reached = false;  // the menus' first video (ui\events.avi) opened: the intro slides are over
+bool g_loading = false;        // a track is loading (display mode left 640x480 for the race's)
+bool g_finished = false;       // the player crossed the finish line (finish text, 0x497b11)
+bool g_podium_seen = false;
+int g_last_podium = 0;
 std::vector<std::string> g_menu_files;
 bool g_menu_resolved = false;
 // Last state posted.
@@ -690,9 +697,11 @@ void StartThread() {
   patch::Log("music: thread started");
 }
 
-void Post(const std::string& key, const std::vector<std::string>& files, int volume, bool paused, const std::string& why) {
+void Post(const std::string& key, const std::vector<std::string>& files, int volume, bool paused, int fade_ms,
+          const std::string& why) {
   if (key == g_posted_key && paused == g_posted_paused) return;
-  patch::Log("music: now \"%s\"%s (%s)", key.empty() ? "silence" : key.c_str(), paused ? " paused" : "", why.c_str());
+  patch::Log("music: now \"%s\"%s (%s; fade %d ms)", key.empty() ? "silence" : key.c_str(), paused ? " paused" : "",
+             why.c_str(), fade_ms);
   g_posted_key = key;
   g_posted_paused = paused;
   StartThread();
@@ -701,6 +710,7 @@ void Post(const std::string& key, const std::vector<std::string>& files, int vol
   g_want.files = files;
   g_want.volume = volume;
   g_want.paused = paused;
+  g_want.fade_ms = fade_ms;
   g_want.why = why;
   ++g_want_gen;
   LeaveCriticalSection(&g_cs);
@@ -793,11 +803,18 @@ void Apply() {
 
 void RaceStart(uintptr_t race) {
   if (!g_applied) return;
+  g_loading = false;
+  g_menus_reached = true;
   if (race && race == g_race) {
-    patch::Log("music: race %08x countdown set again (Restart Race): \"%s\" keeps playing", static_cast<unsigned>(race),
-               g_race_key.c_str());
+    patch::Log("music: race %08x countdown set again (Restart Race): \"%s\" keeps playing%s", static_cast<unsigned>(race),
+               g_race_key.c_str(), g_finished ? " (was finished: race music again)" : "");
+    g_finished = false;
+    g_podium_seen = false;
     return;
   }
+  g_finished = false;
+  g_podium_seen = false;
+  g_last_podium = 0;
   std::string env;
   DWORD env_tick = 0;
   unsigned opens = 0;
@@ -845,7 +862,39 @@ void RaceEnd(uintptr_t race) {
   g_race = 0;
   g_race_key.clear();
   g_race_files.clear();
+  g_finished = false;
+  g_podium_seen = false;
   g_menu_resolved = false;  // re-read Menu= (ini edits count)
+}
+
+void RaceFinished() {
+  if (!g_applied || !g_race) return;
+  patch::Log("music: player finished the race: race music fades out (%d ms)", kQuickFadeMs);
+  g_finished = true;
+  Frame();
+}
+
+void VideoOpened(const char* path) {
+  if (!g_applied || !path) return;
+  const char* slash = std::strrchr(path, '\\');
+  const std::string name = Lower(slash ? slash + 1 : path);
+  if (!g_menus_reached && name.compare(0, 5, "intro") != 0) {
+    g_menus_reached = true;
+    patch::Log("music: menus reached (%s opened)", path);
+  }
+}
+
+void DisplayMode(unsigned w, unsigned h) {
+  if (!g_applied) return;
+  const bool menus = w == 640 && h == 480;
+  if (menus) {
+    if (g_loading) patch::Log("music: back to 640x480 without a race: not loading");
+    g_loading = false;
+  } else if (!g_race && g_menus_reached && !g_loading) {
+    g_loading = true;
+    patch::Log("music: display mode %ux%u from the menus: a track is loading", w, h);
+    Frame();
+  }
 }
 
 void VideoPlaying(bool playing) {
@@ -878,8 +927,38 @@ void Frame() {
   static const std::vector<std::string> kNone;
   int volume = S.volume;
   bool paused = false;
+  int fade = S.fade_ms;
   if (g_videos > 0) {
     why = "video playing";
+  } else if (g_race && g_finished) {
+    // After the finish: quiet through the podium cutscene, then the menu
+    // music on the results.
+    const uintptr_t game = *reinterpret_cast<uintptr_t*>(kGame);
+    const int podium = game ? *reinterpret_cast<int*>(game + kPodium) : 0;
+    if (podium != g_last_podium) {
+      patch::Log("music: podium cutscene %s", podium ? "started" : "ended");
+      g_last_podium = podium;
+    }
+    if (podium) g_podium_seen = true;
+    const bool sim = SimRacing();
+    if (sim) g_sim_stopped_at = 0;
+    else if (!g_sim_stopped_at) g_sim_stopped_at = now;
+    const bool stopped = !sim && now - g_sim_stopped_at >= kRacePauseMs;
+    fade = kQuickFadeMs;
+    if (podium) {
+      why = "podium cutscene";
+    } else if (g_podium_seen || stopped) {
+      if (!g_menu_resolved) {
+        g_menu_resolved = true;
+        const std::string v = ReadKey("Menu");
+        g_menu_files = v.empty() ? std::vector<std::string>() : Resolve("Menu", v);
+      }
+      key = g_menu_files.empty() ? "" : "menu";
+      files = &g_menu_files;
+      why = g_podium_seen ? "results, after the podium" : "results";
+    } else {
+      why = "race finished";
+    }
   } else if (g_race) {
     const bool sim = SimRacing();
     if (sim) {
@@ -894,7 +973,12 @@ void Frame() {
     const bool race_paused = S.pause_in_race && g_race_sim_seen && g_sim_stopped_at && now - g_sim_stopped_at >= kRacePauseMs;
     paused = race_paused;
     why = race_paused ? "race paused" : "race";
-  } else if (now - g_first_frame < kStartupWaitMs || (g_video_end && now - g_video_end < kVideoGapMs)) {
+  } else if (!g_menus_reached) {
+    why = "intro, before the menus";
+  } else if (g_loading) {
+    why = "loading a track";
+    fade = kQuickFadeMs;
+  } else if (g_video_end && now - g_video_end < kVideoGapMs) {
     // Waiting: between videos, or before the intro videos start.
     if (g_posted_key == "?") return;
     key = g_posted_key == "menu" ? "menu" : "";
@@ -914,7 +998,7 @@ void Frame() {
     paused = true;
     why += ", game in the background";
   }
-  Post(key, files ? *files : kNone, volume, paused, why);
+  Post(key, files ? *files : kNone, volume, paused, fade, why);
 }
 
 }  // namespace music

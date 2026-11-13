@@ -844,7 +844,8 @@ Tag=
 ; Stock tracks: BAJA01-05, AIRFIELD, FARM, OPENPIT, SKILODGE, TRAILER,
 ; CHANOS, HILLSIDE, IFFENDIC, NAT01-12, VV, QUARRY01-05, SX01-17, TAG01-03.
 
-; Volume: music volume in the menus, 0 to 100. Default 80.
+; Volume: music volume in the menus, 0 to 100. Default 80. Music volume is
+; separate from the game's sound volume and AnnouncerVolume.
 Volume=80
 
 ; RaceVolume: music volume during races, 0 to 100. Empty = Volume.
@@ -859,8 +860,10 @@ Shuffle=1
 ; background when BackgroundMute=1.
 PauseInRace=1
 
-; FadeTime: milliseconds to fade the music out when it changes (menus to
-; race and back), 0 to 10000. Default 1000.
+; FadeTime: milliseconds to fade the music out when it changes, 0 to 10000.
+; Default 1000. (Loading a track and finishing a race always fade in 0.3 s;
+; nothing plays during the intro, the podium cutscene or the game's videos,
+; and the results screen gets the menu music.)
 FadeTime=1000
 
 ; Log: 1 = log every music file, loop and state change, plus a playback

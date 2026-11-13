@@ -308,6 +308,7 @@ void __fastcall FinishAddHook(uintptr_t queue, void* edx, const char* item) {
   const float secs = item ? Rd<float>(reinterpret_cast<uintptr_t>(item) + 0x80) : 0;
   const bool take = GetConfig().race_title && GpuTextActive() && text[0] && queue;
   ++pd.captures;
+  music::RaceFinished();
   Log("podium: finish text \"%s\" (%.2f s, text queue %08x) %s", text, secs, static_cast<unsigned>(queue),
       take ? "kept back for the podium banner" : "left to the game");
   if (!take) {
@@ -549,8 +550,10 @@ void InstallRaceTitleHooks() {
       for (uintptr_t site : kCountdownCalls)
         calls += PatchCall(site, kCountdownInit, reinterpret_cast<const void*>(&CountdownInitHook)) ? 1 : 0;
       const bool dtor = PatchCall(kRaceDtorCall, kRaceDtor, reinterpret_cast<const void*>(&RaceDtorHook));
-      Log("race title: for music: %d of %d countdown calls hooked, race destructor hook %s", calls,
-          static_cast<int>(sizeof(kCountdownCalls) / sizeof(kCountdownCalls[0])), dtor ? "applied" : "MISSING");
+      const bool finish = PatchCall(kFinishAddCall, kQueueAdd, reinterpret_cast<const void*>(&FinishAddHook));
+      Log("race title: for music: %d of %d countdown calls hooked, race destructor hook %s, finish text hook %s", calls,
+          static_cast<int>(sizeof(kCountdownCalls) / sizeof(kCountdownCalls[0])), dtor ? "applied" : "MISSING",
+          finish ? "applied" : "MISSING");
     }
     return;
   }
@@ -565,7 +568,7 @@ void InstallRaceTitleHooks() {
     for (uintptr_t site : kQueueAddCalls)
       qlog += PatchCall(site, kQueueAdd, reinterpret_cast<const void*>(&QueueAddLogHook)) ? 1 : 0;
   if (qlog) Log("race title: %d text queue adds logged", qlog);
-  const int finish = c.race_title && PatchCall(kFinishAddCall, kQueueAdd, reinterpret_cast<const void*>(&FinishAddHook)) ? 1 : 0;
+  const int finish = (c.race_title || music::Enabled()) && PatchCall(kFinishAddCall, kQueueAdd, reinterpret_cast<const void*>(&FinishAddHook)) ? 1 : 0;
   Log("race title: podium finish text hook %s", finish ? "applied" : (c.race_title ? "MISSING" : "off (RaceTitle=0)"));
   int drops = 0;
   for (uintptr_t site : kDropStartCalls)

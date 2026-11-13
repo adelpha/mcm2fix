@@ -149,6 +149,7 @@ class Stream final : public IUnknown {
         pcm = PcmAudio{};
       }
     }
+    music::VideoOpened(path);
     duration_ = static_cast<int64_t>(avi.frames.size()) * avi.scale * kUnits / avi.rate;
     patch::Log("video: %s: %ux%u, %zu frames at %.2f fps, %s", path, avi.width, avi.height,
                avi.frames.size(), static_cast<double>(avi.rate) / avi.scale,

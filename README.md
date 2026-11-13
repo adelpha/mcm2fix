@@ -402,9 +402,17 @@ BAJA01=D:\Music\desert.mp3
   without a gap. The game's install has an empty `MUSIC` folder, which is a
   good place for them. A relative path is also looked for in
   `%LOCALAPPDATA%\Motocross Madness 2`, for an install you can't write to.
-- The music fades out over `FadeTime` when it changes, pauses with the race's
-  pause menu (`PauseInRace`) and while the game is in the background
-  (`BackgroundMute`), and stays quiet while the game's videos play.
+- Menu music starts when the menus appear, not during the intro slides and
+  video. It fades out quickly as a track starts loading, and the race music
+  starts with the countdown. When you finish, the race music fades out
+  quickly and stays off through the podium cutscene; the menu music plays on
+  the results. Other changes fade over `FadeTime`.
+- Race music pauses with the race's pause menu (`PauseInRace`), all music
+  pauses while the game is in the background (`BackgroundMute`), and nothing
+  plays while one of the game's videos does.
+- `Volume` and `RaceVolume` only set the music. The game's own sound volume
+  and `AnnouncerVolume` don't change it; Windows' volume mixer entry for the
+  game turns everything down together.
 - Music is played through Windows' plain audio output (waveOut), not
   DirectSound, so the game's 3D positioning and EAX reverb (DSOAL included)
   never touch it. It works the same on Windows XP.
@@ -631,7 +639,7 @@ return to the menus; the other settings here when the game starts.
 | `RaceVolume` | empty | 0-100 | Music volume in races. Empty = `Volume`. |
 | `Shuffle` | `1` | `0`, `1` | A list plays in random order, a new order each time round. `0` = in order (a folder's files by name). |
 | `PauseInRace` | `1` | `0`, `1` | Race music pauses while the race is paused. `0` = it keeps playing. (Music always pauses while the game is in the background when `BackgroundMute=1`.) |
-| `FadeTime` | `1000` | 0-10000 | Milliseconds to fade the music out when it changes, from the menus to a race and back. |
+| `FadeTime` | `1000` | 0-10000 | Milliseconds to fade the music out when it changes, such as from the results back to the menus. Loading a track and finishing a race always fade in 0.3 s. |
 | `Log` | `0` | `0`, `1` | Logs every music file, loop and state change, and a playback summary every 30 s. Starts, stops and problems are always logged while music is set. |
 
 The shipped `mcm2fix.ini` is generated from the block in
