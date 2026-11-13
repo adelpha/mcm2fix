@@ -31,6 +31,8 @@ other exe mcm2fix does nothing.
 - A race announcer: countdown voices, an air horn at the start, a final
   lap call and a podium sound (the .wav files in the SOUNDS folder;
   Announcer=0 in mcm2fix.ini turns it off).
+- Graphics extras (Direct3D 11): reflections on bikes and helmets, soft
+  GPU shadows for every rider, and optional speed blur (MotionBlur=1).
 - Smooth frame pacing at any refresh rate, plus graphics options
   (antialiasing, anisotropic filtering, view distance, FOV) and fixes for the
   race direction arrow and Restart Race.
