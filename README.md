@@ -112,6 +112,13 @@ Windows 10 and 11.
   small picture on the CPU. Now every rider and bike casts a sharp,
   soft-edged shadow on the ground, drawn on the GPU and moving smoothly with
   the riders between simulation steps (Direct3D 11).
+- **Reflections on bikes and helmets** (`Reflections`, on by default). Bike
+  bodywork and helmets, and more faintly the riders' suits, get a soft
+  reflection of the sky and of the terrain, trees and track objects around
+  the bike, brightest at glancing angles, plus a highlight from the sun.
+  Strength, softness and shine are tunable per material (`ReflectBike*`,
+  `ReflectHelmet*`, `ReflectRider*`). `LiquidMetal=1` turns every bike and
+  rider into liquid chrome. Direct3D 11.
 - **Texture dumping and replacement** by name with PNG, JPEG or BMP files of
   any size (`TextureDump`, `TextureReplace`). See
   [below](#texture-dumping-and-replacement).
@@ -182,6 +189,10 @@ Windows 10 and 11.
   terrain, scenery) go to the graphics card as one draw, about three times
   fewer per frame (`DrawBatch`). Still scenery skips the smoothing blend, and
   the race HUD text no longer asks Windows for font details every frame.
+- **No power-plan stutter** (`RacePower`). On the Balanced power plan
+  Windows slows the CPU down while the game waits for VSync, and some frames
+  then run late. While racing, mcm2fix switches to the High performance plan
+  and puts yours back afterwards (not on battery).
 - A built-in profiler for finding hitches (`Profile`).
 
 ### Other
