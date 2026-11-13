@@ -117,6 +117,7 @@ void LoadConfig() {
       v[std::strcspn(v, "\t; ")] = 0;  // drop an inline comment
     }
   }
+  g_config.background_mute = GetPrivateProfileIntA("mcm2fix", "BackgroundMute", 1, ini) != 0;
   g_config.sound_pause_log = GetPrivateProfileIntA("mcm2fix", "SoundPauseLog", 0, ini) != 0;
   g_config.state_cache = GetPrivateProfileIntA("mcm2fix", "StateCache", 1, ini) != 0;
   g_config.dd_stats = GetPrivateProfileIntA("mcm2fix", "DDStats", 0, ini) != 0;

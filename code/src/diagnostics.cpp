@@ -2,7 +2,11 @@
 #include <windows.h>
 #include <cstdint>
 
+#include "config.h"
+#include "input_timing.h"
 #include "patch.h"
+
+void SoundOnActivate(bool active);
 
 namespace {
 
@@ -11,11 +15,14 @@ constexpr uintptr_t kMainWindow = 0x68B16C;   // game window HWND
 
 // WndProc, WM_ACTIVATEAPP: 4a23db  mov [573f48], edi  (edi = wParam).
 // While this flag is 0 the main loop only pumps messages and never ticks.
+// Also tells input (AltTabFix) and sound (BackgroundMute).
 extern "C" void __cdecl LogActivateApp(DWORD active) {
   HWND game = *reinterpret_cast<HWND*>(kMainWindow);
   HWND fg = GetForegroundWindow();
-  patch::Log("WM_ACTIVATEAPP active=%lu game=%p foreground=%p%s", active, game, fg,
+  patch::Log("focus: WM_ACTIVATEAPP active=%lu game=%p foreground=%p%s", active, game, fg,
              fg == game ? " (game)" : "");
+  input::OnActivate(active != 0);
+  SoundOnActivate(active != 0);
 }
 
 #if defined(_MSC_VER)

@@ -95,7 +95,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved) {
       ApplyAiFixes();
       input::Apply();
       video::ApplyVideoPlayer();
-      if (c.activate_log) ApplyDiagnostics();
+      ApplyDiagnostics();  // WM_ACTIVATEAPP hook: logs focus changes, tells input and sound
       prof::Start();
     } else {
       patch::Log("not the supported Mcm2.exe; no fixes applied");

@@ -14,6 +14,11 @@ void Apply();
 // steps, racing = a race is running at the fixed simulation rate.
 void BeginStep(LONGLONG now, double behind, int index, int count, bool racing);
 
+// The game window became active or inactive (WM_ACTIVATEAPP). Inactive:
+// everything the game thinks is held gets a release (AltTabFix); active
+// again: each device's state is checked at its next read.
+void OnActivate(bool active);
+
 // After a frame's steps: input read outside steps (menus) sees everything.
 void EndSteps();
 

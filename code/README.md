@@ -387,8 +387,9 @@ SimSmooth=1
 ; missed.
 InputTiming=1
 
-; AltTabFix: 1 = keys and buttons let go while the game was in the background
-; are released when it comes back, and a keyboard or joystick Windows took
+; AltTabFix: 1 = keys and buttons held when the game goes to the background
+; (such as Alt from Alt+Tab) are released, any let go meanwhile count as let
+; go when it comes back, and a keyboard or joystick Windows took
 ; away is acquired again (default; needs InputTiming=1). 0 = the original:
 ; such keys stay held until pressed again, and the keyboard can stop working
 ; after alt-tab.
@@ -449,6 +450,12 @@ AsyncSound=2
 ; 2 = change nothing but log each 3D sound that goes beyond its maximum
 ; distance, and how often the game restarts a sound that is still playing.
 SoundMaxDistanceMute=1
+
+; BackgroundMute: 1 = with a replacement DirectSound such as DSOAL, silence
+; the game while it is in the background (default; Windows' own DirectSound
+; does this itself). 0 = leave the sound alone: the game stops while in the
+; background and its sounds keep repeating their last fraction of a second.
+BackgroundMute=1
 
 ; BajaReverb, EnduroReverb, QuarryReverb, NationalsReverb, SupercrossReverb,
 ; TagReverb: the EAX 1.0 reverb preset used in each kind of event. The game

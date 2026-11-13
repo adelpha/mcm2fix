@@ -361,7 +361,7 @@ void ListOfs(char* out, size_t n, const std::vector<DWORD>& ofs) {
 }
 
 // Lost while away from the game: release everything it thinks is down.
-void ReleaseAll(Device& d, HRESULT why) {
+void ReleaseAll(Device& d, const char* why) {
   std::vector<DWORD> rel;
   for (const auto& kv : Effective(d))
     if (IsButton(d, kv.first) && (kv.second & 0x80)) {
@@ -370,8 +370,8 @@ void ReleaseAll(Device& d, HRESULT why) {
     }
   char list[200];
   ListOfs(list, sizeof(list), rel);
-  patch::Log("input: alt-tab: %s %d lost (%s) with the game not in front; %u held key(s)/button(s) released:%s",
-             KindName(d.kind), d.number, LostName(why), static_cast<unsigned>(rel.size()), list);
+  patch::Log("input: alt-tab: %s %d %s; %u held key(s)/button(s) released:%s", KindName(d.kind), d.number, why,
+             static_cast<unsigned>(rel.size()), list);
 }
 
 // Back after a loss: anything the game thinks is down but isn't gets a
@@ -437,7 +437,7 @@ HRESULT WINAPI MyGetData(void* self, DWORD cb, DiData* data, DWORD* inout, DWORD
       if (SUCCEEDED(hr)) Resync(*d, self, "acquired again by mcm2fix");
       d->away = d->polled_lost = false;
     } else if (d->kind == kKeyboard) {
-      if (!d->away) ReleaseAll(*d, hr);
+      if (!d->away) ReleaseAll(*d, IsLost(hr) && hr == static_cast<HRESULT>(0x8007001E) ? "lost (INPUTLOST), game not in front" : "lost (NOTACQUIRED), game not in front");
       d->away = true;
       hr = S_OK;  // the releases (or nothing) go to the game
     }
@@ -538,7 +538,7 @@ HRESULT WINAPI MyGetState(void* self, DWORD cb, void* out) {
     }
     // Not in front (or can't acquire): no keys down; the buffered read gives the releases.
     if (!d->away) {
-      ReleaseAll(*d, hr);
+      ReleaseAll(*d, hr == static_cast<HRESULT>(0x8007001E) ? "lost (INPUTLOST), game not in front" : "lost (NOTACQUIRED), game not in front");
       d->away = true;
     }
     std::memset(out, 0, cb);
@@ -762,6 +762,23 @@ void BeginStep(LONGLONG now, double behind, int index, int count, bool racing) {
       if (count > 1) ++g_stats.catchup_frames;
       if (static_cast<unsigned>(count) > g_stats.max_steps) g_stats.max_steps = count;
       if (count > 1 && Detail()) patch::Log("input: catch-up frame: %d steps, first step ends %.1f ms ago", count, behind * 1000.0);
+    }
+  }
+}
+
+void OnActivate(bool active) {
+  if (!g_enabled || !g_alt_tab) return;
+  Lock lock;
+  for (auto& kv : g_devices) {
+    Device& d = *kv.second;
+    if (kv.first != d.iface || d.kind == kMouse) continue;
+    if (d.kind == kJoystick && d.given.empty()) continue;  // read immediately: nothing to keep in step
+    if (!active) {
+      if (!d.away) ReleaseAll(d, "game window inactive");
+      d.away = true;
+    } else {
+      d.away = true;  // its next good read compares its real state
+      patch::Log("input: alt-tab: game window active again; %s %d is checked at its next read", KindName(d.kind), d.number);
     }
   }
 }
