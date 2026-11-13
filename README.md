@@ -178,6 +178,10 @@ Windows 10 and 11.
   SafeDisc copy protection, which Windows 10 and 11 cannot run at all.
 - **Windows 10 or 11** with a Direct3D 11 graphics card, or Windows 7/8.
   Windows XP SP3 also works; see [Windows XP](#windows-xp).
+- **A Pentium II / Pentium Pro, AMD Athlon / Duron or newer CPU** (any CPU
+  with the CMOV instruction). The original Pentium, Pentium MMX and AMD K6
+  series (K6-2, K6-III) are not supported; on machines that old, run the
+  original game. No MMX or SSE is needed.
 - Nothing else. You don't need the DirectX 7 runtime, `d3drm.dll` from an
   old Windows, the Indeo codec or compatibility settings. If you set
   compatibility modes on `Mcm2.exe` earlier, it's best to remove them.

@@ -43,6 +43,9 @@ Requirements
   The original CD Mcm2.exe uses SafeDisc copy protection, which Windows 10
   and 11 cannot run.
 - A graphics card with Direct3D 11.
+- A Pentium II / Pentium Pro, AMD Athlon / Duron or newer CPU. The
+  original Pentium, Pentium MMX and AMD K6 series (K6-2, K6-III) are not
+  supported; on machines that old, run the original game.
 - Windows XP SP3 also works: there is no Direct3D 11 there, so the
   Direct3D 9 renderer is used, and saves go to
   Local Settings\Application Data\Motocross Madness 2.
