@@ -277,9 +277,10 @@ ReflectRiderFrames=PELVIS, LWRTORSO, UPRTORSO, UPRLEG*, LWRLEG*, UPRARM*, LWRARM
 ReflectExclude=tire*
 
 ; ReflectSkipObjects: models with any of these parts get no reflections at
-; all. The man at the start line holding the countdown board is the rider
-; model with board parts added, so without this his head shone like a helmet.
-ReflectSkipObjects=Five, Four, Three, Two, One
+; all. The man at the start line holding the board (SIGN01) and the flag man
+; (FLAG01-03) are the rider model with extra parts, so without this their
+; bare heads shone like helmets.
+ReflectSkipObjects=SIGN*, FLAG*
 ReflectTextures=
 ReflectFrames=
 

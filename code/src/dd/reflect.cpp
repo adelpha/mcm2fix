@@ -211,7 +211,7 @@ const RCfg& Cfg() {
   ParseList(buf, g_cfg.rider, 2, g_cfg.frames);
   GetPrivateProfileStringA("mcm2fix", "ReflectFrames", "", buf, sizeof(buf), ini);
   ParseList(buf, g_cfg.helmet, 1, g_cfg.frames);
-  GetPrivateProfileStringA("mcm2fix", "ReflectSkipObjects", "Five, Four, Three, Two, One", buf, sizeof(buf), ini);
+  GetPrivateProfileStringA("mcm2fix", "ReflectSkipObjects", "SIGN*, FLAG*", buf, sizeof(buf), ini);
   ParseList(buf, 1, 0, g_cfg.skip_objects);
   std::vector<Pattern> ex;
   GetPrivateProfileStringA("mcm2fix", "ReflectExclude", "tire*", buf, sizeof(buf), ini);
@@ -256,8 +256,8 @@ std::unordered_map<std::string, int> g_frame_ids;
 unsigned g_xforms = 0, g_obj_draws = 0;
 
 // Frames seen per drawn object. The start-line man holding the board is the
-// rider model (same PELVIS..HEAD frames) with board frames added, so without
-// this his head got the helmet reflection. An object with any
+// rider model (PELVIS..HEAD frames) plus SIGN01; the flag man adds FLAG01-03. Without
+// this their heads got the helmet reflection. An object with any
 // ReflectSkipObjects frame gets no reflections at all.
 struct ObjFrames {
   std::vector<int> ids;
