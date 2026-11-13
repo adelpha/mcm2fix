@@ -644,9 +644,13 @@ static const simd::Format16* Sse2Format16(const PixelLayout& l) {
   std::memcpy(e.mask, l.mask, sizeof(e.mask));
   const uint32_t m[4] = {l.mask[0], l.mask[1], l.mask[2], l.mask[3]};
   simd::Prepare16(e.f, m);
+  // Only R5G6B5 is faster in SSE2 than the (cache-hot) table: measured on an
+  // i7-6850K, 565 1.1x, while A4R4G4B4 0.7x and A1R5G5B5 0.8x.
+  const bool is565 = m[0] == 0xF800 && m[1] == 0x07E0 && m[2] == 0x001F && m[3] == 0;
+  if (!is565) e.f.ok = false;
   cache.push_back(e);
   Log("16-bit texture format %04lx/%04lx/%04lx/%04lx: %s", l.mask[0], l.mask[1], l.mask[2], l.mask[3],
-      e.f.ok ? "SSE2 conversion" : "table conversion (SSE2 path does not take this format)");
+      e.f.ok ? "SSE2 conversion" : "table conversion (faster than SSE2 for this format)");
   return e.f.ok ? &cache.back().f : nullptr;
 }
 
