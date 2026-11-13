@@ -33,6 +33,7 @@ The same DLL also runs on **Windows XP SP3**, where it uses Direct3D 9.
 - [Renderers and fullscreen](#renderers-and-fullscreen)
 - [Windows XP](#windows-xp)
 - [Sound, EAX and DSOAL](#sound-eax-and-dsoal)
+- [Music](#music)
 - [mcm2fix.ini reference](#mcm2fixini-reference)
 - [Texture dumping and replacement](#texture-dumping-and-replacement)
 - [Problems and logs](#problems-and-logs)
@@ -147,6 +148,9 @@ Windows 10 and 11.
   events get Mountains (Baja, Stunt Quarry) or Forest (Enduro, Nationals)
   reverb; any EAX 1.0 preset can be chosen per event. See
   [Sound, EAX and DSOAL](#sound-eax-and-dsoal).
+- **Music** (`[Music]` section, off until set). Your own WAV, FLAC or MP3
+  files in the menus and races, per event or per track, in plain stereo
+  without EAX or 3D effects. See [Music](#music).
 
 ### Frame pacing and smoothness
 - **Fixed-rate simulation** (`SimRate=30`). The game's physics and AI were
@@ -372,10 +376,46 @@ library's qsort, which doesn't keep equal entries in order, so voices were
 handed between riders and restarted. `FastSort=1` (the default) replaces
 that sort with a stable one and stops it.
 
+## Music
+
+The game has no music of its own (only an unused CD audio player), so
+mcm2fix can play yours: `.wav`, `.flac` or `.mp3` files, set in the
+`[Music]` section of `mcm2fix.ini`. Nothing plays until you set something.
+
+```ini
+[Music]
+Menu=MUSIC\menu.mp3
+Race=MUSIC\race
+Supercross=MUSIC\stadium1.flac;MUSIC\stadium2.flac
+BAJA01=D:\Music\desert.mp3
+```
+
+- `Menu` plays in the menus.
+- In a race, the track's own key is used if it has one (the track's file
+  name in the game's `Teraform` folder without `.env`: `BAJA01`, `SX05`,
+  `NAT12`, `urbanjunglebaja` and so on), else its event's key (`Baja`,
+  `Enduro`, `Nationals`, `Quarry`, `Supercross`, `Tag`), else `Race`. If none
+  is set, the race is silent.
+- A value is a file or a folder (every music file in it), relative to the
+  game folder or a full path. Separate several with `;`. A list plays in
+  turn and repeats (`Shuffle=1`: in random order); a single file loops
+  without a gap. The game's install has an empty `MUSIC` folder, which is a
+  good place for them. A relative path is also looked for in
+  `%LOCALAPPDATA%\Motocross Madness 2`, for an install you can't write to.
+- The music fades out over `FadeTime` when it changes, pauses with the race's
+  pause menu (`PauseInRace`) and while the game is in the background
+  (`BackgroundMute`), and stays quiet while the game's videos play.
+- Music is played through Windows' plain audio output (waveOut), not
+  DirectSound, so the game's 3D positioning and EAX reverb (DSOAL included)
+  never touch it. It works the same on Windows XP.
+- The music keys are read again at each race and each return to the menus,
+  so you can change them without restarting the game, as long as some music
+  was set when it started.
+
 ## mcm2fix.ini reference
 
 `mcm2fix.ini` sits next to `Mcm2.exe`. Its settings go in a section called
-`[mcm2fix]`. Every setting is optional, and a missing one (or a missing file)
+`[mcm2fix]`, apart from the music settings, which go in `[Music]`. Every setting is optional, and a missing one (or a missing file)
 uses the default below. On/off settings take `1` or `0`. Lines starting with
 `;` are comments. Changes take effect the next time the game starts. The
 shipped file explains every setting in its comments, in the same order as
@@ -389,6 +429,8 @@ The file has three parts:
    recommended**.
 3. **[Logging](#3-logging)**: only the main log is on. The rest are for
    debugging and are all off in the release.
+4. **[Music](#4-music-music-section)**: the `[Music]` section, empty (off)
+   in the release.
 
 ### 1. Preferences
 
@@ -521,7 +563,7 @@ troubleshooting.
 | Setting | Default | Values | Description |
 |---|---|---|---|
 | `AsyncSound` | `2` | `0`, `1`, `2` | Where the 3D sound position update runs. The game makes it every physics step, and it's slow on Windows 10/11 because it holds the sound system's lock. `2` = a worker thread, started while the frame waits for VSync. `1` = a worker thread, started at once. `0` = the game thread, as in the original (can cause stutter). |
-| `BackgroundMute` | `1` | `0`, `1` | With a replacement DirectSound such as DSOAL, the game is silenced while it is in the background (Windows' own DirectSound does this itself). Otherwise the game, which stops while in the background, leaves its sounds repeating their last fraction of a second. `0` = leave the sound alone. |
+| `BackgroundMute` | `1` | `0`, `1` | With a replacement DirectSound such as DSOAL, the game is silenced while it is in the background (Windows' own DirectSound does this itself). Otherwise the game, which stops while in the background, leaves its sounds repeating their last fraction of a second. With any DirectSound, `1` also pauses the [music](#music) while the game is in the background. `0` = leave the sound alone. |
 | `SoundMaxDistanceMute` | `1` | `0`, `1`, `2`, `3` | `1`: with a replacement DirectSound such as DSOAL, which ignores the rule, mcm2fix mutes 3D sounds beyond their maximum distance itself, as Windows' DirectSound does. With Windows' own DirectSound it leaves them to Windows. `3` mutes them with any DirectSound (with Windows' own, the bike engines then go silent after a pause). `0` never. `2` changes nothing and only logs those sounds. |
 | `FastCrt` | `1` | `0`, `1` | The game's millisecond clock uses `QueryPerformanceCounter` instead of changing the Windows timer period on every call, and its case-insensitive name comparisons use a lookup table. Both were measurable slowdowns. |
 | `Simd` | `1` | `0`, `1` | mcm2fix's own vertex, smoothing and pixel conversion work uses SSE2 when the CPU has it, after a start-up self test that checks it gives the same results as the plain code. `0` = plain code only. The game's own code (physics included) is never changed by this. |
@@ -573,9 +615,28 @@ only when asked to. Logs go to `%LOCALAPPDATA%\Motocross Madness 2\logs`.
 | `ShadowLog` | `0` | `RiderShadows` counters every 5 seconds: shadows drawn, vertices, time taken, terrain draws shadowed. `2` also logs every shadow's placement for 90 frames, 10 s into each race. |
 | `SmoothLog` | `0` | `SimSmooth` tracing: `1` = matrices and draws for a few frames, `2` = camera only (120 frames), `3` = rider shadows, `4` = camera and projection after each race start. |
 
+### 4. Music (`[Music]` section)
+
+See [Music](#music). Every music key is empty in the release, so no music
+plays until you set one. The music keys are read again at each race and each
+return to the menus; the other settings here when the game starts.
+
+| Setting | Default | Values | Description |
+|---|---|---|---|
+| `Menu` | empty | files, folders | Music in the menus. A value is a `.wav`, `.flac` or `.mp3` file or a folder (every such file in it), relative to the game folder (or `%LOCALAPPDATA%\Motocross Madness 2`) or a full path; separate several with `;`. A list plays in turn and repeats; a single file loops. |
+| `Race` | empty | files, folders | Music in any race without its own event or track music. Empty = silent races. |
+| `Baja`, `Enduro`, `Nationals`, `Quarry`, `Supercross`, `Tag` | empty | files, folders | Music for every track of that kind of event, instead of `Race`. Add-on tracks count as the event whose `Teraform` folder they are in. |
+| *track name* | not set | files, folders | Music for one track, instead of its event's. The key is the track's file name in `Teraform` without `.env`: `BAJA01`-`BAJA05`, `AIRFIELD`, `FARM`, `OPENPIT`, `SKILODGE`, `TRAILER`, `CHANOS`, `HILLSIDE`, `IFFENDIC`, `NAT01`-`NAT12`, `VV`, `QUARRY01`-`QUARRY05`, `SX01`-`SX17`, `TAG01`-`TAG03`, or an add-on track's name. |
+| `Volume` | `80` | 0-100 | Music volume in the menus. |
+| `RaceVolume` | empty | 0-100 | Music volume in races. Empty = `Volume`. |
+| `Shuffle` | `1` | `0`, `1` | A list plays in random order, a new order each time round. `0` = in order (a folder's files by name). |
+| `PauseInRace` | `1` | `0`, `1` | Race music pauses while the race is paused. `0` = it keeps playing. (Music always pauses while the game is in the background when `BackgroundMute=1`.) |
+| `FadeTime` | `1000` | 0-10000 | Milliseconds to fade the music out when it changes, from the menus to a race and back. |
+| `Log` | `0` | `0`, `1` | Logs every music file, loop and state change, and a playback summary every 30 s. Starts, stops and problems are always logged while music is set. |
+
 The shipped `mcm2fix.ini` is generated from the block in
 [code/README.md](code/README.md) by `tools/package.sh`, and the parser is
-[code/src/config.cpp](code/src/config.cpp).
+[code/src/config.cpp](code/src/config.cpp) ([code/src/music.cpp](code/src/music.cpp) for `[Music]`).
 
 ## Texture dumping and replacement
 
@@ -644,9 +705,11 @@ in [code/README.md](code/README.md).
 
 | Path | Contents |
 |---|---|
-| `code/src/` | mcm2fix: game patches (`fixes_*.cpp`), frame pacing (`framerate.cpp`, `smooth*.cpp`), profiler (`prof.cpp`), XP shims (`xp_compat.cpp`) |
+| `code/src/` | mcm2fix: game patches (`fixes_*.cpp`), frame pacing (`framerate.cpp`, `smooth*.cpp`), music (`music.cpp`), profiler (`prof.cpp`), XP shims (`xp_compat.cpp`) |
 | `code/src/dd/` | DirectDraw 7 / Direct3D 7 on Direct3D 11 (`backend.cpp`, `device.cpp`) and Direct3D 9 (`backend9.cpp`, `device9.cpp`), GPU text, HUD text, MSAA, texture replacement |
 | `code/src/video/` | AVI reader, MS ADPCM decoder, waveOut audio, Indeo 5 through FFmpeg |
+| `code/src/music*.cpp` | menu and race music (`[Music]`): waveOut player, WAV/FLAC/MP3 decoding |
+| `code/third_party/dr_libs/` | dr_wav, dr_flac, dr_mp3 (public domain / MIT-0) |
 | `code/tests/` | renderer smoke test |
 | `tools/` | `package.sh` (release zip), `build-ffmpeg.sh`, `mcm2patch.py` (exe patcher), `hlp2html.py` (WinHelp to HTML), `check-xp-imports.py`, `perf_report.py`, `sky_tiles.py` |
 | `package/` | player README, `MCM2HELP.html`, HUD fonts, licences |
@@ -658,6 +721,10 @@ in [code/README.md](code/README.md).
   Indeo 5 decoder and linked statically, under the GNU LGPL 2.1 or later
   (`licenses/FFmpeg-LGPL-2.1.txt`). `tools/build-ffmpeg.sh` rebuilds it, so
   the DLL can be relinked against a modified FFmpeg.
+- WAV, FLAC and MP3 decoding for the music uses
+  [dr_libs](https://github.com/mackron/dr_libs) (dr_wav 0.14.6, dr_flac
+  0.13.4, dr_mp3 0.7.4) by David Reid, public domain or MIT No Attribution
+  (`code/third_party/dr_libs`).
 - The HUD fonts are Contrail One (c) 2011 Sorkin Type Co and DSEG7 Classic
   (c) 2017 keshikan, both under the SIL Open Font License 1.1
   (`licenses/ContrailOne-OFL.txt`, `licenses/DSEG-OFL.txt`).

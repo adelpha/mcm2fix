@@ -7,6 +7,7 @@
 #include <string>
 
 #include "../config.h"
+#include "../music.h"
 #include "../patch.h"
 #include "backend.h"
 #include "gdihook.h"
@@ -264,6 +265,7 @@ void Start(uintptr_t race) {
 void __fastcall CountdownInitHook(uintptr_t race, void* edx) {
   reinterpret_cast<InitFn>(kCountdownInit)(race, edx);
   if (GetConfig().race_title || GetConfig().announcer) Start(race);
+  music::RaceStart(race);
 }
 
 // 0x418cb3: a BikeRace is being destroyed (quitting from the pause menu, the
@@ -285,6 +287,7 @@ void __fastcall RaceDtorHook(uintptr_t race, void* edx) {
     g.race = 0;
     g.vtable = 0;
   }
+  music::RaceEnd(race);
   reinterpret_cast<InitFn>(kRaceDtor)(race, edx);
 }
 
@@ -540,6 +543,15 @@ void InstallRaceTitleHooks() {
   const Config& c = GetConfig();
   if (!c.race_title && !c.announcer) {
     Log("race title: off (RaceTitle=0, Announcer=0), the game's corner text stays");
+    if (music::Enabled()) {
+      // Music still needs to know when races start and end.
+      int calls = 0;
+      for (uintptr_t site : kCountdownCalls)
+        calls += PatchCall(site, kCountdownInit, reinterpret_cast<const void*>(&CountdownInitHook)) ? 1 : 0;
+      const bool dtor = PatchCall(kRaceDtorCall, kRaceDtor, reinterpret_cast<const void*>(&RaceDtorHook));
+      Log("race title: for music: %d of %d countdown calls hooked, race destructor hook %s", calls,
+          static_cast<int>(sizeof(kCountdownCalls) / sizeof(kCountdownCalls[0])), dtor ? "applied" : "MISSING");
+    }
     return;
   }
   int ok = PatchCall(kNameAddCall, kQueueAdd, reinterpret_cast<const void*>(&NameAddHook)) ? 1 : 0;

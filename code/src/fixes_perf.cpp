@@ -17,6 +17,7 @@
 #include "config.h"
 #include "patch.h"
 #include "framerate.h"
+#include "music.h"
 #include "simd.h"
 
 DWORD FocusClock(DWORD raw_ms);  // diagnostics.cpp: time away taken off
@@ -353,6 +354,7 @@ void Frame(bool racing);
 void PerfBeforePresent() {
   simd::ReportStats();
   power::Frame(SimRacing());
+  music::Frame();
   if (g_at_present && g_npending) SetEvent(g_commit_event);
 }
 

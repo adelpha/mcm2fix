@@ -6,6 +6,7 @@
 #include "config.h"
 #include "simd.h"
 #include "patch.h"
+#include "music.h"
 #include "prof.h"
 #include "video/player.h"
 #include "xp_compat.h"
@@ -91,6 +92,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved) {
       ApplyPerfFixes();
       ApplyGridFix();
       ApplySoundFixes();
+      music::Apply();  // after the file fixes: chains their CreateFileA hook
       ApplyReverbFixes();
       ApplySortFixes();
       ApplyAiFixes();
