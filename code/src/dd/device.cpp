@@ -79,7 +79,7 @@ float ShadowCover(float3 ls) {
       float below = bl.x > 0.002 ? bl.y / bl.x : 0;
       float gap = max(ls.z - t.w - below, 0);
       float lod = clamp(log2(1 + gap * ssoft.x * t.z), 0, ssoft.z);
-      float o = sinfo.z * 0.75 * exp2(lod);
+      float o = sinfo.z * (lod > 0.5 ? 0.5 * exp2(lod) : 0.75);
       float c = satlas.SampleLevel(ssmp, uv + float2(-o, -o), lod).r + satlas.SampleLevel(ssmp, uv + float2(o, -o), lod).r +
                 satlas.SampleLevel(ssmp, uv + float2(-o, o), lod).r + satlas.SampleLevel(ssmp, uv + float2(o, o), lod).r;
       cov = max(cov, c * 0.25 / (1 + gap * ssoft.y));

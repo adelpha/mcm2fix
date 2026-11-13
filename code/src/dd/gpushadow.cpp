@@ -89,8 +89,11 @@ constexpr float kReach = 60.0f;
 // casters' lowest surface over it (depth below the top, up to kDepthRange).
 constexpr int kTopLod = 4;
 constexpr float kDepthRange = 32.0f;
-constexpr float kBlurPerUnit = 0.1f;   // blur width per unit of gap, at ShadowSoftness=100
-constexpr float kFadePerUnit = 0.04f;  // darkness / (1 + gap * this)
+// The gap is measured along the sun's rays, which are long when the sun is
+// low (Baja: 20 degrees up, so a rider's head is ~12 units along the ray from
+// its shadow). gpushadow-2 used 0.1 / 0.04: far too blurry.
+constexpr float kBlurPerUnit = 0.015f;  // blur width per unit of gap, at ShadowSoftness=100
+constexpr float kFadePerUnit = 0.008f;  // darkness / (1 + gap * this)
 constexpr DXGI_FORMAT kAtlasFormat = DXGI_FORMAT_R16G16_FLOAT;
 
 const char kAtlasShader[] = R"(
