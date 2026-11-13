@@ -5,6 +5,11 @@ Makes Motocross Madness 2 run on Windows 10 and 11 by double-clicking
 Mcm2.exe: no compatibility settings, no administrator rights, no DirectX
 wrappers.
 
+IMPORTANT: you need the no-CD Mcm2.exe (1,577,005 bytes, see Requirements
+below). The original CD Mcm2.exe uses SafeDisc copy protection, which
+Windows 10 and 11 cannot run at all, and mcm2fix does not patch it. With any
+other exe mcm2fix does nothing.
+
 - Draws with Direct3D 11 in a borderless window at your desktop
   resolution. The display mode never changes and there is no adapter picker.
   Fullscreen=Exclusive in mcm2fix.ini gives true exclusive fullscreen
