@@ -200,6 +200,47 @@ AlphaCut=128
 ; Direct3D 11 only: the Direct3D 9 renderer uses AlphaCut.
 AlphaToCoverage=2
 
+; Reflections: a soft reflection on the bikes' bodywork and the riders'
+; helmets. 0 = off (default). 1 = the track's sky (cheap: the reflection is
+; only redrawn when a new piece of sky comes into view). 2 = live: the sky
+; plus the terrain, trees and track objects around the player's bike, redrawn
+; every frame from the bike's position (ReflectLiveFaces). Only what is on
+; screen can be reflected; behind the camera the reflection shows sky.
+; Direct3D 11 only.
+Reflections=0
+
+; ReflectBike / ReflectHelmet: how strongly bikes and helmets reflect, 0 to 1
+; (defaults 0.5 and 0.8). Surfaces facing you reflect a little (ReflectFresnel,
+; default 0.08 = 8% of that) and edges turned away from you the full amount,
+; as a clear-coated surface does. ReflectStrength multiplies both (default 1).
+ReflectBike=0.5
+ReflectHelmet=0.8
+ReflectFresnel=0.08
+ReflectStrength=1
+
+; ReflectBlur: how soft the reflection is, 0 = mirror-sharp, 1.5 = default,
+; up to 8. ReflectSize: the reflection picture's size per cube side in pixels
+; (default 128; bigger only matters with a low ReflectBlur).
+; ReflectLiveFaces: Reflections=2 redraws this many of the six cube sides
+; per frame, 1 to 6 (default 1: the whole reflection is fresh every six
+; frames). ReflectGround: brightness of the ground below the horizon in the
+; reflection, as a share of the fog colour (default 0.5).
+ReflectBlur=1.5
+ReflectSize=128
+ReflectLiveFaces=1
+ReflectGround=0.5
+
+; Which parts reflect. ReflectBikeTextures: bike textures (name patterns, *
+; matches anything) that reflect at ReflectBike. ReflectHelmetFrames: model
+; parts that reflect at ReflectHelmet (the rider's "Head" is the helmet).
+; ReflectExclude: textures that never reflect (tyres). ReflectTextures /
+; ReflectFrames: more of either, as name:strength, comma separated.
+ReflectBikeTextures=honda*, ktm*, yamaha*, kazuyuki*, suzuki*, kawasaki*, husq*
+ReflectHelmetFrames=Head
+ReflectExclude=tire*
+ReflectTextures=
+ReflectFrames=
+
 ; TrueColorTextures: 1 = load textures in full colour (24-bit, or 32-bit with
 ; alpha) wherever the picture has more than 16 bits of colour (default).
 ; The game always cut them down to 16-bit because of a bug. Most of the
@@ -650,6 +691,11 @@ FovLog=0
 ; AlphaToCoverage applied to it, plus alpha-to-coverage counts every 10 s.
 ; Default 0.
 AlphaLog=0
+
+; ReflectLog: which bike and rider textures and model parts reflect, the sky
+; tiles kept for Reflections, and every 5 s what the reflections cost.
+; Default 0.
+ReflectLog=0
 
 ; SmoothLog: SimSmooth tracing. 0 = off (default), 1 = matrices and draws for
 ; a few frames, 2 = camera only (120 frames), 3 = rider shadows, 4 = camera and
