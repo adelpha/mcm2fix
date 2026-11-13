@@ -33,6 +33,10 @@ void MsaaMarkDrawn();
 // if it is the mirrored target, resolve pending MSAA drawing into it and stop
 // mirroring.
 void MsaaRelease(const void* tex);
+// MotionBlur: if `tex` is the mirrored target, resolve the MSAA buffer into
+// `dst` (a single-sample texture of the same size) without ending the
+// mirroring. Returns false when `tex` is not mirrored.
+bool MsaaResolveCopy(const void* tex, GpuTexture& dst);
 // `tex` is being destroyed.
 void MsaaForget(const void* tex);
 // Direct3D 9 device reset: drop the buffers (they are recreated on demand).

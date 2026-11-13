@@ -200,6 +200,15 @@ class Device : public d3d7::IDirect3DDevice7 {
   void FlushBatch(BatchBreak why);
  private:
   void NoteDrawLog(const Draw& d);  // DrawLog=1 (drawlog.cpp)
+  // MotionBlur (motionblur.cpp): every draw is noted (`tl`: screen-space
+  // vertices); the first screen-space draw without depth test after the 3D
+  // scene blurs the scene before it is drawn, so the HUD stays sharp.
+  // Returns true when it kept the draw back: the race direction arrow is
+  // drawn after the blur (MotionBlurReplay), so it stays sharp.
+  bool MotionBlurNote(const Draw& d, bool tl);
+  bool MotionBlurPass(float fu, float fv, float len, float inner, float outer);
+  void MotionBlurReplay();
+  bool ArrowKeepBack(const Draw& d);  // a 3D draw of the arrow: copied and kept back
   bool SubmitWideLine(const Draw& d);
   void SubmitDraw(const Draw& d);
   void OccludeText(const Draw& d);

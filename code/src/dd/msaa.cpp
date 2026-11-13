@@ -196,6 +196,17 @@ void MsaaRelease(const void* tex) {
   g.pending_load = false;
 }
 
+bool MsaaResolveCopy(const void* tex, GpuTexture& dst) {
+  if (!tex || tex != g.owner) return false;
+  if (IsD3D9()) {
+    if (!g.rt9 || !dst.surf9) return false;
+    EndScene9();
+    return SUCCEEDED(B().dev9->StretchRect(g.rt9, nullptr, dst.surf9, nullptr, D3DTEXF_NONE));
+  }
+  if (!g.color || !dst.tex) return false;
+  B().ctx->ResolveSubresource(dst.tex, 0, g.color, 0, DXGI_FORMAT_B8G8R8A8_UNORM);
+  return true;
+}
 void MsaaForget(const void* tex) {
   if (tex && tex == g.owner) {
     g.owner = nullptr;

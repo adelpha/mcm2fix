@@ -57,6 +57,8 @@ IDirect3DTexture9* WhiteTex9();
 // check, real drivers return D3DERR_INVALIDCALL). Draws open a scene when
 // none is open; copies, GetDC, readbacks, Reset and Present close it.
 void BeginScene9();
+// MotionBlur (motionblur.cpp): zoom blur of p.src9 drawn over p.dst9.
+void ZoomBlur9(const BlitParams& p, float fu, float fv, float len, float inner, float outer, int layers);
 void EndScene9();
 
 }  // namespace dd

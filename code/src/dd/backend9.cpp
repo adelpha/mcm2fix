@@ -17,6 +17,7 @@
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <cmath>
 #include <vector>
 
 #include "../config.h"
@@ -24,6 +25,7 @@
 #include "../prof.h"
 #include "gdihook.h"
 #include "gputext.h"
+#include "motionblur.h"
 #include "msaa.h"
 #include "surface.h"
 
@@ -196,6 +198,7 @@ bool TryRecover() {
   Log("device lost; resetting (reset #%u)", g_resets + 1);
   ReleaseChains();
   MsaaDeviceLost();
+  MotionBlurDeviceLost();
   ReleaseGdi9();
   GpuTextDeviceLost();
   for (auto& kv : g_depth_clear_rt) SafeRelease(kv.second);
@@ -519,6 +522,7 @@ void SwitchToExclusive9(HWND hwnd) {
       mode.Width, mode.Height, mode.RefreshRate, GetConfig().vsync ? 1 : 0);
   ReleaseChains();
   MsaaDeviceLost();
+  MotionBlurDeviceLost();
   ReleaseGdi9();
   GpuTextDeviceLost();
   GpuTimerRelease9();
@@ -1163,6 +1167,67 @@ void BlitQuads9(const BlitParams& p, const BlitQuad* q, size_t n) {
     HRESULT hr = d->DrawPrimitiveUP(D3DPT_TRIANGLELIST, static_cast<UINT>(m * 2), v.data(), sizeof(BlitV9));
     if (FAILED(hr)) LogOnce("batched blit draw failed %08lx", hr);
     done += m;
+  }
+}
+
+// MotionBlur on Direct3D 9 (dd/motionblur.cpp): the scene copy in p.src9 is
+// drawn again `layers - 1` times over p.dst9, each time zoomed a little more
+// towards the focus point (fu, fv in 0..1), blended so that the result is the
+// average of all the layers. A grid carries the zoom per vertex, so the
+// middle of the screen (inside `inner`, ramping to full at `outer`, with the
+// screen as a circle: 1 = middle of an edge) stays sharp, as in the D3D11 shader.
+void ZoomBlur9(const BlitParams& p_in, float fu, float fv, float len, float inner, float outer,
+               int layers) {
+  Backend& b = B();
+  if (!b.dev9 || !p_in.dst9 || !p_in.src9 || !p_in.dst_w || !p_in.dst_h || g_lost || layers < 2) return;
+  BlitParams p = p_in;
+  p.blend = true;
+  p.tint = true;  // texture x vertex colour: the vertex alpha sets each layer's weight
+  p.linear = true;
+  SetupBlit9(p);
+  constexpr int GX = 32, GY = 18;
+  static std::vector<BlitV9> v;
+  static std::vector<WORD> idx;
+  static std::vector<float> zoom;  // per grid vertex: how far it moves towards the focus at full length
+  v.resize((GX + 1) * (GY + 1));
+  zoom.resize(v.size());
+  if (idx.empty()) {
+    for (int y = 0; y < GY; ++y)
+      for (int x = 0; x < GX; ++x) {
+        const WORD a = static_cast<WORD>(y * (GX + 1) + x), c = static_cast<WORD>(a + GX + 1);
+        const WORD q[6] = {a, static_cast<WORD>(a + 1), c, c, static_cast<WORD>(a + 1), static_cast<WORD>(c + 1)};
+        idx.insert(idx.end(), q, q + 6);
+      }
+  }
+  for (int y = 0; y <= GY; ++y)
+    for (int x = 0; x <= GX; ++x) {
+      const float u = static_cast<float>(x) / GX, vv = static_cast<float>(y) / GY;
+      const float dx = (u - 0.5f) * 2.0f, dy = (vv - 0.5f) * 2.0f;
+      const float r = std::sqrt(dx * dx + dy * dy);
+      float t = outer > inner ? (r - inner) / (outer - inner) : (r >= inner ? 1.0f : 0.0f);
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      zoom[y * (GX + 1) + x] = len * t * t * (3.0f - 2.0f * t);
+    }
+  BeginScene9();
+  for (int k = 1; k < layers; ++k) {
+    const float step = static_cast<float>(k) / (layers - 1);
+    // Layer k joins the k layers already there with weight 1/(k+1).
+    const DWORD a = static_cast<DWORD>(255.0f / (k + 1) + 0.5f);
+    const DWORD color = (a << 24) | 0xffffff;
+    for (int y = 0; y <= GY; ++y)
+      for (int x = 0; x <= GX; ++x) {
+        const int i = y * (GX + 1) + x;
+        const float u = static_cast<float>(x) / GX, vv = static_cast<float>(y) / GY;
+        const float s = 1.0f - zoom[i] * step;
+        v[i] = {u * p.dst_w - 0.5f, vv * p.dst_h - 0.5f, 0, 1, color, fu + (u - fu) * s, fv + (vv - fv) * s};
+      }
+    HRESULT hr = b.dev9->DrawIndexedPrimitiveUP(D3DPT_TRIANGLELIST, 0, static_cast<UINT>(v.size()),
+                                                static_cast<UINT>(idx.size() / 3), idx.data(), D3DFMT_INDEX16,
+                                                v.data(), sizeof(BlitV9));
+    if (FAILED(hr)) {
+      LogOnce("motion blur layer draw failed %08lx", hr);
+      break;
+    }
   }
 }
 

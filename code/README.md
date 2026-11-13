@@ -200,6 +200,26 @@ AlphaCut=128
 ; Direct3D 11 only: the Direct3D 9 renderer uses AlphaCut.
 AlphaToCoverage=2
 
+; MotionBlur: 1 = speed blur. Above MotionBlurMinSpeed the edges of the 3D
+; scene streak towards the point your bike is heading for, more the faster
+; you go, while the middle of the screen stays sharp. The HUD, text and menus
+; are never blurred. 0 = off (default).
+MotionBlur=0
+
+; MotionBlurStrength: length of the streaks at full speed, in percent (higher
+; = longer streaks), 0 to 300. Default 80.
+MotionBlurStrength=80
+
+; MotionBlurMinSpeed / MotionBlurMaxSpeed: speedometer speeds (mph) where the
+; blur starts and where it is at full strength. Defaults 30 and 70.
+MotionBlurMinSpeed=30
+MotionBlurMaxSpeed=70
+
+; MotionBlurCenter: size of the sharp middle of the screen, in percent of the
+; way from the middle to the screen edges, 0 to 95. Only the part outside it
+; streaks, most at the edges. Default 60.
+MotionBlurCenter=60
+
 ; TrueColorTextures: 1 = load textures in full colour (24-bit, or 32-bit with
 ; alpha) wherever the picture has more than 16 bits of colour (default).
 ; The game always cut them down to 16-bit because of a bug. Most of the
@@ -670,6 +690,11 @@ FovLog=0
 ; AlphaToCoverage applied to it, plus alpha-to-coverage counts every 10 s.
 ; Default 0.
 AlphaLog=0
+
+; MotionBlurLog: with MotionBlur, every 5 s: speed, blur amount and focus
+; point, where in the frame the blur went, and a few whole-frame draw lists.
+; Default 0.
+MotionBlurLog=0
 
 ; ShadowLog: RiderShadows counters every 5 s (shadows drawn, vertices, time
 ; taken, terrain draws shadowed). 2 = also every shadow's placement for 90
