@@ -289,9 +289,10 @@ works with or without DSOAL.
 
 For every outdoor event the game asks for "reverb off" with a decay time of
 0, which OpenAL Soft rejects, so the reverb from before stayed on instead.
-In Baja events mcm2fix sends the EAX Mountains preset instead
-(`BajaReverb=Mountains`, the default). `BajaReverb=Off` keeps the game's own
-values, and any other EAX 1.0 preset name can be tried.
+In outdoor events (Baja, Enduro, Quarry, Nationals) mcm2fix sends the EAX
+Mountains preset instead, the environment the game itself names for them.
+`BajaReverb`, `EnduroReverb`, `QuarryReverb` and `NationalsReverb` take any
+EAX 1.0 preset name, or `Off` for the game's own values.
 
 DSOAL ignores the `DSBCAPS_MUTE3DATMAXDISTANCE` flag that the game sets on
 all its 3D sounds. Riders who were out of earshot then kept playing quiet

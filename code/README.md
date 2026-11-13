@@ -438,17 +438,21 @@ AsyncSound=2
 ; distance, and how often the game restarts a sound that is still playing.
 SoundMaxDistanceMute=1
 
-; BajaReverb: the EAX 1.0 reverb preset used in Baja events. The game turns
-; reverb off for every outdoor event, but with values (decay time 0) that
-; OpenAL Soft / DSOAL rejects, so whatever reverb was set before stayed on.
-; Mountains (default) is the preset the game names for outdoor tracks.
-; Other presets: Generic, PaddedCell, Room, Bathroom, LivingRoom, StoneRoom,
-; Auditorium, ConcertHall, Cave, Arena, Hangar, CarpetedHallway, Hallway,
-; StoneCorridor, Alley, Forest, City, Quarry, Plain, ParkingLot, SewerPipe,
-; Underwater, Drugged, Dizzy, Psychotic. Off = the game's own values. Needs
-; EAX (DSOAL or an EAX sound card); otherwise it changes nothing. Every EAX
-; setting the game makes is written to the log.
+; BajaReverb, EnduroReverb, QuarryReverb, NationalsReverb: the EAX 1.0 reverb
+; preset used in each kind of outdoor event. The game turns reverb off for
+; every outdoor event, but with values (decay time 0) that OpenAL Soft / DSOAL
+; rejects, so whatever reverb was set before stayed on. Mountains (default) is
+; the environment the game names for outdoor tracks. Other presets: Generic,
+; PaddedCell, Room, Bathroom, LivingRoom, StoneRoom, Auditorium, ConcertHall,
+; Cave, Arena, Hangar, CarpetedHallway, Hallway, StoneCorridor, Alley, Forest,
+; City, Quarry, Plain, ParkingLot, SewerPipe, Underwater, Drugged, Dizzy,
+; Psychotic. Off = the game's own values. Needs EAX (DSOAL or an EAX sound
+; card); otherwise they change nothing. Every EAX setting the game makes is
+; written to the log.
 BajaReverb=Mountains
+EnduroReverb=Mountains
+QuarryReverb=Mountains
+NationalsReverb=Mountains
 
 ; FastCrt: 1 = the game's millisecond clock uses QueryPerformanceCounter
 ; instead of changing the Windows timer period on every call, and its

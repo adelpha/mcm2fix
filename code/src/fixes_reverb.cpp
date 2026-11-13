@@ -8,9 +8,10 @@
 // DSOAL) rejects that whole set because decay time 0 is below its 0.1 s
 // minimum, so the previous reverb stays.
 //
-// BajaReverb=<EAX 1.0 preset name> replaces those "off" values with the
-// preset's values in Baja events (game+0x2d78 == 1). Every EAX set the game
-// makes (ALL and ENVIRONMENT) is logged with the gate flags and the result.
+// QuarryReverb / BajaReverb / NationalsReverb / EnduroReverb = <EAX 1.0 preset
+// name> replace those "off" values with the preset's values in that event
+// (game+0x2d78: 0 Quarry, 1 Baja, 2 Nationals, 5 Enduro). Every EAX set the
+// game makes (ALL and ENVIRONMENT) is logged with the gate flags and the result.
 #include <windows.h>
 
 #include <cstdint>
@@ -78,7 +79,8 @@ constexpr uintptr_t kZoneEnvCall = 0x403758;
 using SetAllFn = int(__thiscall*)(uintptr_t self, const EaxProps* p);
 using SetEnvFn = int(__thiscall*)(uintptr_t self, DWORD env);
 
-const Preset* g_baja = nullptr;  // BajaReverb preset, null = game's own values
+const char* const kEventKey[6] = {"QuarryReverb", "BajaReverb", "NationalsReverb", nullptr, nullptr, "EnduroReverb"};
+const Preset* g_preset[6] = {};  // per event number, null = game's own values
 int g_env_logs = 0;              // ENVIRONMENT sets logged (zone updates could be per frame)
 
 int Event(int off) {
@@ -109,11 +111,13 @@ int SetAll(const char* who, uintptr_t self, const EaxProps* p) {
   LogProps("game wants", *p);
   EaxProps use = *p;
   const bool game_off = p->environment == 17 && p->volume == 0.0f && p->decay == 0.0f;
-  if (g_baja && ev78 == 1 && game_off) {
-    use = g_baja->p;
-    LogProps("BajaReverb sends", use);
-  } else if (g_baja) {
-    patch::Log("reverb:   left as is (%s)", ev78 != 1 ? "not a Baja event" : "not the game's 'off' values");
+  const Preset* want = ev78 >= 0 && ev78 < 6 ? g_preset[ev78] : nullptr;
+  if (want && game_off) {
+    use = want->p;
+    patch::Log("reverb:   %s=%s sends:", kEventKey[ev78], want->name);
+    LogProps("", use);
+  } else {
+    patch::Log("reverb:   left as is (%s)", !want ? "no preset set for this event" : "not the game's 'off' values");
   }
   const int r = reinterpret_cast<SetAllFn>(kSetAll)(self, &use);
   patch::Log("reverb:   result %d (0 = not sent: EAX off or unsupported)", r);
@@ -158,23 +162,24 @@ bool HookCall(const char* name, uintptr_t at, uintptr_t target, const void* fn) 
 }  // namespace
 
 void ApplyReverbFixes() {
-  const char* want = GetConfig().baja_reverb;
-  g_baja = nullptr;
-  if (want[0] && lstrcmpiA(want, "Off") != 0) {
+  for (int e = 0; e < 6; ++e) {
+    g_preset[e] = nullptr;
+    const char* want = GetConfig().outdoor_reverb[e];
+    if (!kEventKey[e] || !want[0] || lstrcmpiA(want, "Off") == 0) continue;
     for (const Preset& p : kPresets)
-      if (lstrcmpiA(want, p.name) == 0) g_baja = &p;
-    if (!g_baja) patch::Log("reverb: BajaReverb=%s is not an EAX 1.0 preset name, game's values kept", want);
+      if (lstrcmpiA(want, p.name) == 0) g_preset[e] = &p;
+    if (g_preset[e]) {
+      patch::Log("reverb: %s=%s (env %lu, volume %.3f, decay %.3f s, damping %.3f)", kEventKey[e],
+                 g_preset[e]->name, g_preset[e]->p.environment, g_preset[e]->p.volume, g_preset[e]->p.decay,
+                 g_preset[e]->p.damping);
+    } else {
+      patch::Log("reverb: %s=%s is not an EAX 1.0 preset name, game's values kept", kEventKey[e], want);
+    }
   }
   int hooked = 0;
   hooked += HookCall("race start", kRaceStartCall, kSetAll, reinterpret_cast<const void*>(&RaceStartSetAll));
   hooked += HookCall("toggle", kToggleCall, kSetAll, reinterpret_cast<const void*>(&ToggleSetAll));
   hooked += HookCall("init env", kInitEnvCall, kSetEnv, reinterpret_cast<const void*>(&InitSetEnv));
   hooked += HookCall("zone env", kZoneEnvCall, kSetEnv, reinterpret_cast<const void*>(&ZoneSetEnv));
-  if (g_baja) {
-    patch::Log("reverb: BajaReverb=%s (env %lu, volume %.3f, decay %.3f s, damping %.3f), %d/4 calls hooked",
-               g_baja->name, g_baja->p.environment, g_baja->p.volume, g_baja->p.decay, g_baja->p.damping,
-               hooked);
-  } else {
-    patch::Log("reverb: BajaReverb=Off (game's values), EAX calls logged, %d/4 calls hooked", hooked);
-  }
+  patch::Log("reverb: %d/4 EAX calls hooked and logged", hooked);
 }

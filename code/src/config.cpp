@@ -100,8 +100,16 @@ void LoadConfig() {
   g_config.input_timing = GetPrivateProfileIntA("mcm2fix", "InputTiming", 1, ini) != 0;
   g_config.input_log = GetPrivateProfileIntA("mcm2fix", "InputLog", 0, ini) != 0;
   g_config.sound_log = GetPrivateProfileIntA("mcm2fix", "SoundLog", 0, ini) != 0;
-  GetPrivateProfileStringA("mcm2fix", "BajaReverb", "Mountains", g_config.baja_reverb, sizeof(g_config.baja_reverb), ini);
-  g_config.baja_reverb[std::strcspn(g_config.baja_reverb, "\t; ")] = 0;  // drop an inline comment
+  {
+    // Event numbers as in game+0x2d74/0x2d78: 0 Quarry, 1 Baja, 2 Nationals, 5 Enduro (3 SX, 4 Tag are indoor).
+    const char* keys[6] = {"QuarryReverb", "BajaReverb", "NationalsReverb", nullptr, nullptr, "EnduroReverb"};
+    for (int e = 0; e < 6; ++e) {
+      char* v = g_config.outdoor_reverb[e];
+      if (!keys[e]) continue;
+      GetPrivateProfileStringA("mcm2fix", keys[e], "Mountains", v, sizeof(g_config.outdoor_reverb[e]), ini);
+      v[std::strcspn(v, "\t; ")] = 0;  // drop an inline comment
+    }
+  }
   g_config.sound_pause_log = GetPrivateProfileIntA("mcm2fix", "SoundPauseLog", 0, ini) != 0;
   g_config.state_cache = GetPrivateProfileIntA("mcm2fix", "StateCache", 1, ini) != 0;
   g_config.dd_stats = GetPrivateProfileIntA("mcm2fix", "DDStats", 0, ini) != 0;
