@@ -241,6 +241,11 @@ ReflectExclude=tire*
 ReflectTextures=
 ReflectFrames=
 
+; LiquidMetal: 1 = "T-1000 mode": every bike and rider is drawn in liquid
+; chrome, reflecting the world around it (uses Reflections=2 if Reflections
+; is 0). Default 0.
+LiquidMetal=0
+
 ; TrueColorTextures: 1 = load textures in full colour (24-bit, or 32-bit with
 ; alpha) wherever the picture has more than 16 bits of colour (default).
 ; The game always cut them down to 16-bit because of a bug. Most of the

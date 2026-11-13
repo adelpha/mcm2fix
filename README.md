@@ -406,6 +406,7 @@ The file has three parts:
 | `ReflectLiveFaces` | `1` | 1-6 | With `Reflections=2`, cube sides redrawn per frame. |
 | `ReflectGround` | `0.5` | 0-2 | Brightness of the ground below the horizon in the reflection, as a share of the fog colour. |
 | `ReflectBikeTextures` / `ReflectHelmetFrames` / `ReflectExclude` / `ReflectTextures` / `ReflectFrames` | see ini | names | Which parts reflect: bike textures by name pattern (`*` matches anything), model parts by frame name (the rider's `Head` is the helmet), textures that never reflect (`tire*`), and extra `name:strength` entries. |
+| `LiquidMetal` | `0` | `0`, `1` | "T-1000 mode": every bike and rider is drawn in liquid chrome, reflecting the world around it (uses `Reflections=2` if `Reflections` is `0`). |
 | `TrueColorTextures` | `1` | `0`, `1` | Loads textures in full colour (24-bit, or 32-bit with alpha) wherever the picture has more than 16 bits; a bug made the game always use 16-bit. Most of the game's art is stored in 16-bit, so only a few textures change. Changing it renames unnamed dumped textures. |
 | `TextureReplace` | `1` | `0`, `1` | Uses replacement pictures from `textures\` in the game folder or in `%LOCALAPPDATA%\Motocross Madness 2\textures\` (the per-user folder wins). See [Texture dumping and replacement](#texture-dumping-and-replacement). |
 | `TextureDump` | `0` | `0`, `1` | Saves every texture the game loads as a PNG in `%LOCALAPPDATA%\Motocross Madness 2\textures_dump`, to start replacements from. Loading is slower while it's on. |

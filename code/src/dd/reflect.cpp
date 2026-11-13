@@ -74,6 +74,7 @@ struct RCfg {
   float helmet = 0.8f;
   float f0 = 0.15f;
   bool debug = false;
+  bool liquid = false;  // LiquidMetal: bikes and riders all chrome
   float blur = 1.5f;
   int size = 128;
   int live_faces = 1;
@@ -151,6 +152,8 @@ const RCfg& Cfg() {
   g_cfg.ground = std::clamp(ReadF("ReflectGround", 0.5f, ini), 0.0f, 2.0f);
   g_cfg.log = GetPrivateProfileIntA("mcm2fix", "ReflectLog", 0, ini) != 0;
   g_cfg.debug = GetPrivateProfileIntA("mcm2fix", "ReflectDebug", 0, ini) != 0;
+  g_cfg.liquid = GetPrivateProfileIntA("mcm2fix", "LiquidMetal", 0, ini) != 0;
+  if (g_cfg.liquid && !g_cfg.mode) g_cfg.mode = 2;
   char buf[1024] = {};
   GetPrivateProfileStringA("mcm2fix", "ReflectBikeTextures",
                            "honda*, ktm*, yamaha*, kazuyuki*, suzuki*, kawasaki*, husq*", buf, sizeof(buf), ini);
@@ -169,6 +172,7 @@ const RCfg& Cfg() {
     std::string t, f;
     for (auto& x : g_cfg.textures) t += x.glob + ":" + std::to_string(x.k).substr(0, 4) + " ";
     for (auto& x : g_cfg.frames) f += x.glob + ":" + std::to_string(x.k).substr(0, 4) + " ";
+    if (g_cfg.liquid) Log("reflections: LiquidMetal on: bikes and riders are drawn in chrome");
     Log("reflections: mode %d (%s), strength %.2f, F0 %.2f, blur %.1f, cube %dpx, live faces/frame %d, ground %.2f; "
         "textures [%s] frames [%s]",
         g_cfg.mode, g_cfg.mode == 1 ? "sky" : "live", g_cfg.strength, g_cfg.f0, g_cfg.blur, g_cfg.size,
@@ -188,6 +192,9 @@ struct FrameRange {
 };
 std::map<uintptr_t, FrameRange> g_ranges;  // by start address
 std::vector<std::string> g_frame_names;
+std::vector<bool> g_frame_rider;  // a bike or rider part (LiquidMetal)
+std::unordered_map<const void*, bool> g_obj_rider;  // objects found to be bikes or riders
+bool g_liquid_now = false;  // this draw is a LiquidMetal one
 std::unordered_map<std::string, int> g_frame_ids;
 unsigned g_xforms = 0, g_obj_draws = 0;
 
@@ -210,6 +217,13 @@ int FrameNameId(const void* frame) {
   const int id = static_cast<int>(g_frame_names.size());
   g_frame_names.push_back(s);
   g_frame_ids[s] = id;
+  {
+    static const char* const kParts[] = {"BIKE", "HANDLEBARS", "SWINGARM", "SHOCKS", "TIRE*", "KICKSTART", "PELVIS",
+                                         "*TORSO", "*LEG*", "*ARM*", "HEAD", "HAND*", "FOOT*"};
+    bool r = false;
+    for (const char* k : kParts) r = r || Glob(k, s.c_str());
+    g_frame_rider.push_back(r);
+  }
   if (Cfg().log && id < 200) Log("reflections: part frame '%s' (frame %08x)", s.c_str(), static_cast<unsigned>(reinterpret_cast<uintptr_t>(frame)));
   return id;
 }
@@ -761,8 +775,27 @@ void ReflectInstallHooks() {
 // A 3D draw arrived (before batching). Sky tiles are kept for the cube.
 // True when this draw gets a reflection pass.
 bool Device::ReflectWants(const Draw& d) {
+  g_liquid_now = false;
   if (!Cfg().mode || IsD3D9() || !d.verts || d.layout.tl) return false;
   Surface* t = tex_[0];
+  if (Cfg().liquid && g_cur_obj) {
+    // LiquidMetal: every draw of an object that has bike or rider parts.
+    bool& rider = g_obj_rider[g_cur_obj];
+    if (!rider && !g_ranges.empty()) {
+      const uint8_t* gv = d.game_verts ? d.game_verts : d.verts;
+      const uintptr_t a = reinterpret_cast<uintptr_t>(gv) + static_cast<uintptr_t>(d.first) * d.layout.stride;
+      const uintptr_t e = a + static_cast<uintptr_t>(d.count) * d.layout.stride;
+      auto it = g_ranges.upper_bound(a);
+      if (it != g_ranges.begin()) --it;
+      for (; it != g_ranges.end() && it->first < e; ++it)
+        if (it->second.end > a && g_frame_rider[it->second.name]) rider = true;
+    }
+    if (g_obj_rider.size() > 4096) g_obj_rider.clear();
+    if (rider) {
+      g_liquid_now = true;
+      return true;
+    }
+  }
   if (!t) return false;
   const std::string& name = t->TextureName();
   if (!g_cur_obj) {
@@ -888,7 +921,7 @@ void Device::ReflectPass(const Draw& d) {
     } else {
       v.uv[0] = v.uv[1] = 0;
     }
-    float k = ti.k;
+    float k = g_liquid_now ? 1.0f : ti.k;
     if (!g_ranges.empty()) {
       const uintptr_t a = reinterpret_cast<uintptr_t>(gv + i * stride);
       if (it == g_ranges.end() || a < it->first || a >= it->second.end) {
@@ -896,7 +929,7 @@ void Device::ReflectPass(const Draw& d) {
         if (it != g_ranges.begin()) --it;
         if (it != g_ranges.end() && (a < it->first || a >= it->second.end)) it = g_ranges.end();
       }
-      if (it != g_ranges.end() && it->second.k >= 0) k = it->second.k;
+      if (it != g_ranges.end() && it->second.k >= 0 && !g_liquid_now) k = it->second.k;
     }
     v.k = k;
     if (k > 0) {
@@ -1029,10 +1062,11 @@ void Device::ReflectPass(const Draw& d) {
   }
   // ReflectDebug: the reflection alone at full strength (no Fresnel), to
   // see what is reflected.
-  pc.params[0] = Cfg().debug ? 1.0f : Cfg().strength;
+  const bool full = Cfg().debug || g_liquid_now;
+  pc.params[0] = full ? 1.0f : Cfg().strength;
   pc.params[1] = Cfg().blur;
-  pc.params[2] = Cfg().debug ? 1.0f : Cfg().f0;
-  pc.params[3] = (rs_[RS_ALPHATESTENABLE] || rs_[RS_COLORKEYENABLE] || rs_[RS_ALPHABLENDENABLE]) ? 0.5f : 0.0f;
+  pc.params[2] = full ? 1.0f : Cfg().f0;
+  pc.params[3] = tex_[0] && (rs_[RS_ALPHATESTENABLE] || rs_[RS_COLORKEYENABLE] || rs_[RS_ALPHABLENDENABLE]) ? 0.5f : 0.0f;
   b.ctx->UpdateSubresource(g.cb, 0, nullptr, &pc, 0, 0);
   const UINT vstride = sizeof(PassVertex), zero = 0;
   b.ctx->IASetInputLayout(g.layout);
