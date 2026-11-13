@@ -12,6 +12,7 @@
 
 void ApplyStep1Fixes();
 void ApplyStartupFixes();
+void ApplyDpiAwareness();
 void ApplyRegistryFixes();
 void ApplyFileFixes();
 void ApplyDiagnostics();
@@ -72,6 +73,8 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved) {
                  c.fov, c.anisotropy, c.msaa, c.mip_bias, c.fog_scale, c.view_distance, c.model_lod, c.tree_always_near ? 0 : 1,
                  c.texture_replace, c.texture_dump, c.renderer, c.renderer_label, c.d3d9_log);
       simd::Init();
+      if (c.dpi_aware) ApplyDpiAwareness();
+      else patch::Log("dpi: DpiAware=0, Windows scales the game as before");
       if (c.startup) ApplyStartupFixes();
       if (c.registry) ApplyRegistryFixes();
       if (c.files) ApplyFileFixes();

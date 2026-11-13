@@ -14,6 +14,7 @@ struct Config {
   bool fast_crt = true;
   bool simd = true;           // Simd: SSE2 fast paths for mcm2fix's own pixel and vertex work, when the CPU has SSE2 (simd.cpp)
   bool simd_log = false;      // SimdLog: time the SSE2 and plain paths at start-up, and log their use every 5 s
+  bool dpi_aware = true;     // DpiAware: tell Windows the game is DPI aware (no scaling blur, no mouse drift) (fixes_startup.cpp)
   int race_power = 1;        // RacePower: 1 = High performance power plan while racing, 2 = while the game runs (power.cpp)
   bool fast_game_code = true;  // FastGameCode: badly compiled game loops rewritten in place, same results (fixes_perf.cpp)
   int async_sound = 2;        // AsyncSound: 3D sound listener commit on a worker thread; 2 = started at Present (fixes_perf.cpp)

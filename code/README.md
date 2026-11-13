@@ -487,6 +487,12 @@ Simd=1
 ; start-up, and how much work went through them every 5 seconds.
 SimdLog=0
 
+; DpiAware: 1 = tell Windows the game handles display scaling itself, so with
+; scaling above 100% it runs at the screen's real resolution instead of being
+; stretched (blurry, with a drifting menu mouse) (default). 0 = Windows
+; scales the game as before.
+DpiAware=1
+
 ; RacePower: keeps the CPU at full speed while racing. The game needs so
 ; little CPU that on the Balanced power plan Windows lowers the clock while
 ; it waits for VSync, and some frames then run late (regular stutter,
