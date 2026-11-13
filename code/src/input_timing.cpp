@@ -35,6 +35,22 @@
 //     that were down in any sample since the last read count as down.
 // Outside races everything goes through as before (apart from the keyboard
 // read being limited to the 15 events the game's buffer holds).
+//
+// Alt-tab (AltTabFix=1, also needs InputTiming=1). The game sets its keyboard
+// and joysticks to foreground mode, so Windows takes them away when the game
+// loses focus and any key let go meanwhile never sends its release: back in
+// the game the key still counts as held (steering, throttle stuck). Worse,
+// the keyboard read 0x4c8d30 starts with GetDeviceState and only re-acquires
+// on DIERR_INPUTLOST; once DirectInput answers DIERR_NOTACQUIRED it gives up
+// for that step, every step. Now:
+//   - when the keyboard is lost while the game is not in front, every key the
+//     game thinks is down gets a release event, and the reads succeed with no
+//     keys down until the game is in front again;
+//   - a read that finds a device lost while the game is in front acquires it
+//     again;
+//   - after a device comes back, its state is read and every key/button the
+//     game thinks is down but is up gets a release, and buffered joystick
+//     axes get their current value.
 #include "input_timing.h"
 
 #include <windows.h>
@@ -67,7 +83,7 @@ const GUID kIID_Dev7W = {0x57D7C6BD, 0x2356, 0x11D3, {0x8E, 0x9D, 0x00, 0xC0, 0x
 
 // IDirectInput7 and IDirectInputDevice7 vtable slots.
 constexpr int kSlotCreateDevice = 3, kSlotCreateDeviceEx = 9;
-constexpr int kSlotRelease = 2, kSlotGetState = 9, kSlotGetData = 10, kSlotSetFormat = 11, kSlotPoll = 25;
+constexpr int kSlotRelease = 2, kSlotAcquire = 7, kSlotGetState = 9, kSlotGetData = 10, kSlotSetFormat = 11, kSlotPoll = 25;
 
 constexpr DWORD kKeyboardMax = 15;  // the game's keyboard event buffer (0x4c8d30) holds 15 events
 constexpr DWORD kJoyButtons = 0x30;  // DIJOYSTATE: buttons from byte 48
@@ -91,6 +107,9 @@ struct Device {
   DWORD format_size = 0;  // SetDataFormat dwDataSize
   std::deque<DiData> queue;          // buffered events not yet given to the game
   std::map<DWORD, unsigned> down_step;  // object -> step id its last press was given in
+  std::map<DWORD, DWORD> given;      // object -> last value given to the game (buffered reads)
+  bool away = false;                 // lost while the game was not in front: resync when back
+  bool polled_lost = false;          // Poll failed (joystick): resync at the next good read
   // Immediate joystick reads.
   DWORD state_size = 0;      // size the game reads with
   LONGLONG last_read = 0;    // QPC of the game's last read (thread samples while recent)
@@ -136,6 +155,7 @@ Step g_step;
 Stats g_stats;
 LARGE_INTEGER g_freq{};
 bool g_log = false;
+bool g_alt_tab = false;
 int g_log_left = 3000;
 DWORD g_last_summary = 0;
 HANDLE g_thread = nullptr;
@@ -288,6 +308,7 @@ void NoteGiven(Device& d, const DiData& e) {
     ++g_stats.bad_stamps;
   }
   if (IsButton(d, e.ofs) && (e.data & 0x80)) d.down_step[e.ofs] = g_step.id;
+  d.given[e.ofs] = e.data;
   if (Detail())
     patch::Log("input: %s %d: step %d/%d (#%u, %s) gives ofs=0x%02lx %s=%lu stamp=%lu age=%d ms cut=%d ms ago",
                KindName(d.kind), d.number, g_step.index + 1, g_step.count, g_step.id,
@@ -295,6 +316,108 @@ void NoteGiven(Device& d, const DiData& e) {
                e.ofs, IsButton(d, e.ofs) ? ((e.data & 0x80) ? "down" : "up") : "value", e.data,
                e.time, static_cast<int>(now_ms - e.time),
                (g_step.in_step && !g_step.final) ? static_cast<int>(now_ms - g_step.cut_ms) : 0);
+}
+
+// ---------------------------------------------------------------- alt-tab
+
+bool IsLost(HRESULT hr) {
+  return hr == static_cast<HRESULT>(0x8007001E) || hr == static_cast<HRESULT>(0x8007000C);  // INPUTLOST, NOTACQUIRED
+}
+
+bool GameInFront() {
+  HWND w = GetForegroundWindow();
+  DWORD pid = 0;
+  if (w) GetWindowThreadProcessId(w, &pid);
+  return pid == GetCurrentProcessId();
+}
+
+const char* LostName(HRESULT hr) {
+  return hr == static_cast<HRESULT>(0x8007001E) ? "INPUTLOST" : hr == static_cast<HRESULT>(0x8007000C) ? "NOTACQUIRED" : "error";
+}
+
+// The value each object has once the game has taken everything queued.
+std::map<DWORD, DWORD> Effective(const Device& d) {
+  std::map<DWORD, DWORD> v = d.given;
+  for (const DiData& e : d.queue) v[e.ofs] = e.data;
+  return v;
+}
+
+void Synth(Device& d, DWORD ofs, DWORD value) {
+  DiData e;
+  e.ofs = ofs;
+  e.data = value;
+  e.time = GetTickCount();
+  e.seq = 0;
+  d.queue.push_back(e);
+}
+
+void ListOfs(char* out, size_t n, const std::vector<DWORD>& ofs) {
+  size_t k = 0;
+  out[0] = 0;
+  for (DWORD o : ofs) {
+    if (k + 8 >= n) break;
+    k += static_cast<size_t>(wsprintfA(out + k, " 0x%02lx", o));
+  }
+}
+
+// Lost while away from the game: release everything it thinks is down.
+void ReleaseAll(Device& d, HRESULT why) {
+  std::vector<DWORD> rel;
+  for (const auto& kv : Effective(d))
+    if (IsButton(d, kv.first) && (kv.second & 0x80)) {
+      Synth(d, kv.first, 0);
+      rel.push_back(kv.first);
+    }
+  char list[200];
+  ListOfs(list, sizeof(list), rel);
+  patch::Log("input: alt-tab: %s %d lost (%s) with the game not in front; %u held key(s)/button(s) released:%s",
+             KindName(d.kind), d.number, LostName(why), static_cast<unsigned>(rel.size()), list);
+}
+
+// Back after a loss: anything the game thinks is down but isn't gets a
+// release; buffered joystick axes get their current value.
+void Resync(Device& d, void* self, const char* how) {
+  uint8_t s[sizeof(Sample::s)] = {};
+  const DWORD size = d.format_size ? d.format_size : (d.kind == kKeyboard ? 256 : 0);
+  HRESULT hr = size && size <= sizeof(s) ? reinterpret_cast<GetStateFn>(Orig(self, kSlotGetState))(self, size, s) : E_FAIL;
+  if (FAILED(hr)) {
+    patch::Log("input: alt-tab: %s %d back (%s) but its state could not be read (hr=0x%08lx, %lu bytes); nothing released",
+               KindName(d.kind), d.number, how, hr, size);
+    return;
+  }
+  std::vector<DWORD> rel, axes;
+  for (const auto& kv : Effective(d)) {
+    const DWORD ofs = kv.first;
+    if (IsButton(d, ofs)) {
+      if (ofs < size && (kv.second & 0x80) && !(s[ofs] & 0x80)) {
+        Synth(d, ofs, 0);
+        rel.push_back(ofs);
+      }
+    } else if (d.kind == kJoystick && ofs + 4 <= size) {
+      DWORD now;
+      std::memcpy(&now, s + ofs, 4);
+      if (now != kv.second) {
+        Synth(d, ofs, now);
+        axes.push_back(ofs);
+      }
+    }
+  }
+  char a[200], b[200];
+  ListOfs(a, sizeof(a), rel);
+  ListOfs(b, sizeof(b), axes);
+  patch::Log("input: alt-tab: %s %d back (%s): %u key(s)/button(s) let go meanwhile released:%s; %u axes updated:%s",
+             KindName(d.kind), d.number, how, static_cast<unsigned>(rel.size()), a, static_cast<unsigned>(axes.size()), b);
+}
+
+HRESULT TryAcquire(Device& d, void* self, HRESULT why) {
+  HRESULT hr = reinterpret_cast<PollFn>(Orig(self, kSlotAcquire))(self);
+  static int logged = 0;
+  if (logged < 50) {
+    ++logged;
+    patch::Log("input: alt-tab: %s %d %s with the game in front; acquired again: hr=0x%08lx", KindName(d.kind),
+               d.number, LostName(why), hr);
+  }
+  return hr;
 }
 
 HRESULT WINAPI MyGetData(void* self, DWORD cb, DiData* data, DWORD* inout, DWORD flags) {
@@ -308,6 +431,20 @@ HRESULT WINAPI MyGetData(void* self, DWORD cb, DiData* data, DWORD* inout, DWORD
     return get(self, cb, data, inout, flags);
   }
   HRESULT hr = Drain(*d, self);
+  if (g_alt_tab && IsLost(hr)) {
+    if (GameInFront() && SUCCEEDED(TryAcquire(*d, self, hr))) {
+      hr = Drain(*d, self);
+      if (SUCCEEDED(hr)) Resync(*d, self, "acquired again by mcm2fix");
+      d->away = d->polled_lost = false;
+    } else if (d->kind == kKeyboard) {
+      if (!d->away) ReleaseAll(*d, hr);
+      d->away = true;
+      hr = S_OK;  // the releases (or nothing) go to the game
+    }
+  } else if (g_alt_tab && SUCCEEDED(hr) && (d->away || d->polled_lost)) {
+    Resync(*d, self, d->away ? "game in front again" : "acquired again by the game");
+    d->away = d->polled_lost = false;
+  }
   if (FAILED(hr)) return hr;  // lost/not acquired: the game re-acquires and reads again; queue kept
   DWORD limit = *inout;
   if (d->kind == kKeyboard && limit > kKeyboardMax) {
@@ -391,6 +528,22 @@ HRESULT WINAPI MyGetState(void* self, DWORD cb, void* out) {
   Lock lock;
   Device* d = Find(self);
   auto get = reinterpret_cast<GetStateFn>(Orig(self, kSlotGetState));
+  if (d && d->kind == kKeyboard && g_alt_tab && out) {
+    HRESULT hr = get(self, cb, out);
+    if (!IsLost(hr)) return hr;
+    if (GameInFront() && SUCCEEDED(TryAcquire(*d, self, hr))) {
+      hr = get(self, cb, out);
+      if (SUCCEEDED(hr)) d->away = true;  // the next buffered read resyncs
+      if (!IsLost(hr)) return hr;
+    }
+    // Not in front (or can't acquire): no keys down; the buffered read gives the releases.
+    if (!d->away) {
+      ReleaseAll(*d, hr);
+      d->away = true;
+    }
+    std::memset(out, 0, cb);
+    return S_OK;
+  }
   if (!d || d->kind != kJoystick || !out || cb > sizeof(Sample::s)) return get(self, cb, out);
   const LONGLONG now = Now();
   if (d->state_size != cb) {
@@ -423,6 +576,10 @@ HRESULT WINAPI MyGetState(void* self, DWORD cb, void* out) {
     }
   }
   HRESULT hr = get(self, cb, out);
+  if (SUCCEEDED(hr) && d->polled_lost && d->given.empty()) {
+    patch::Log("input: alt-tab: joystick %d back (read immediately, nothing to resync)", d->number);
+    d->polled_lost = false;
+  }
   if (SUCCEEDED(hr) && use) {
     unsigned added = OrButtons(*d, d->served_to, now, static_cast<uint8_t*>(out));
     g_stats.or_buttons += added;
@@ -466,6 +623,19 @@ DWORD WINAPI PollThread(void*) {
   return 0;
 }
 
+HRESULT WINAPI MyPoll(void* self) {
+  HRESULT hr = reinterpret_cast<PollFn>(Orig(self, kSlotPoll))(self);
+  if (g_alt_tab && IsLost(hr)) {
+    Lock lock;
+    if (Device* d = Find(self)) {
+      if (!d->polled_lost) patch::Log("input: alt-tab: %s %d lost (%s, game %s)", KindName(d->kind), d->number,
+                                      LostName(hr), GameInFront() ? "in front" : "not in front");
+      d->polled_lost = true;
+    }
+  }
+  return hr;
+}
+
 // ---------------------------------------------------------------- device lifetime
 
 ULONG WINAPI MyRelease(void* self) {
@@ -507,6 +677,7 @@ void Register(void* dev, REFGUID guid, const GUID* iid) {
   Hook(dev, kSlotGetState, reinterpret_cast<void*>(&MyGetState));
   Hook(dev, kSlotGetData, reinterpret_cast<void*>(&MyGetData));
   Hook(dev, kSlotSetFormat, reinterpret_cast<void*>(&MySetFormat));
+  if (d->has_poll) Hook(dev, kSlotPoll, reinterpret_cast<void*>(&MyPoll));
   patch::Log("input: %s %d created (%p, vtable %p, %s)", KindName(d->kind), d->number, dev,
              *reinterpret_cast<void**>(dev), d->has_poll ? "Device2+" : "Device");
   if (d->kind == kJoystick && !g_thread && d->has_poll) {
@@ -555,6 +726,7 @@ void Apply() {
   QueryPerformanceFrequency(&g_freq);
   InitializeCriticalSection(&g_cs);
   g_log = c.input_log;
+  g_alt_tab = c.alt_tab_fix;
   constexpr uintptr_t kDirectInputCreateEx = 0x555028;  // DINPUT!DirectInputCreateEx
   if (!*reinterpret_cast<void**>(kDirectInputCreateEx)) {
     patch::Log("input: DirectInputCreateEx import not bound, InputTiming not installed");
@@ -563,8 +735,8 @@ void Apply() {
   g_create = reinterpret_cast<CreateExFn>(
       patch::HookIat(kDirectInputCreateEx, reinterpret_cast<void*>(&MyDirectInputCreateEx)));
   g_enabled = true;
-  patch::Log("input: InputTiming=1 (InputLog=%d): race steps get the input of their own time slice, taps held one step",
-             g_log ? 1 : 0);
+  patch::Log("input: InputTiming=1 (InputLog=%d, AltTabFix=%d): race steps get the input of their own time slice, taps held one step",
+             g_log ? 1 : 0, g_alt_tab ? 1 : 0);
 }
 
 void BeginStep(LONGLONG now, double behind, int index, int count, bool racing) {

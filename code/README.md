@@ -387,6 +387,13 @@ SimSmooth=1
 ; missed.
 InputTiming=1
 
+; AltTabFix: 1 = keys and buttons let go while the game was in the background
+; are released when it comes back, and a keyboard or joystick Windows took
+; away is acquired again (default; needs InputTiming=1). 0 = the original:
+; such keys stay held until pressed again, and the keyboard can stop working
+; after alt-tab.
+AltTabFix=1
+
 ; PreciseTimer: 1 = the game's frame time is measured with the precise
 ; QueryPerformanceCounter instead of whole milliseconds (default). Only used
 ; with SimRate=0; with SimRate the precise timer is always used.
@@ -412,6 +419,11 @@ AiRate=30
 ; second. 0 = no limit, as in the original (default). Values change how the
 ; AI rides.
 AiSteerRate=0
+
+; AiPickFix: 1 = computer riders' random bike and rider picks can choose the
+; last entry in the list (default). 0 = the original off-by-one: the last bike
+; and rider are never picked.
+AiPickFix=1
 
 ; RestartFix: 1 = "Restart Race" in the pause menu puts every rider back on
 ; their start position facing the course, and FINAL LAP shows again on the

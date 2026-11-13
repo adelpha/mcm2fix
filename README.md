@@ -67,6 +67,8 @@ Windows 10 and 11.
 | Texture formats are always 16-bit, because of a bug in the game's 32-bit format description. | Fixed (`TrueColorTextures`), plus full 32-bit texture replacements. |
 | Distant riders' engines play quiet looping snippets of old sounds. The game re-sorts its engine voices on every update with the C library's qsort, which is unstable: riders with equal priority swap places, so their voices are handed around and restarted. | The game's sorts use a stable merge sort (`FastSort`), so voices stay with their rider. |
 | With EAX (DSOAL or an EAX sound card), outdoor events ask for "reverb off" with values OpenAL Soft rejects, so whatever reverb was set before (for example Arena after a Supercross race) stays on. | Each outdoor event gets a real outdoor reverb preset (`BajaReverb` and the other `*Reverb` settings). |
+| After alt-tabbing out of a race, keys let go while away stay held (the bike keeps steering or accelerating), and the keyboard can stop responding until restart: the game only re-acquires it after one kind of DirectInput error. | Keys and buttons let go while away are released, and the keyboard and joysticks are acquired again when the game is back in front (`AltTabFix`). |
+| Computer riders never pick the last bike or rider in the lists: the game's random pick is one short. | Every bike and rider can be picked (`AiPickFix`). |
 | DSOAL ignores the game's "mute at max distance" flag, so riders out of earshot can still be heard quietly. | With a replacement DirectSound such as DSOAL, mcm2fix mutes 3D sounds past their max distance itself (`SoundMaxDistanceMute`). |
 
 ## Features
@@ -465,6 +467,8 @@ troubleshooting.
 | `FrameFix` | `1` | `0`, `1` | Some effects the game applies once per step rather than per second (steering and lean speed, spin damping, bodies coming to rest, camera zoom) are scaled to the real step length. With `SimRate=30` and `RefRate=30`, race steps are unchanged; it matters in menus and with `SimRate=0`. |
 | `RefRate` | `30` | 10-240 | The step rate `FrameFix` treats those effects as tuned for. |
 | `AiRate` | `30` | `0`, steps/s | Computer riders re-plan their racing line at most this many times a second (`0` = every step). It only has an effect when lower than `SimRate`, or with `SimRate=0`. |
+| `AltTabFix` | `1` | `0`, `1` | Needs `InputTiming=1`. Keys and buttons let go while the game was in the background are released when it comes back, and a keyboard or joystick Windows took away is acquired again. `0` = the original: such keys stay held until pressed again, and the keyboard can stop working after alt-tab. |
+| `AiPickFix` | `1` | `0`, `1` | Computer riders' random bike and rider picks can choose the last entry in the list. `0` = the original off-by-one: the last bike and rider are never picked. |
 | `AiSteerRate` | `0` | `0`, degrees/s | The fastest a computer rider's front wheel can turn (`0` = no limit, as in the original). Other values change how the AI rides. |
 | `RestartFix` | `1` | `0`, `1` | Restart Race puts every rider back on their start position facing the course, and FINAL LAP shows again. `0` = the original bugs: riders who had crashed or left the track restart in the wrong place or facing the wrong way. |
 

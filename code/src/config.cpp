@@ -63,6 +63,7 @@ void LoadConfig() {
     }
     g_config.ai_log = GetPrivateProfileIntA("mcm2fix", "AiLog", 0, ini) != 0;
   }
+  g_config.ai_pick_fix = GetPrivateProfileIntA("mcm2fix", "AiPickFix", 1, ini) != 0;
   g_config.ai_steer_rate = GetPrivateProfileIntA("mcm2fix", "AiSteerRate", 0, ini);
   if (g_config.ai_steer_rate < 0) g_config.ai_steer_rate = 0;
   g_config.smooth_log = GetPrivateProfileIntA("mcm2fix", "SmoothLog", 0, ini);
@@ -101,6 +102,7 @@ void LoadConfig() {
   if (g_config.tree_cache_mb > 512) g_config.tree_cache_mb = 512;
   g_config.sort_log = GetPrivateProfileIntA("mcm2fix", "SortLog", 0, ini) != 0;
   g_config.input_timing = GetPrivateProfileIntA("mcm2fix", "InputTiming", 1, ini) != 0;
+  g_config.alt_tab_fix = GetPrivateProfileIntA("mcm2fix", "AltTabFix", 1, ini) != 0;
   g_config.input_log = GetPrivateProfileIntA("mcm2fix", "InputLog", 0, ini) != 0;
   g_config.sound_log = GetPrivateProfileIntA("mcm2fix", "SoundLog", 0, ini) != 0;
   {
