@@ -92,6 +92,7 @@ void LoadConfig() {
   g_config.fast_crt = GetPrivateProfileIntA("mcm2fix", "FastCrt", 1, ini) != 0;
   g_config.simd = GetPrivateProfileIntA("mcm2fix", "Simd", 1, ini) != 0;
   g_config.simd_log = GetPrivateProfileIntA("mcm2fix", "SimdLog", 0, ini) != 0;
+  g_config.pause_on_focus_loss = GetPrivateProfileIntA("mcm2fix", "PauseOnFocusLoss", 1, ini) != 0;
   g_config.dpi_aware = GetPrivateProfileIntA("mcm2fix", "DpiAware", 1, ini) != 0;
   g_config.race_power = GetPrivateProfileIntA("mcm2fix", "RacePower", 1, ini);
   g_config.fast_game_code = GetPrivateProfileIntA("mcm2fix", "FastGameCode", 1, ini) != 0;

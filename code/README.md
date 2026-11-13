@@ -494,6 +494,11 @@ Simd=1
 ; start-up, and how much work went through them every 5 seconds.
 SimdLog=0
 
+; PauseOnFocusLoss: 1 = switching away from the game mid-race opens the pause
+; menu, as Escape does (default). 0 = the race isn't paused (the game still
+; stops while in the background, and its clock with it).
+PauseOnFocusLoss=1
+
 ; DpiAware: 1 = tell Windows the game handles display scaling itself, so with
 ; scaling above 100% it runs at the screen's real resolution instead of being
 ; stretched (blurry, with a drifting menu mouse) (default). 0 = Windows

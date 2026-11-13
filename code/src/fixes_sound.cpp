@@ -849,7 +849,7 @@ HRESULT WINAPI MyDirectSoundCreate(const GUID* dev, void** out, void* outer) {
     Hook(*out, 0xc / 4, reinterpret_cast<void*>(&CreateSoundBuffer));
     Hook(*out, 0x14 / 4, reinterpret_cast<void*>(&DuplicateSoundBuffer));
     Hook(*out, 0x18 / 4, reinterpret_cast<void*>(&SetCooperativeLevel));
-    if (g_pause_log) Hook(*out, 2, reinterpret_cast<void*>(&Release));  // device gone: forget its buffers
+    Hook(*out, 2, reinterpret_cast<void*>(&Release));  // device gone: forget it and its buffers (BackgroundMute, SoundPauseLog)
     HMODULE m = nullptr;
     char path[MAX_PATH] = {};
     if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
