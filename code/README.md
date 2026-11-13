@@ -216,16 +216,17 @@ Reflections=0
 ; (bike and helmet 0.35, rider 0.1); real paint and plastic shine mostly at
 ; the edges, higher values look more like chrome.
 ; ...Blur: how soft the reflection is, 0 = mirror-sharp, up to 8 (bike and
-; helmet 0.5, rider 3, like fabric). ReflectStrength multiplies all of them.
+; all 4; lower values show a hard horizon line on the helmet). ReflectStrength
+; multiplies all of them.
 ReflectBike=1
 ReflectBikeFresnel=0.35
-ReflectBikeBlur=0.5
+ReflectBikeBlur=4
 ReflectHelmet=1
 ReflectHelmetFresnel=0.35
-ReflectHelmetBlur=0.5
+ReflectHelmetBlur=4
 ReflectRider=0.25
 ReflectRiderFresnel=0.1
-ReflectRiderBlur=3
+ReflectRiderBlur=4
 ReflectStrength=1
 
 ; Sun highlight: a shiny spot where the sun (the light that sets the riders'

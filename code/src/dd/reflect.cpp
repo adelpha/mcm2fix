@@ -42,6 +42,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <deque>
 #include <map>
 #include <unordered_map>
 #include <vector>
@@ -83,7 +84,7 @@ struct RCfg {
   float bike = 1.0f;
   float helmet = 1.0f;
   float rider = 0.25f;
-  Mat mats[3] = {{0.35f, 0.5f, 0.6f, 40.0f}, {0.35f, 0.5f, 0.8f, 60.0f}, {0.1f, 3.0f, 0.15f, 8.0f}};
+  Mat mats[3] = {{0.35f, 4.0f, 0.6f, 40.0f}, {0.35f, 4.0f, 0.8f, 60.0f}, {0.1f, 4.0f, 0.15f, 8.0f}};
   float sun = 1.0f;  // ReflectSun: multiplies the sun highlights, 0 = none
   bool debug = false;
   bool liquid = false;  // LiquidMetal: bikes and riders all chrome
@@ -571,8 +572,13 @@ struct CacheEntry {
   float lo[3], hi[3];
   double seen = 0;
   unsigned seen_frame = 0;
+  unsigned serial = 0;
 };
 std::unordered_map<uint64_t, CacheEntry> g_cache;
+// Entries in the order their room was taken (both rings fill in this order,
+// so the oldest are in the way first): key and serial.
+std::deque<std::pair<uint64_t, unsigned>> g_cache_order;
+unsigned g_cache_serial = 0;
 std::vector<const CacheEntry*> g_cache_draw;  // this cube update's
 float g_cache_radius_used = 0;
 unsigned g_cache_frame = 1;  // frames recorded (the cache's own count)
@@ -589,28 +595,42 @@ void ReleaseEntry(CacheEntry& e) {
 void ClearCache() {
   for (auto& kv : g_cache) ReleaseEntry(kv.second);
   g_cache.clear();
+  g_cache_order.clear();
   g.cvb_pos = g.cib_pos = 0;
 }
 
-// Room for `bytes` in a ring buffer of `size`: the offset (wrapping to the
-// start), entries in the way are dropped.
-UINT CacheAlloc(UINT& pos, UINT size, UINT bytes, UINT align, bool vertex) {
-  UINT at = (pos + align - 1) / align * align;
-  if (at + bytes > size) at = 0;
-  pos = at + bytes;
-  for (auto it = g_cache.begin(); it != g_cache.end();) {
-    const CacheEntry& e = it->second;
-    const UINT a = vertex ? e.vbyte : e.ibyte, n = vertex ? e.vbytes : e.ibytes;
-    if (n && a < at + bytes && at < a + n) {
-      ReleaseEntry(it->second);
-      it = g_cache.erase(it);
-      ++g_cs.evicted;
-    } else {
-      ++it;
+// Room for an entry's vertices and indices in the two ring buffers (each
+// wraps to its start when full); the oldest entries in the way go.
+void CacheAlloc(UINT vbytes, UINT ibytes, UINT stride, UINT* vat, UINT* iat) {
+  const UINT vpos = (g.cvb_pos + stride - 1) / stride * stride, ipos = (g.cib_pos + 3) / 4 * 4;
+  const bool vwrap = vpos + vbytes > g.cvb_size, iwrap = ibytes && ipos + ibytes > g.cib_size;
+  *vat = vwrap ? 0 : vpos;
+  *iat = !ibytes ? 0 : iwrap ? 0 : ipos;
+  g.cvb_pos = *vat + vbytes;
+  if (ibytes) g.cib_pos = *iat + ibytes;
+  while (!g_cache_order.empty()) {
+    const auto f = g_cache_order.front();
+    auto it = g_cache.find(f.first);
+    if (it == g_cache.end() || it->second.serial != f.second) {
+      g_cache_order.pop_front();  // already gone
+      continue;
     }
+    const CacheEntry& e = it->second;
+    const bool in_v = e.vbyte < *vat + vbytes && *vat < e.vbyte + e.vbytes;
+    const bool in_i = ibytes && e.ibytes && e.ibyte < *iat + ibytes && *iat < e.ibyte + e.ibytes;
+    // After a wrap, what is left at the ring's end is older than anything at
+    // its start: it goes first.
+    const bool tail = (vwrap && e.vbyte >= *vat + vbytes) || (iwrap && e.ibytes && e.ibyte >= *iat + ibytes);
+    if (!in_v && !in_i && !tail) break;
+    ReleaseEntry(it->second);
+    g_cache.erase(it);
+    g_cache_order.pop_front();
+    ++g_cs.evicted;
   }
-  return at;
 }
+
+// Draw cache key: positions rounded to this (world units).
+constexpr float kCacheGrid = 8.0f;
 
 uint64_t Fnv(uint64_t h, const void* p, size_t n) {
   const uint8_t* b = static_cast<const uint8_t*>(p);
@@ -1332,16 +1352,30 @@ void Device::ReflectCache(const ReflectReplay& r, const uint8_t* cpu, UINT cpu_s
     const ReflectSub& sd = subs[si];
     if (!sd.nverts || (r.indexed && !sd.nidx)) continue;
     const uint8_t* pv = cpu + static_cast<size_t>(sd.vstart) * cpu_stride;
-    // Key: texture, world, sizes and a few positions.
+    // Key: texture, world, sizes, and where it is (the bounds of a few of
+    // its vertices, rounded): terrain that morphs between detail levels as
+    // the camera moves stays the same entry.
+    float slo[3] = {1e30f, 1e30f, 1e30f}, shi[3] = {-1e30f, -1e30f, -1e30f};
+    const DWORD step = sd.nverts > 16 ? sd.nverts / 16 : 1;
+    auto take = [&](DWORD i) {
+      float p[3];
+      std::memcpy(p, pv + static_cast<size_t>(i) * cpu_stride, 12);
+      for (int k = 0; k < 3; ++k) slo[k] = std::min(slo[k], p[k]), shi[k] = std::max(shi[k], p[k]);
+    };
+    for (DWORD i = 0; i < sd.nverts; i += step) take(i);
+    take(sd.nverts - 1);
+    int32_t q[6];
+    for (int k = 0; k < 3; ++k) {
+      q[k] = static_cast<int32_t>(std::floor(slo[k] * (1.0f / kCacheGrid)));
+      q[3 + k] = static_cast<int32_t>(std::floor(shi[k] * (1.0f / kCacheGrid)));
+    }
     uint64_t h = 1469598103934665603ull;
     h = Fnv(h, &r.srv[0], sizeof(r.srv[0]));
     h = Fnv(h, w, sizeof(w));
     h = Fnv(h, &sd.nverts, sizeof(sd.nverts));
     h = Fnv(h, &sd.nidx, sizeof(sd.nidx));
     h = Fnv(h, &r.topo, sizeof(r.topo));
-    const DWORD step = sd.nverts > 16 ? sd.nverts / 16 : 1;
-    for (DWORD i = 0; i < sd.nverts; i += step) h = Fnv(h, pv + static_cast<size_t>(i) * cpu_stride, 12);
-    h = Fnv(h, pv + static_cast<size_t>(sd.nverts - 1) * cpu_stride, 12);
+    h = Fnv(h, q, sizeof(q));
     auto it = g_cache.find(h);
     if (it != g_cache.end()) {
       CacheEntry& e = it->second;
@@ -1379,12 +1413,9 @@ void Device::ReflectCache(const ReflectReplay& r, const uint8_t* cpu, UINT cpu_s
       }
     }
     if (!(e.lo[0] <= e.hi[0])) continue;
-    e.vbyte = CacheAlloc(g.cvb_pos, g.cvb_size, vbytes, gpu_stride, true);
+    CacheAlloc(vbytes, ibytes, gpu_stride, &e.vbyte, &e.ibyte);
     e.vbytes = vbytes;
-    if (ibytes) {
-      e.ibyte = CacheAlloc(g.cib_pos, g.cib_size, ibytes, 4, false);
-      e.ibytes = ibytes;
-    }
+    e.ibytes = ibytes;
     const UINT src_v = static_cast<UINT>(r.base_vertex + static_cast<INT>(sd.vstart)) * gpu_stride;
     D3D11_BOX box{src_v, 0, 0, src_v + vbytes, 1, 1};
     b.ctx->CopySubresourceRegion(g.cvb, 0, e.vbyte, 0, 0, vbuf_, 0, &box);
@@ -1397,7 +1428,9 @@ void Device::ReflectCache(const ReflectReplay& r, const uint8_t* cpu, UINT cpu_s
       if (sv) sv->AddRef();
     e.seen = now;
     e.seen_frame = g_cache_frame;
+    e.serial = ++g_cache_serial;
     g_cache.emplace(h, e);
+    g_cache_order.emplace_back(h, e.serial);
     ++g_cs.inserts;
     g_cs.copied += vbytes + ibytes;
   }
