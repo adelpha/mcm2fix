@@ -206,9 +206,9 @@ AlphaToCoverage=2
 ; are never blurred. 0 = off (default).
 MotionBlur=0
 
-; MotionBlurStrength: length of the streaks at full speed, in percent of the
-; default, 0 to 300. Default 100.
-MotionBlurStrength=100
+; MotionBlurStrength: length of the streaks at full speed, in percent (higher
+; = longer streaks), 0 to 300. Default 80.
+MotionBlurStrength=80
 
 ; MotionBlurMinSpeed / MotionBlurMaxSpeed: speedometer speeds (mph) where the
 ; blur starts and where it is at full strength. Defaults 30 and 70.

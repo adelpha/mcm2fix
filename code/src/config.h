@@ -82,7 +82,7 @@ struct Config {
   bool alpha_log = false;    // AlphaLog: log each blended/alpha-tested draw combination and whether AlphaCut applied
   int alpha_cut = 128;        // AlphaCut: alpha-tested blended pixels below this (0-255) are dropped
   int motion_blur = 0;        // MotionBlur: speed-based blur of the 3D scene (not the HUD) at speed (dd/motionblur.cpp)
-  int motion_blur_strength = 100;  // MotionBlurStrength: blur length in percent of the default (0..300)
+  int motion_blur_strength = 80;   // MotionBlurStrength: blur length in percent (100 = 8% of the way to the focus; 0..300)
   int motion_blur_min_speed = 30;  // MotionBlurMinSpeed: mph where the blur starts
   int motion_blur_max_speed = 70;  // MotionBlurMaxSpeed: mph where it is full
   int motion_blur_center = 60;     // MotionBlurCenter: size of the sharp middle, percent of the way to the screen edges
