@@ -26,6 +26,7 @@ The same DLL also runs on **Windows XP SP3**, where it uses Direct3D 9.
 - [What it fixes](#what-it-fixes)
 - [Features](#features)
 - [Requirements](#requirements)
+- [Not yet tested](#not-yet-tested)
 - [Installing](#installing)
 - [Where your settings, saves and logs go](#where-your-settings-saves-and-logs-go)
 - [Uninstalling](#uninstalling)
@@ -180,6 +181,16 @@ Windows 10 and 11.
 - Nothing else. You don't need the DirectX 7 runtime, `d3drm.dll` from an
   old Windows, the Indeo codec or compatibility settings. If you set
   compatibility modes on `Mcm2.exe` earlier, it's best to remove them.
+
+## Not yet tested
+
+These work in principle but have had little or no testing so far. Reports
+are welcome.
+
+- **Windows XP support**: barely tested.
+- **4:3, 16:10, 21:9, 32:9 and 64:27 aspect ratios** with the new HUD, text
+  and other screen layout changes: not tested. Testing so far has been at
+  16:9.
 
 ## Installing
 
