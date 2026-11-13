@@ -130,6 +130,7 @@ bool g_windows_ds = false;
 void* g_primary = nullptr;
 int g_bg_muted = 0;  // 0 = no, 1 = primary volume, 2 = 3D buffers
 LONG g_primary_vol = 0;
+void* g_own_primary = nullptr;  // made by us when the game holds no primary buffer (menus)
 HWND g_coop_hwnd = nullptr;
 DWORD g_coop_level = 0;
 int g_fail_logs = 60;  // failed DirectSound calls logged per run
@@ -946,16 +947,26 @@ void SoundOnActivate(bool active) {
   }
   using GetVolFn = HRESULT(WINAPI*)(void*, LONG*);
   if (!active && !g_bg_muted) {
-    HRESULT hr = E_FAIL, hg = E_FAIL;
-    if (g_primary) {
+    HRESULT hr = E_FAIL, hg = E_FAIL, hc = S_OK;
+    if (!g_primary) {
+      // Between races the game holds no primary buffer: make one of our own
+      // (DirectSound has only one; its volume is the whole device's).
+      BufferDesc d = {};
+      d.size = 20;  // DSBUFFERDESC1 size: works with every DirectSound version
+      d.flags = kCapsPrimary | kCapsCtrlVolume;
+      using Fn = HRESULT(WINAPI*)(void*, BufferDesc*, void**, void*);
+      hc = reinterpret_cast<Fn>(Orig(g_device, 0xc / 4))(g_device, &d, &g_own_primary, nullptr);
+      if (FAILED(hc)) g_own_primary = nullptr;
+    }
+    if (void* p = g_primary ? g_primary : g_own_primary) {
       g_primary_vol = 0;
-      hg = reinterpret_cast<GetVolFn>(Orig(g_primary, 0x18 / 4))(g_primary, &g_primary_vol);
-      hr = reinterpret_cast<SetVolumeFn>(Orig(g_primary, 0x3c / 4))(g_primary, kVolumeMin);
+      hg = reinterpret_cast<GetVolFn>(Orig(p, 0x18 / 4))(p, &g_primary_vol);
+      hr = reinterpret_cast<SetVolumeFn>(Orig(p, 0x3c / 4))(p, kVolumeMin);
     }
     if (SUCCEEDED(hr)) {
       g_bg_muted = 1;
-      patch::Log("sound: game inactive; silenced through the primary buffer (volume was %ld, get %08lx)", g_primary_vol,
-                 static_cast<unsigned long>(hg));
+      patch::Log("sound: game inactive; silenced through %s primary buffer (volume was %ld, get %08lx)",
+                 g_primary ? "the game's" : "our own", g_primary_vol, static_cast<unsigned long>(hg));
       return;
     }
     unsigned n = 0, failed = 0;
@@ -965,14 +976,24 @@ void SoundOnActivate(bool active) {
       else ++failed;
     }
     g_bg_muted = 2;
-    patch::Log("sound: game inactive; primary buffer volume %s (%08lx), so %u 3D buffers silenced instead (%u failed; "
-               "2D sounds keep playing)",
-               g_primary ? "refused" : "unavailable", static_cast<unsigned long>(hr), n, failed);
+    patch::Log("sound: game inactive; primary buffer volume %s (%08lx, own primary %08lx), so %u 3D buffers silenced "
+               "instead (%u failed; 2D sounds keep playing)",
+               g_primary || g_own_primary ? "refused" : "unavailable", static_cast<unsigned long>(hr),
+               static_cast<unsigned long>(hc), n, failed);
+    if (g_own_primary) {
+      reinterpret_cast<ULONG(WINAPI*)(void*)>(Orig(g_own_primary, 2))(g_own_primary);
+      g_own_primary = nullptr;
+    }
   } else if (active && g_bg_muted) {
-    if (g_bg_muted == 1 && g_primary) {
-      const HRESULT hr = reinterpret_cast<SetVolumeFn>(Orig(g_primary, 0x3c / 4))(g_primary, g_primary_vol);
+    void* p = g_primary ? g_primary : g_own_primary;
+    if (g_bg_muted == 1 && p) {
+      const HRESULT hr = reinterpret_cast<SetVolumeFn>(Orig(p, 0x3c / 4))(p, g_primary_vol);
       patch::Log("sound: game active again; primary buffer volume back to %ld (%08lx)", g_primary_vol,
                  static_cast<unsigned long>(hr));
+      if (g_own_primary) {
+        reinterpret_cast<ULONG(WINAPI*)(void*)>(Orig(g_own_primary, 2))(g_own_primary);
+        g_own_primary = nullptr;
+      }
     } else if (g_bg_muted == 2) {
       unsigned n = 0;
       for (Buffer* b : g_buffers) {
