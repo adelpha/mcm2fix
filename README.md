@@ -5,6 +5,12 @@ on modern Windows by double-clicking `Mcm2.exe`. You don't need compatibility
 settings, administrator rights, DirectX wrappers or old codecs, and you don't
 change the game's display resolution.
 
+> **You need the no-CD `Mcm2.exe`.** mcm2fix only works with the widely
+> available no-CD exe (1,577,005 bytes; see [Requirements](#requirements)).
+> The original `Mcm2.exe` from the CD uses SafeDisc copy protection, which
+> Windows 10 and 11 can't run at all, and mcm2fix doesn't patch it. With any
+> other exe mcm2fix does nothing.
+
 It is a single DLL that the game loads in place of `d3drm.dll`, a library
 Windows no longer ships. When the DLL loads, it patches the game's code in
 memory. It brings its own DirectDraw 7 / Direct3D 7 implementation that draws
@@ -20,6 +26,7 @@ The same DLL also runs on **Windows XP SP3**, where it uses Direct3D 9.
 - [What it fixes](#what-it-fixes)
 - [Features](#features)
 - [Requirements](#requirements)
+- [Not yet tested](#not-yet-tested)
 - [Installing](#installing)
 - [Where your settings, saves and logs go](#where-your-settings-saves-and-logs-go)
 - [Uninstalling](#uninstalling)
@@ -58,7 +65,9 @@ Windows 10 and 11.
 | The race direction arrow leans toward the screen centre instead of pointing at the next gate. | Fixed, with a slight top-down tilt and a larger size (`Arrow*`). |
 | Trees and flags show a stair-step fringe that hides things behind them. | Fixed by alpha-test threshold (`AlphaCut`) or, with MSAA, alpha-to-coverage (`AlphaToCoverage`), and transparent texels no longer bleed grey into leaf edges. |
 | Texture formats are always 16-bit, because of a bug in the game's 32-bit format description. | Fixed (`TrueColorTextures`), plus full 32-bit texture replacements. |
-| With DSOAL, distant riders leave quiet looping snippets of old sounds. | With a replacement DirectSound such as DSOAL, mcm2fix mutes 3D sounds past their max distance itself (`SoundMaxDistanceMute`). |
+| Distant riders' engines play quiet looping snippets of old sounds. The game re-sorts its engine voices on every update with the C library's qsort, which is unstable: riders with equal priority swap places, so their voices are handed around and restarted. | The game's sorts use a stable merge sort (`FastSort`), so voices stay with their rider. |
+| With EAX (DSOAL or an EAX sound card), outdoor events ask for "reverb off" with values OpenAL Soft rejects, so whatever reverb was set before (for example Arena after a Supercross race) stays on. | Each outdoor event gets a real outdoor reverb preset (`BajaReverb` and the other `*Reverb` settings). |
+| DSOAL ignores the game's "mute at max distance" flag, so riders out of earshot can still be heard quietly. | With a replacement DirectSound such as DSOAL, mcm2fix mutes 3D sounds past their max distance itself (`SoundMaxDistanceMute`). |
 
 ## Features
 
@@ -112,6 +121,11 @@ Windows 10 and 11.
   They come in the release's `SOUNDS\` folder (`five.wav` ... `one.wav`,
   `airhorn.wav`, `finallap.wav`, `podium.wav`); replace any of them with your
   own WAV of the same name.
+- **EAX reverb per event** (`BajaReverb`, `EnduroReverb`, `QuarryReverb`,
+  `NationalsReverb`, `SupercrossReverb`, `TagReverb`). With EAX, outdoor
+  events get Mountains (Baja, Stunt Quarry) or Forest (Enduro, Nationals)
+  reverb; any EAX 1.0 preset can be chosen per event. See
+  [Sound, EAX and DSOAL](#sound-eax-and-dsoal).
 
 ### Frame pacing and smoothness
 - **Fixed-rate simulation** (`SimRate=30`). The game's physics and AI were
@@ -176,9 +190,23 @@ Windows 10 and 11.
   SafeDisc copy protection, which Windows 10 and 11 cannot run at all.
 - **Windows 10 or 11** with a Direct3D 11 graphics card, or Windows 7/8.
   Windows XP SP3 also works; see [Windows XP](#windows-xp).
+- **A Pentium II / Pentium Pro, AMD Athlon / Duron or newer CPU** (any CPU
+  with the CMOV instruction). The original Pentium, Pentium MMX and AMD K6
+  series (K6-2, K6-III) are not supported; on machines that old, run the
+  original game. No MMX or SSE is needed.
 - Nothing else. You don't need the DirectX 7 runtime, `d3drm.dll` from an
   old Windows, the Indeo codec or compatibility settings. If you set
   compatibility modes on `Mcm2.exe` earlier, it's best to remove them.
+
+## Not yet tested
+
+These work in principle but have had little or no testing so far. Reports
+are welcome.
+
+- **Windows XP support**: barely tested.
+- **4:3, 16:10, 21:9, 32:9 and 64:27 aspect ratios** with the new HUD, text
+  and other screen layout changes: not tested. Testing so far has been at
+  16:9.
 
 ## Installing
 
@@ -290,18 +318,34 @@ never turns on.
 back hardware-style 3D sound and EAX. Put its **32-bit (Win32)** DLLs in the
 game folder. The 64-bit ones are silently ignored by the 32-bit game, which
 then falls back to Windows' own DirectSound. With DSOAL the game finds EAX at
-startup and applies its per-track reverb. mcm2fix works with or without
-DSOAL.
+startup and applies its reverb: Arena in Supercross and Moto-Tag. mcm2fix
+works with or without DSOAL.
+
+For every outdoor event the game asks for "reverb off" with a decay time of
+0, which OpenAL Soft rejects, so the reverb from before stayed on instead.
+mcm2fix sends a real outdoor preset instead: Mountains for Baja and Stunt
+Quarry, Forest for Enduro and Nationals. `BajaReverb`, `EnduroReverb`,
+`QuarryReverb` and `NationalsReverb` take any EAX 1.0 preset name, or
+`Default` for the game's own values. `SupercrossReverb` and `TagReverb` can
+replace the game's Arena reverb in Supercross and Moto-Tag too; they are set
+to `Default`, which keeps the game's Arena.
 
 DSOAL ignores the `DSBCAPS_MUTE3DATMAXDISTANCE` flag that the game sets on
-all its 3D sounds. Riders who were out of earshot then kept playing quiet
-looping fragments of old sounds. `SoundMaxDistanceMute=1` (the default) has
+all its 3D sounds, so riders who are out of earshot can still be heard
+quietly. `SoundMaxDistanceMute=1` (the default) has
 mcm2fix mute 3D sounds beyond their max distance itself, as Windows'
 DirectSound does, when the game is using a replacement DirectSound. With
 Windows' own DirectSound mcm2fix leaves this to Windows: muting on top of it
 made the bike engines go silent after every pause. The game's own sounds fade
 to -20 dB at max distance and then cut off, so a slight snap-off at the edge
 is original behaviour.
+
+The quiet looping snippets of old sounds from distant riders, which first
+looked like a DSOAL problem, came from the game itself and happen with any
+DirectSound. The game re-sorts its engine voices on every update with the C
+library's qsort, which doesn't keep equal entries in order, so voices were
+handed between riders and restarted. `FastSort=1` (the default) replaces
+that sort with a stable one and stops it.
 
 ## mcm2fix.ini reference
 
@@ -370,6 +414,12 @@ The file has three parts:
 | `RaceTitleSize` | `1` | 0.5-2 | Size of that title. |
 | `Announcer` | `1` | `0`, `1` | Plays the WAV files in `SOUNDS\` in the game folder (the release includes all eight; replace any with your own of the same name): `five.wav` ... `one.wav` as the countdown passes 5 ... 1 seconds left, `airhorn.wav` when the race starts, `finallap.wav` when FINAL LAP shows (not in one-lap races, where it would play over the start) and `podium.wav` when the podium cutscene starts. Missing files are skipped. 8 or 16-bit PCM. |
 | `AnnouncerVolume` | `100` | 0-100 | Volume of those sounds, in percent. |
+| `BajaReverb` | `Mountains` | preset name, `Default` | EAX reverb in Baja events. The presets are the 26 EAX 1.0 environments: `Generic`, `PaddedCell`, `Room`, `Bathroom`, `LivingRoom`, `StoneRoom`, `Auditorium`, `ConcertHall`, `Cave`, `Arena`, `Hangar`, `CarpetedHallway`, `Hallway`, `StoneCorridor`, `Alley`, `Forest`, `City`, `Mountains`, `Quarry`, `Plain`, `ParkingLot`, `SewerPipe`, `Underwater`, `Drugged`, `Dizzy`, `Psychotic`. `Default` = the game's own values. Applies to every track raced as that event, add-on tracks included. Needs EAX (DSOAL or an EAX sound card); otherwise it changes nothing. |
+| `EnduroReverb` | `Forest` | preset name, `Default` | The same for Enduro events. |
+| `QuarryReverb` | `Mountains` | preset name, `Default` | The same for Stunt Quarry events. |
+| `NationalsReverb` | `Forest` | preset name, `Default` | The same for Nationals events. |
+| `SupercrossReverb` | `Default` | preset name, `Default` | The same for Supercross events. `Default` keeps the game's Arena reverb. |
+| `TagReverb` | `Default` | preset name, `Default` | The same for Moto-Tag events. `Default` keeps the game's Arena reverb. |
 
 #### Race direction arrow
 
