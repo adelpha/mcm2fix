@@ -865,6 +865,48 @@ bool FindSource(Surface* tex, const RECT& texels, uintptr_t* panel, const Copy**
   return false;
 }
 
+// HUD element base destructor (0x4ba600, called from the five derived
+// destructors). A text panel is forgotten when the game deletes it: before
+// this, g_panels kept panels of finished races and QuadOf read their freed
+// vertices (crash loading a race after another, 2026-11-13, AV in QuadOf).
+const uintptr_t kHudElemDtor = 0x4ba600;
+const uintptr_t kHudElemDtorCalls[] = {0x4ba5e3, 0x51e2c1, 0x51eb0e, 0x520e6d, 0x5225ab};
+using DtorFn = void(__fastcall*)(uintptr_t self, void* edx);
+
+void ForgetPanel(uintptr_t self) {
+  auto it = g_panels.find(self);
+  if (it == g_panels.end()) return;
+  const size_t items = it->second.items.size();
+  g_panels.erase(it);
+  unsigned tex = 0, copies = 0, queued = 0;
+  for (auto t = g_panel_tex.begin(); t != g_panel_tex.end();)
+    if (t->second == self) t = g_panel_tex.erase(t), ++tex;
+    else ++t;
+  for (auto c = g_copies.begin(); c != g_copies.end();) {
+    auto& v = c->second;
+    const size_t before = v.size();
+    v.erase(std::remove_if(v.begin(), v.end(), [self](const Copy& x) { return x.panel == self; }), v.end());
+    copies += static_cast<unsigned>(before - v.size());
+    if (v.empty()) c = g_copies.erase(c);
+    else ++c;
+  }
+  const size_t qb = g_queue.size();
+  g_queue.erase(std::remove_if(g_queue.begin(), g_queue.end(), [self](const Queued& q) { return q.self == self; }),
+                g_queue.end());
+  queued = static_cast<unsigned>(qb - g_queue.size());
+  static unsigned logged = 0;
+  if (++logged <= 40)
+    Log("hud text: panel %08x deleted by the game: forgotten (%u texts, %u texture links, %u copies, %u queued "
+        "draws); %u panels left",
+        static_cast<unsigned>(self), static_cast<unsigned>(items), tex, copies, queued,
+        static_cast<unsigned>(g_panels.size()));
+}
+
+void __fastcall HudElemDtorHook(uintptr_t self, void* edx) {
+  if (self) ForgetPanel(self);
+  reinterpret_cast<DtorFn>(kHudElemDtor)(self, edx);
+}
+
 }  // namespace
 
 bool HudTextScratchDC(HDC dc, Surface* s, void* caller) {
@@ -1023,6 +1065,10 @@ void InstallHudTextHooks() {
   total += 2;
   ok += PatchCall(kStuntTextCall, kBitmapText, reinterpret_cast<const void*>(&StuntTextHook));
   ok += PatchCall(kRaceClockCall, kBitmapText, reinterpret_cast<const void*>(&BitmapTextHook));
+  unsigned dtors = 0;
+  for (uintptr_t site : kHudElemDtorCalls) dtors += PatchCall(site, kHudElemDtor, reinterpret_cast<const void*>(&HudElemDtorHook)) ? 1 : 0;
+  Log("hud text: %u of %u HUD element destructor calls hooked (deleted panels are forgotten)", dtors,
+      static_cast<unsigned>(sizeof(kHudElemDtorCalls) / sizeof(kHudElemDtorCalls[0])));
   Log("hud text: %u of %u HUD panel calls hooked; panels drawn x%.2f", ok, total, Scale());
 }
 
