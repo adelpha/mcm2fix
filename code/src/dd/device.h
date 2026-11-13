@@ -15,6 +15,7 @@
 #include "d3d7.h"
 
 namespace dd {
+struct ReflectReplay;
 
 class DirectDraw;
 class Surface;
@@ -191,6 +192,7 @@ class Device : public d3d7::IDirect3DDevice7 {
     const WORD* idx = nullptr;   // relative to first
     DWORD nidx = 0;
     const VertexBuffer* vb = nullptr;  // for ProcessVertices clip data
+    const uint8_t* game_verts = nullptr;  // the game's own vertex array (before SimSmooth), if known
   };
   void Submit(const Draw& d);
   bool BatchAdd(const Draw& d);
@@ -212,6 +214,25 @@ class Device : public d3d7::IDirect3DDevice7 {
   bool SubmitWideLine(const Draw& d);
   void SubmitDraw(const Draw& d);
   void OccludeText(const Draw& d);
+  // Reflections (reflect.cpp).
+  bool ReflectWants(const Draw& d);
+  void ReflectSky(const Draw& d);
+  void ReflectPass(const Draw& d);
+  void ReflectRecord(const ReflectReplay& r);
+  // Reflections=2 with ReflectCache: one of the game's draws inside a sent
+  // draw (a batch holds several): vertices [vstart, +nverts) and indices
+  // [istart, +nidx) of it.
+  struct ReflectSub {
+    DWORD vstart, nverts, istart, nidx;
+  };
+  // Keep the sent draw `r` (its game draws `subs`, whose positions are at
+  // `cpu` with `cpu_stride`) in the reflection's draw cache.
+  void ReflectCache(const ReflectReplay& r, const uint8_t* cpu, UINT cpu_stride, const ReflectSub* subs, size_t nsubs,
+                    UINT gpu_stride);
+  bool ReflectRecording() const;
+ public:
+  void ReflectEndScene(ID3D11InputLayout* game_layout, UINT game_stride);
+ private:
   // Direct3D 9 (device9.cpp): the fixed-function pipeline does the work.
   bool Init9();
   HRESULT Clear9(DWORD count, d3d7::D3DRECT* rects, DWORD flags, d3d7::D3DCOLOR color, float z);
@@ -268,6 +289,8 @@ class Device : public d3d7::IDirect3DDevice7 {
   UINT vbuf_size_ = 0, vbuf_pos_ = 0;
   ID3D11Buffer* ibuf_ = nullptr;
   UINT ibuf_size_ = 0, ibuf_pos_ = 0;
+  unsigned vgen_ = 0, igen_ = 0;  // times vbuf_/ibuf_ were started over (reflection replays)
+  bool submitting_object_ = false;  // a bike/rider draw, sent unbatched (reflections)
   ID3D11Buffer* vs_cb_ = nullptr;
   ID3D11Buffer* ps_cb_ = nullptr;
   std::map<uint32_t, ID3D11BlendState*> blend_cache_;
@@ -282,6 +305,7 @@ class Device : public d3d7::IDirect3DDevice7 {
     DWORD nverts = 0;
     unsigned draws = 0;
     bool receiver = false;  // terrain patches (rider shadows)
+    std::vector<ReflectSub> subs;  // the game's draws in it (reflection cache)
   };
   Batch batch_, batch_out_;
   bool flushing_ = false;

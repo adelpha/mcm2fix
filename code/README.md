@@ -200,6 +200,88 @@ AlphaCut=128
 ; Direct3D 11 only: the Direct3D 9 renderer uses AlphaCut.
 AlphaToCoverage=2
 
+; Reflections: a soft reflection on the bikes' bodywork, the riders' helmets
+; and, more faintly, their suits. 0 = off. 1 = the track's sky (cheap: the reflection is
+; only redrawn when a new piece of sky comes into view). 2 = live: the sky
+; plus the terrain, trees and track objects around the player's bike, redrawn
+; every frame from the bike's position (ReflectLiveFaces). Behind the
+; camera it shows what was drawn there recently (ReflectCache). Default 2.
+; Direct3D 11 only.
+Reflections=2
+
+; How strongly each kind of surface reflects, 0 to 1, seen edge-on:
+; ReflectBike (bike bodywork, default 1), ReflectHelmet (default 1) and
+; ReflectRider (the rider's suit, gloves and boots, default 0.25).
+; ...Fresnel: the share of that seen when you look straight at the surface
+; (bike and helmet 0.25, rider 0.1); real paint and plastic shine mostly at
+; the edges, higher values look more like chrome.
+; ...Blur: how soft the reflection is, 0 = mirror-sharp, up to 8 (default
+; 4; lower values show a hard horizon line on the helmet). ReflectStrength
+; multiplies all of them.
+ReflectBike=1
+ReflectBikeFresnel=0.25
+ReflectBikeBlur=4
+ReflectHelmet=1
+ReflectHelmetFresnel=0.25
+ReflectHelmetBlur=4
+ReflectRider=0.25
+ReflectRiderFresnel=0.1
+ReflectRiderBlur=4
+ReflectStrength=1
+
+; Sun highlight: a shiny spot where the sun (the light that sets the riders'
+; shadows) glints off the bodywork, helmet and suit. ...Sun: how bright, 0 =
+; none (bike 0.6, helmet 0.7, rider 0.15). ...Shine: how small and sharp the
+; spot is (bike 40, helmet 40, rider 8; higher = smaller, glossier).
+; ReflectSun multiplies all three (0 = no highlights). Tracks without a sun
+; have none.
+ReflectBikeSun=0.6
+ReflectBikeShine=40
+ReflectHelmetSun=0.7
+ReflectHelmetShine=40
+ReflectRiderSun=0.15
+ReflectRiderShine=8
+ReflectSun=1
+
+; ReflectSize: the reflection picture's size per cube side in pixels
+; (default 128; bigger only matters with a low blur).
+; ReflectLiveFaces: Reflections=2 redraws this many of the six cube sides
+; per frame, 1 to 6 (default 1: the whole reflection is fresh every six
+; frames). ReflectGround: brightness of the ground below the horizon in the
+; reflection, as a share of the fog colour (default 1).
+ReflectSize=128
+ReflectLiveFaces=1
+ReflectGround=1
+
+; ReflectCache: with Reflections=2, terrain, trees and track objects drawn
+; in recent frames are kept on the graphics card, so the reflection also
+; shows what is around the bike behind the camera (1, default), not just sky
+; (0). ReflectCacheMB: memory for it (default 32). ReflectCacheSecs: how long
+; something not drawn any more is kept (default 20). ReflectCacheRadius: how
+; far from the bike kept things are reflected (0 = as far as the fog ends,
+; the default).
+ReflectCache=1
+ReflectCacheMB=32
+ReflectCacheSecs=20
+ReflectCacheRadius=0
+
+; Which parts reflect. ReflectBikeTextures: bike textures (name patterns, *
+; matches anything) that reflect at ReflectBike. ReflectHelmetFrames: model
+; parts that reflect at ReflectHelmet (the rider's "Head" is the helmet).
+; ReflectRiderFrames: the rider's body parts, at ReflectRider.
+; ReflectExclude: textures that never reflect (tyres). ReflectTextures /
+; ReflectFrames: more of either, as name:strength, comma separated.
+ReflectBikeTextures=honda*, ktm*, yamaha*, kazuyuki*, suzuki*, kawasaki*, husq*
+ReflectHelmetFrames=Head
+ReflectRiderFrames=PELVIS, LWRTORSO, UPRTORSO, UPRLEG*, LWRLEG*, UPRARM*, LWRARM*, HANDL, HANDR, FOOTL, FOOTR
+ReflectExclude=tire*
+ReflectTextures=
+ReflectFrames=
+
+; LiquidMetal: 1 = "T-1000 mode": every bike and rider is drawn in liquid
+; chrome, reflecting the world around it (uses Reflections=2 if Reflections
+; is 0). Default 0.
+LiquidMetal=0
 ; MotionBlur: 1 = speed blur. Above MotionBlurMinSpeed the edges of the 3D
 ; scene streak towards the point your bike is heading for, more the faster
 ; you go, while the middle of the screen stays sharp. The HUD, text and menus
@@ -690,6 +772,15 @@ FovLog=0
 ; AlphaToCoverage applied to it, plus alpha-to-coverage counts every 10 s.
 ; Default 0.
 AlphaLog=0
+
+; ReflectLog: which bike and rider textures and model parts reflect, the sky
+; tiles kept for Reflections, and every 5 s what the reflections cost.
+; Default 0.
+ReflectLog=0
+
+; ReflectDebug: 1 = draw the reflection alone at full strength on everything
+; that reflects (no Fresnel), to see what is reflected. Default 0.
+ReflectDebug=0
 
 ; MotionBlurLog: with MotionBlur, every 5 s: speed, blur amount and focus
 ; point, where in the frame the blur went, and a few whole-frame draw lists.

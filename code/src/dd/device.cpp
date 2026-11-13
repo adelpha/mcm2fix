@@ -9,6 +9,7 @@
 #include "gputext.h"
 #include "hudtext.h"
 #include "racetitle.h"
+#include "reflect.h"
 
 #include <algorithm>
 #include <cmath>
@@ -827,6 +828,7 @@ bool Device::BatchAdd(const Draw& d) {
     batch_.receiver = receiver;
     batch_.verts.clear();
     batch_.idx.clear();
+    batch_.subs.clear();
     batch_.nverts = 0;
   }
   const size_t stride = d.layout.stride;
@@ -853,6 +855,7 @@ bool Device::BatchAdd(const Draw& d) {
       out[t * 3 + 2] = at(a + 2);
     }
   }
+  batch_.subs.push_back({batch_.nverts, d.count, static_cast<DWORD>(o), static_cast<DWORD>(tris * 3)});
   batch_.nverts += d.count;
   ++batch_.draws;
   ++g_bs.merged;
@@ -936,6 +939,7 @@ Device::~Device() {
     }
   if (rt_) rt_->Unhold();
   rt_ = nullptr;
+  ReflectForget();  // the reflection cache holds this device's states
   for (auto& kv : blend_cache_) kv.second->Release();
   for (auto& kv : depth_cache_) kv.second->Release();
   for (auto& kv : raster_cache_) kv.second->Release();
@@ -952,6 +956,7 @@ bool Device::Init() {
   if (IsD3D9()) return Init9();
   g_bound = Bound{};
   if (!InitPipeline()) return false;
+  ReflectInstallHooks();
   Backend& b = B();
   D3D11_BUFFER_DESC bd{};
   bd.Usage = D3D11_USAGE_DYNAMIC;
@@ -1067,6 +1072,7 @@ HRESULT Device::BeginScene() {
 }
 HRESULT Device::EndScene() {
   FlushBatch(kBreakScene);
+  if (ReflectMode() && !IsD3D9()) ReflectEndScene(g_pipe.layout, sizeof(GpuVertex));
   if (MotionBlurOn()) MotionBlurReplay();  // the arrow, if no HUD draw came after the scene
   RaceTitleDraw(rt_);  // countdown race title, under the HUD panels' text
   HudTextFlush();  // race HUD text goes over everything the scene drew
@@ -1353,6 +1359,7 @@ HRESULT Device::DrawPrimitive(DWORD prim, DWORD fvf, void* v, DWORD n, DWORD) {
   d.verts = static_cast<const uint8_t*>(v);
   d.layout = FvfLayout::From(fvf);
   d.count = n;
+  d.game_verts = d.verts;
   SmoothNoteDraw("draw", d.layout.tl, n);
   if (!d.layout.tl) {
     PROF_ZONE(kSmoothVerts);
@@ -1373,6 +1380,7 @@ HRESULT Device::DrawIndexedPrimitive(DWORD prim, DWORD fvf, void* v, DWORD nv, W
   d.count = nv;
   d.idx = idx;
   d.nidx = ni;
+  d.game_verts = d.verts;
   SmoothNoteDraw("drawidx", d.layout.tl, d.count);
   if (!d.layout.tl) {
     PROF_ZONE(kSmoothVerts);
@@ -1425,6 +1433,7 @@ HRESULT Device::DrawPrimitiveStrided(DWORD prim, DWORD fvf, D3DDRAWPRIMITIVESTRI
   d.prim = prim;
   d.verts = buf.data();
   d.count = n;
+  d.game_verts = d.verts;
   SmoothNoteDraw("draw", d.layout.tl, n);
   Submit(d);
   return D3D_OK;
@@ -1442,6 +1451,7 @@ HRESULT Device::DrawIndexedPrimitiveStrided(DWORD prim, DWORD fvf, D3DDRAWPRIMIT
   d.count = nv;
   d.idx = idx;
   d.nidx = ni;
+  d.game_verts = d.verts;
   SmoothNoteDraw("drawidx", d.layout.tl, d.count);
   if (!d.layout.tl) d.verts = SmoothVertices(d.verts, d.layout.stride, nv, idx);
   Submit(d);
@@ -1585,6 +1595,7 @@ UINT Device::PushVertices(UINT bytes, void (*fill)(void* ctx, void* dst), void* 
   if (vbuf_pos_ + bytes > vbuf_size_) {
     vbuf_pos_ = 0;
     map = D3D11_MAP_WRITE_DISCARD;
+    ++vgen_;
   }
   D3D11_MAPPED_SUBRESOURCE m{};
   if (FAILED(b.ctx->Map(vbuf_, 0, map, 0, &m))) return UINT(-1);
@@ -1603,6 +1614,7 @@ UINT Device::PushIndices(const void* data, UINT bytes) {
   if (ibuf_pos_ + need > ibuf_size_) {
     ibuf_pos_ = 0;
     map = D3D11_MAP_WRITE_DISCARD;
+    ++igen_;
   }
   D3D11_MAPPED_SUBRESOURCE m{};
   if (FAILED(b.ctx->Map(ibuf_, 0, map, 0, &m))) return UINT(-1);
@@ -2094,6 +2106,19 @@ void Device::Submit(const Draw& d) {
   if (DrawLogOn()) NoteDrawLog(d);
   if (!d.layout.tl) {
     if (MotionBlurOn() && MotionBlurNote(d, false)) return;
+    // Reflections: bike and rider draws go unbatched, reflective ones with
+    // their reflection drawn on top (reflect.cpp).
+    if (ReflectMode() && !IsD3D9()) {
+      const bool reflect = ReflectWants(d);
+      if (reflect || (ReflectRecording() && ReflectCurrentObject())) {
+        FlushBatch(kBreakShape);
+        submitting_object_ = true;
+        SubmitDraw(d);
+        submitting_object_ = false;
+        if (reflect) ReflectPass(d);
+        return;
+      }
+    }
     if (BatchAdd(d)) return;
     return SubmitDraw(d);
   }
@@ -2309,6 +2334,49 @@ void Device::SubmitDraw(const Draw& d) {
   if (has_depth) Note3DDraw();
   rt_->MarkGpuWritten();
   ++Counters().draws;
+  // Reflections=2: keep world draws (not bikes, riders or the sky) to draw
+  // again into the reflection cube.
+  if (mode == 0 && has_depth && !submitting_object_ && !ReflectCurrentObject() && ReflectRecording() &&
+      !(tex_[0] && IsSkyTextureName(tex_[0]->TextureName()))) {
+    ReflectReplay r{};
+    r.blend = bd.blend;
+    r.depth = bd.depth;
+    r.srv[0] = bd.srv[0];
+    r.srv[1] = bd.srv[1];
+    std::memcpy(r.smp, bd.smp, sizeof(r.smp));
+    r.vs = bd.vs;
+    r.ps = bd.ps;
+    // Rider shadows: the cube gets the plain terrain shader (the shadow
+    // atlas is not bound there, and is not wanted in a reflection).
+    for (int f = 0; f < 2; ++f) {
+      if (r.vs == g_pipe.vs_shadow[f]) r.vs = g_pipe.vs[f];
+      if (r.ps == g_pipe.ps_shadow[f]) r.ps = g_pipe.ps[f];
+    }
+    std::memcpy(r.world, &world_, sizeof(r.world));
+    static_assert(sizeof(PSConstants) <= sizeof(r.pc), "replay constants");
+    std::memcpy(r.pc, &bd.pc, sizeof(PSConstants));
+    r.pc_size = sizeof(PSConstants);
+    r.topo = topo;
+    r.indexed = idx != nullptr;
+    r.nidx = nidx;
+    r.ioff = ioff;
+    r.count = d.count;
+    r.base_vertex = base_vertex;
+    r.vgen = vgen_;
+    r.igen = igen_;
+    ReflectRecord(r);
+    // Kept for later frames (behind the camera), when the draw writes depth.
+    if (rs_[RS_ZWRITEENABLE] && d.verts && d.layout.stride) {
+      if (flushing_) {
+        ReflectCache(r, batch_out_.verts.data(), d.layout.stride, batch_out_.subs.data(), batch_out_.subs.size(),
+                     sizeof(GpuVertex));
+      } else {
+        const ReflectSub one{0, d.count, 0, idx ? nidx : 0};
+        ReflectCache(r, d.verts + static_cast<size_t>(d.first) * d.layout.stride, d.layout.stride, &one, 1,
+                     sizeof(GpuVertex));
+      }
+    }
+  }
 }
 
 }  // namespace dd

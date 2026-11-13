@@ -31,6 +31,11 @@ void InstallGpuShadows();
 // True while the game draws a terrain patch (shadow receivers).
 bool ShadowReceiverNow();
 
+// The running race's sun (the game's shadow light, when it is directional):
+// the unit direction from the ground towards the sun, y up. False when there
+// is no race or no sun. Works whatever RiderShadows is.
+bool ShadowSunDirection(float to_sun[3]);
+
 // For a terrain draw on the Direct3D 11 device: if GPU shadows are on this
 // frame, bind the atlas and constants (slots b2, t3, s3) for `world` (the
 // draw's world matrix, row vectors) and return true; the caller then uses

@@ -733,8 +733,28 @@ int __fastcall SelfShadowDrawHook(void* self, void* edx) {
   return g_prev_self_draw(self, edx);
 }
 
+// The race's sun, noted at each race update (ShadowSunDirection).
+struct SunNote {
+  bool ok = false;
+  float dir[3] = {};
+} g_sun;
+
+void NoteSun(uintptr_t race) {
+  const uintptr_t ps = Rd<uintptr_t>(race + kRaceShadow);
+  float d[3] = {};
+  if (ps && Rd<uintptr_t>(ps) == kPsVtable && Rd<int>(ps + kPsLightMode) == 3)
+    for (int k = 0; k < 3; ++k) d[k] = Rd<float>(ps + kPsLightDir + 4 * k);
+  g_sun.ok = d[0] * d[0] + d[1] * d[1] + d[2] * d[2] > 1e-6f;  // no sun on this track: none
+  if (!g_sun.ok) return;
+  Normalize(d);
+  if (d[1] > 0) d[0] = -d[0], d[1] = -d[1], d[2] = -d[2];  // the rays go down (y is up)
+  for (int k = 0; k < 3; ++k) g_sun.dir[k] = -d[k];
+  g_sun.ok = true;
+}
+
 void __fastcall RaceUpdateHook(uintptr_t self, void* edx, int arg) {
   g_race = self;
+  NoteSun(self);
   g_prev_update(self, edx, arg);
 }
 
@@ -779,8 +799,13 @@ bool PatchCallSite(uintptr_t site, uintptr_t original, const void* hook) {
 
 void InstallGpuShadows() {
   const Config& c = GetConfig();
+  // The race update hook only notes which race runs; reflections use it for
+  // the sun's direction (ShadowSunDirection) whatever RiderShadows says.
+  SlotFn prev_update = nullptr;
+  const bool race = ChainSlot(kRaceUpdateSlot, reinterpret_cast<void*>(&RaceUpdateHook), &prev_update, "race update");
+  g_prev_update = reinterpret_cast<UpdateFn>(reinterpret_cast<void*>(prev_update));
   if (c.rider_shadows <= 0) {
-    Log("rider shadows: RiderShadows=0, the game's own shadow");
+    Log("rider shadows: RiderShadows=0, the game's own shadow; race update %s", race ? "hooked" : "NOT hooked");
     return;
   }
   bool ok = ChainSlot(kPsPreDrawSlot, reinterpret_cast<void*>(&PreDrawHook), &g_prev_predraw, "shadow pre-draw");
@@ -793,9 +818,6 @@ void InstallGpuShadows() {
   for (uintptr_t s : kPatchCalls) patches += PatchCallSite(s, kPatchDraw, reinterpret_cast<const void*>(&PatchHook));
   for (uintptr_t s : kPatchMTCalls)
     patches += PatchCallSite(s, kPatchDrawMT, reinterpret_cast<const void*>(&PatchMTHook));
-  SlotFn prev_update = nullptr;
-  const bool race = ChainSlot(kRaceUpdateSlot, reinterpret_cast<void*>(&RaceUpdateHook), &prev_update, "race update");
-  g_prev_update = reinterpret_cast<UpdateFn>(reinterpret_cast<void*>(prev_update));
   Log("rider shadows: RiderShadows=%d: %s; %d of 4 terrain patch calls hooked; race update %s (Direct3D 11 only; "
       "Direct3D 9 keeps the game's shadow)",
       c.rider_shadows, ok ? (c.rider_shadows >= 2 ? "every rider's shadow drawn on the GPU" : "the camera rider's shadow drawn on the GPU")
@@ -804,6 +826,14 @@ void InstallGpuShadows() {
 }
 
 bool ShadowReceiverNow() { return g_receiver > 0; }
+
+bool ShadowSunDirection(float to_sun[3]) {
+  // Noted at the race's update (the race's memory may be gone by now, so it
+  // is not read here); kept while paused and after the race.
+  if (!g_sun.ok) return false;
+  std::memcpy(to_sun, g_sun.dir, sizeof(g_sun.dir));
+  return true;
+}
 
 bool ShadowBindReceiver(const float* world, bool blend, DWORD src, DWORD dst) {
   if (!g_f.active || !g_gpu.ready) {
