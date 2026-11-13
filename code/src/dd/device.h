@@ -194,6 +194,7 @@ class Device : public d3d7::IDirect3DDevice7 {
   };
   void Submit(const Draw& d);
   bool BatchAdd(const Draw& d);
+  bool StageStateUnused(DWORD stage, DWORD type) const;
   HRESULT SetTransformNow(DWORD type, d3d7::D3DMATRIX* m);
  public:
   void FlushBatch(BatchBreak why);

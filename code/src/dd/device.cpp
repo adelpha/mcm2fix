@@ -631,8 +631,15 @@ struct BatchStats {
   unsigned max_draws = 0;
   unsigned not_mergeable[6] = {};  // prim (points/lines), processed verts, index range, too big, fvf, off
   unsigned breaks[kBreakCount] = {};
-  std::map<unsigned, unsigned> rs_breaks, tss_breaks;  // which state split batches
+  std::map<unsigned, unsigned> rs_breaks, tss_breaks;  // which state split batches (tss: stage/type | old << 8 | new << 16)
+  unsigned tss_kept = 0;                               // stage changes that needed no flush (unused setting)
+  std::map<unsigned, unsigned> tss_kept_by;            // stage/type
 } g_bs;
+
+void NoteStageStateKept(DWORD stage, DWORD type) {
+  ++g_bs.tss_kept;
+  ++g_bs.tss_kept_by[stage * 32 + type];
+}
 
 
 bool SameLayout(const FvfLayout& a, const FvfLayout& b) {
@@ -665,7 +672,10 @@ void ReportBatches() {
       std::string out;
       for (size_t i = 0; i < v.size() && i < 6; ++i) {
         char b[48];
-        if (tss) std::snprintf(b, sizeof(b), " %u/%u x%u", v[i].first >> 5, v[i].first & 31, v[i].second);
+        if (tss && v[i].first > 0xff)
+          std::snprintf(b, sizeof(b), " %u/%u %u->%u x%u", (v[i].first >> 5) & 7, v[i].first & 31,
+                        (v[i].first >> 8) & 0xff, v[i].first >> 16, v[i].second);
+        else if (tss) std::snprintf(b, sizeof(b), " %u/%u x%u", v[i].first >> 5, v[i].first & 31, v[i].second);
         else std::snprintf(b, sizeof(b), " %u x%u", v[i].first, v[i].second);
         out += b;
       }
@@ -677,13 +687,42 @@ void ReportBatches() {
         secs, g_bs.seen, g_bs.merged, g_bs.sent, g_bs.single, g_bs.max_draws,
         g_bs.sent + (g_bs.seen - g_bs.merged), g_bs.seen, g_bs.not_mergeable[0], g_bs.not_mergeable[1],
         g_bs.not_mergeable[2], g_bs.not_mergeable[3], g_bs.not_mergeable[4]);
-    Log("draw batching %.1fs: batches ended by %s; render states that changed:%s; stage/state that changed:%s", secs,
-        why.empty() ? "-" : why.c_str(), top(g_bs.rs_breaks, false).c_str(), top(g_bs.tss_breaks, true).c_str());
+    Log("draw batching %.1fs: batches ended by %s; render states that changed:%s; stage/state old->new that "
+        "changed:%s; stage changes kept in the batch (setting not used) %u:%s",
+        secs, why.empty() ? "-" : why.c_str(), top(g_bs.rs_breaks, false).c_str(), top(g_bs.tss_breaks, true).c_str(),
+        g_bs.tss_kept, top(g_bs.tss_kept_by, true).c_str());
   }
   g_bs = BatchStats{};
 }
 
 }  // namespace
+
+// A texture stage setting that can't change what the waiting draws look
+// like, so changing it needs no flush: stages past the first disabled one
+// (both renderers stop there), anything but the colour op on that disabled
+// stage, and the argument a "select" op or a disabled alpha op doesn't read.
+// Whatever later makes it matter again is an op change, which does flush, and
+// then the waiting draws are drawn with the new argument under the old op,
+// which ignores it.
+bool Device::StageStateUnused(DWORD stage, DWORD type) const {
+  if (!GetConfig().draw_batch) return false;
+  if (stage >= static_cast<DWORD>(kStages)) return true;
+  DWORD first_off = kStages;
+  for (DWORD k = 0; k < static_cast<DWORD>(kStages); ++k)
+    if (tss_[k][TSS_COLOROP] == D3DTOP_DISABLE) {
+      first_off = k;
+      break;
+    }
+  if (stage > first_off) return true;
+  if (stage == first_off) return type != TSS_COLOROP;
+  const DWORD cop = tss_[stage][TSS_COLOROP], aop = tss_[stage][TSS_ALPHAOP];
+  constexpr DWORD kSel1 = 2, kSel2 = 3;
+  if (type == TSS_COLORARG1) return cop == kSel2;
+  if (type == TSS_COLORARG2) return cop == kSel1;
+  if (type == TSS_ALPHAARG1) return aop == kSel2 || aop == D3DTOP_DISABLE;
+  if (type == TSS_ALPHAARG2) return aop == kSel1 || aop == D3DTOP_DISABLE;
+  return false;
+}
 
 void FlushPendingDraws(BatchBreak why) {
   if (g_batch_owner) g_batch_owner->FlushBatch(why);
@@ -1414,8 +1453,14 @@ HRESULT Device::SetTextureStageState(DWORD stage, DWORD type, DWORD value) {
   if (stage >= 8 || type >= 32) return DDERR_INVALIDPARAMS;
   if (batch_.draws && (tss_[stage][type] != value ||
                        (type == TSS_ADDRESS && (tss_[stage][TSS_ADDRESSU] != value || tss_[stage][TSS_ADDRESSV] != value)))) {
-    ++g_bs.tss_breaks[stage * 32 + type];
-    FlushBatch(kBreakStageState);
+    if (StageStateUnused(stage, type)) {
+      NoteStageStateKept(stage, type);
+    } else {
+      // Which change split the batch, with its old and new value (BatchLog / Profile).
+      const DWORD old = tss_[stage][type];
+      ++g_bs.tss_breaks[(stage * 32 + type) | (std::min<DWORD>(old, 255) << 8) | (std::min<DWORD>(value, 255) << 16)];
+      FlushBatch(kBreakStageState);
+    }
   }
   tss_[stage][type] = value;
   if (type == TSS_ADDRESS) tss_[stage][TSS_ADDRESSU] = tss_[stage][TSS_ADDRESSV] = value;
