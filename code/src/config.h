@@ -17,6 +17,7 @@ struct Config {
   bool pause_on_focus_loss = true;  // PauseOnFocusLoss: alt-tabbing out of a race opens the pause menu (diagnostics.cpp)
   bool dpi_aware = true;     // DpiAware: tell Windows the game is DPI aware (no scaling blur, no mouse drift) (fixes_startup.cpp)
   int race_power = 1;        // RacePower: 1 = High performance power plan while racing, 2 = while the game runs (power.cpp)
+  int race_power_async = 1;  // RacePowerAsync: 1 = power plan calls on their own thread (power.cpp)
   bool fast_game_code = true;  // FastGameCode: badly compiled game loops rewritten in place, same results (fixes_perf.cpp)
   int async_sound = 2;        // AsyncSound: 3D sound listener commit on a worker thread; 2 = started at Present (fixes_perf.cpp)
   int sound_max_distance_mute = 1;  // SoundMaxDistanceMute: 1 = mute 3D sounds past their max distance ourselves (DSOAL ignores it), 2 = only log them (fixes_sound.cpp)

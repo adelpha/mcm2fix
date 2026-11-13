@@ -637,6 +637,12 @@ DpiAware=1
 ; already High performance.
 RacePower=1
 
+; RacePowerAsync: 1 = the power plan switches run on their own thread, so
+; the game doesn't freeze while Windows changes plan (switching back to
+; Balanced can take about 2 seconds; that froze the countdown and the menus
+; after a race) (default). 0 = on the game thread, as before.
+RacePowerAsync=1
+
 ; FastGameCode: 1 = a few of the game's own loops that its 1999 compiler
 ; built badly are rewritten in place with the same maths, so the results are
 ; exactly the same, only faster (default). So far: the loop that unpacks
