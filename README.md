@@ -54,6 +54,8 @@ Windows 10 and 11.
 | An administrator check writes to HKLM and creates a temp file in the game folder, and the game exits if either fails. | Removed. The game runs as a standard user. |
 | A race between threads on multi-core CPUs hangs the game on the logo or fails startup. | Fixed in the renderer and startup path. `OneCore=1` keeps the old single-core workaround available. |
 | Settings are written to `HKLM`, and replays, profiles, saves and logs go into the game folder. Both fail without admin rights, or land in the VirtualStore. | Settings go to `HKCU`. File writes go to a per-user folder that overlays the game folder (see [below](#where-your-settings-saves-and-logs-go)). |
+| A game copied off the CD by hand (rather than installed with Setup) quits silently at startup: the licence check needs `EBUEula.dll` and `EULA.rtf` from the CD root. | When either file is missing, the licence check is skipped. |
+| With Windows display scaling above 100%, Windows stretches the game (blurry, widescreen modes capped below your real resolution) and the menu mouse drifts, so slow moves can go the wrong way. | The game is declared DPI aware, so it runs at your real resolution (`DpiAware`). |
 | A video card picker and a "hardware has changed" dialog appear. | No picker. The best Direct3D adapter is chosen automatically and the dialog is skipped. |
 | Saved hardware-test results (`DriverInfo`) could leave the window not redrawing. | The cache is dropped whenever the list of display modes changes. |
 | Videos (intro, credits, menu previews) need the Indeo 5 codec and DirectShow, which modern Windows don't have. | mcm2fix has its own AVI player: Indeo 5 through FFmpeg, MS ADPCM sound, played with waveOut. No codec install is needed. |
@@ -67,6 +69,10 @@ Windows 10 and 11.
 | Texture formats are always 16-bit, because of a bug in the game's 32-bit format description. | Fixed (`TrueColorTextures`), plus full 32-bit texture replacements. |
 | Distant riders' engines play quiet looping snippets of old sounds. The game re-sorts its engine voices on every update with the C library's qsort, which is unstable: riders with equal priority swap places, so their voices are handed around and restarted. | The game's sorts use a stable merge sort (`FastSort`), so voices stay with their rider. |
 | With EAX (DSOAL or an EAX sound card), outdoor events ask for "reverb off" with values OpenAL Soft rejects, so whatever reverb was set before (for example Arena after a Supercross race) stays on. | Each outdoor event gets a real outdoor reverb preset (`BajaReverb` and the other `*Reverb` settings). |
+| After alt-tabbing out of a race, keys let go while away stay held (the bike keeps steering or accelerating), and the keyboard can stop responding until restart: the game only re-acquires it after one kind of DirectInput error. | Keys and buttons let go while away are released, and the keyboard and joysticks are acquired again when the game is back in front (`AltTabFix`). |
+| Computer riders never pick the last bike or rider in the lists: the game's random pick is one short. | Every bike and rider can be picked (`AiPickFix`). |
+| Coming back to the game after switching away mid-race, it stalled for seconds and then ran fast to catch up: its clock kept running while it was in the background. | The clock stops while the game is in the background, and leaving mid-race opens the pause menu (`PauseOnFocusLoss`). |
+| With DSOAL, alt-tabbing out leaves the last fraction of a second of each sound repeating: the game stops while in the background, and only Windows' own DirectSound silences a background game. | While the game is in the background, mcm2fix silences it (`BackgroundMute`). |
 | DSOAL ignores the game's "mute at max distance" flag, so riders out of earshot can still be heard quietly. | With a replacement DirectSound such as DSOAL, mcm2fix mutes 3D sounds past their max distance itself (`SoundMaxDistanceMute`). |
 
 ## Features
@@ -151,6 +157,12 @@ Windows 10 and 11.
 - A few of the game's own loops that its 1999 compiler built badly are
   rewritten in place with identical maths (`FastGameCode`): so far the terrain
   texture coordinate loop, about 13x faster.
+- mcm2fix's own per-frame work uses SSE2 when the CPU has it (`Simd`):
+  converting the game's vertices for the GPU, blending objects between
+  simulation steps, 16-bit texture uploads, the pause menu's copy of the
+  frame and texture edge clean-up. The CPU is checked at start-up, so CPUs
+  without SSE2 (Pentium II/III, early Athlons) use the plain code. The game's
+  own code, physics included, is unchanged.
 - **No freezes on tree-heavy maps** (`FastSort`, `TreeCacheMB`). The game's
   old qsort went quadratic sorting its tree cache, freezing for up to 125 ms
   while turning; it now uses a merge sort and trims that cache far less often.
@@ -459,6 +471,8 @@ troubleshooting.
 | `FrameFix` | `1` | `0`, `1` | Some effects the game applies once per step rather than per second (steering and lean speed, spin damping, bodies coming to rest, camera zoom) are scaled to the real step length. With `SimRate=30` and `RefRate=30`, race steps are unchanged; it matters in menus and with `SimRate=0`. |
 | `RefRate` | `30` | 10-240 | The step rate `FrameFix` treats those effects as tuned for. |
 | `AiRate` | `30` | `0`, steps/s | Computer riders re-plan their racing line at most this many times a second (`0` = every step). It only has an effect when lower than `SimRate`, or with `SimRate=0`. |
+| `AltTabFix` | `1` | `0`, `1` | Needs `InputTiming=1`. Keys and buttons held when the game goes to the background (such as Alt from Alt+Tab, look-behind by default) are released, and when it comes back any key let go meanwhile counts as let go, and a keyboard or joystick Windows took away is acquired again. The mouse pointer is also shown over the game window while it is in the background (the game's own pointer is blank). `0` = the original: such keys stay held until pressed again, the keyboard can stop working after alt-tab, and the pointer is invisible over the game window. |
+| `AiPickFix` | `1` | `0`, `1` | Computer riders' random bike and rider picks can choose the last entry in the list. `0` = the original off-by-one: the last bike and rider are never picked. |
 | `AiSteerRate` | `0` | `0`, degrees/s | The fastest a computer rider's front wheel can turn (`0` = no limit, as in the original). Other values change how the AI rides. |
 | `RestartFix` | `1` | `0`, `1` | Restart Race puts every rider back on their start position facing the course, and FINAL LAP shows again. `0` = the original bugs: riders who had crashed or left the track restart in the wrong place or facing the wrong way. |
 
@@ -467,8 +481,14 @@ troubleshooting.
 | Setting | Default | Values | Description |
 |---|---|---|---|
 | `AsyncSound` | `2` | `0`, `1`, `2` | Where the 3D sound position update runs. The game makes it every physics step, and it's slow on Windows 10/11 because it holds the sound system's lock. `2` = a worker thread, started while the frame waits for VSync. `1` = a worker thread, started at once. `0` = the game thread, as in the original (can cause stutter). |
+| `BackgroundMute` | `1` | `0`, `1` | With a replacement DirectSound such as DSOAL, the game is silenced while it is in the background (Windows' own DirectSound does this itself). Otherwise the game, which stops while in the background, leaves its sounds repeating their last fraction of a second. `0` = leave the sound alone. |
 | `SoundMaxDistanceMute` | `1` | `0`, `1`, `2`, `3` | `1`: with a replacement DirectSound such as DSOAL, which ignores the rule, mcm2fix mutes 3D sounds beyond their maximum distance itself, as Windows' DirectSound does. With Windows' own DirectSound it leaves them to Windows. `3` mutes them with any DirectSound (with Windows' own, the bike engines then go silent after a pause). `0` never. `2` changes nothing and only logs those sounds. |
 | `FastCrt` | `1` | `0`, `1` | The game's millisecond clock uses `QueryPerformanceCounter` instead of changing the Windows timer period on every call, and its case-insensitive name comparisons use a lookup table. Both were measurable slowdowns. |
+| `Simd` | `1` | `0`, `1` | mcm2fix's own vertex, smoothing and pixel conversion work uses SSE2 when the CPU has it, after a start-up self test that checks it gives the same results as the plain code. `0` = plain code only. The game's own code (physics included) is never changed by this. |
+| `SimdLog` | `0` | `0`, `1` | Log how fast the SSE2 and plain versions run on this CPU at start-up, and how much work went through them every 5 seconds. |
+| `PauseOnFocusLoss` | `1` | `0`, `1` | Switching away from the game mid-race (Alt+Tab, clicking another window) opens the pause menu, as Escape does. The game's clock also stops while it is in the background, so coming back no longer stalls and then races ahead. `0` = the clock still stops, but the race isn't paused. |
+| `DpiAware` | `1` | `0`, `1` | Tells Windows the game handles display scaling itself, so with scaling above 100% it runs at your screen's real resolution instead of being stretched (blurry, with a drifting menu mouse). `0` = Windows scales the game as before. |
+| `RacePower` | `1` | `0`, `1`, `2` | Keeps the CPU at full speed while racing. The game needs so little CPU that on the Balanced power plan Windows lowers the clock while it waits for VSync, and some frames then run late (regular stutter, mostly on older CPUs). `1` = switch Windows to the High performance power plan when a race starts and back to your plan afterwards (if the game crashes, it is put back at the next start). `2` = High performance the whole time the game runs. `0` = off. Nothing is changed on battery or when the plan is already High performance. |
 | `FastGameCode` | `1` | `0`, `1` | A few of the game's own loops that its 1999 compiler built badly are rewritten in place with the same maths, so results are exactly the same, only faster. So far: the terrain texture coordinate loop, which ran every frame and stalled the CPU, and the per-frame tree cache scan, which now reads ahead instead of waiting on memory. |
 | `FastSort` | `1` | `0`, `1` | The game's sorting uses a merge sort instead of the old C library qsort, which slows to a crawl when many items are equal. On tree-heavy maps that froze the game for 35-125 ms when turning the camera. Being stable, it also stops distant riders' engine sounds retriggering as quiet looping snippets. |
 | `TreeCacheMB` | `32` | `0`, 1-512 | The game's cache of built trees is only emptied when more than this many MB of it are unused (the original 256 KB emptied it constantly while turning, and the trees were then rebuilt). `0` = the original. |

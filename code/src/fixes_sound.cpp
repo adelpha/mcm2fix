@@ -119,6 +119,18 @@ std::map<void*, AnyBuf> g_all;
 bool g_pause_log = false;
 int g_mode = 1;  // 0 = no muting, 1 = mute, 2 = watch only (SoundMaxDistanceMute, 1 settled at DirectSoundCreate)
 void* g_device = nullptr;
+// BackgroundMute: Windows' DirectSound silences a game's buffers while its
+// window is in the background, but a replacement such as DSOAL doesn't, and
+// the game stops refilling its sound loops while inactive, so the last bit
+// of each loop repeats. While the game is inactive the primary buffer's
+// volume (DSOAL: the listener gain) goes to silence; if that's refused, the
+// 3D buffers are silenced one by one.
+bool g_bg = false;
+bool g_windows_ds = false;
+void* g_primary = nullptr;
+int g_bg_muted = 0;  // 0 = no, 1 = primary volume, 2 = 3D buffers
+LONG g_primary_vol = 0;
+void* g_own_primary = nullptr;  // made by us when the game holds no primary buffer (menus)
 HWND g_coop_hwnd = nullptr;
 DWORD g_coop_level = 0;
 int g_fail_logs = 60;  // failed DirectSound calls logged per run
@@ -326,6 +338,7 @@ ULONG WINAPI Release(void* self) {
   const ULONG n = reinterpret_cast<Fn>(orig)(self);
   if (b && --b->refs <= 0) Forget(b);
   if (self == g_listener && n == 0) g_listener = nullptr;
+  if (self == g_primary && n == 0) g_primary = nullptr;
   if (n == 0 && self == g_device) {
     g_device = nullptr;
     g_all.clear();
@@ -727,6 +740,11 @@ HRESULT WINAPI CreateSoundBuffer(void* self, BufferDesc* desc, void** out, void*
   DWORD flags = desc ? desc->flags : 0;
   const bool track = (flags & kCapsCtrl3D) && !(flags & kCapsPrimary);
   BufferDesc copy;
+  if ((flags & kCapsPrimary) && g_bg && !g_windows_ds && !(flags & kCapsCtrlVolume) && desc) {
+    copy = *desc;  // BackgroundMute needs the primary buffer's volume
+    copy.flags |= kCapsCtrlVolume;
+    desc = &copy;
+  }
   if (track && g_mode == 1 && (flags & kCapsMuteMax) && !(flags & kCapsCtrlVolume)) {
     copy = *desc;  // we need volume control to mute it
     copy.flags |= kCapsCtrlVolume;
@@ -748,6 +766,9 @@ HRESULT WINAPI CreateSoundBuffer(void* self, BufferDesc* desc, void** out, void*
       patch::Log("sound: primary buffer %p created (flags %08lx)", *out, a.flags);
   }
   if (flags & kCapsPrimary) {
+    g_primary = *out;
+    if (g_bg) patch::Log("sound: primary buffer %p (flags %08lx%s)", *out, desc->flags,
+                         desc->flags != flags ? ", volume control added for BackgroundMute" : "");
     HookBuffer(*out);  // the listener comes from its QueryInterface
     return hr;
   }
@@ -828,13 +849,14 @@ HRESULT WINAPI MyDirectSoundCreate(const GUID* dev, void** out, void* outer) {
     Hook(*out, 0xc / 4, reinterpret_cast<void*>(&CreateSoundBuffer));
     Hook(*out, 0x14 / 4, reinterpret_cast<void*>(&DuplicateSoundBuffer));
     Hook(*out, 0x18 / 4, reinterpret_cast<void*>(&SetCooperativeLevel));
-    if (g_pause_log) Hook(*out, 2, reinterpret_cast<void*>(&Release));  // device gone: forget its buffers
+    Hook(*out, 2, reinterpret_cast<void*>(&Release));  // device gone: forget it and its buffers (BackgroundMute, SoundPauseLog)
     HMODULE m = nullptr;
     char path[MAX_PATH] = {};
     if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                            static_cast<LPCSTR>(**reinterpret_cast<void***>(*out)), &m))
       GetModuleFileNameA(m, path, MAX_PATH);
     LogCompat("DirectSoundCreate");
+    g_windows_ds = path[0] && IsWindowsDsound(path);
     // Windows' own DirectSound already mutes these buffers at max distance,
     // and our volume changes on top of its own confuse it: after a sound we
     // had muted once is stopped and played again (every pause), Windows
@@ -894,8 +916,9 @@ void ApplySoundFixes() {
   if (g_mode < 0 || g_mode > 3) g_mode = 1;
   g_pause_log = GetConfig().sound_pause_log;
   if (g_pause_log) g_log_left = 600;
-  if (!g_mode && !g_pause_log) {
-    patch::Log("sound: SoundMaxDistanceMute=0, 3D sounds left to DirectSound");
+  g_bg = GetConfig().background_mute;
+  if (!g_mode && !g_pause_log && !g_bg) {
+    patch::Log("sound: SoundMaxDistanceMute=0 and BackgroundMute=0, DirectSound left as it is");
     return;
   }
   InitializeCriticalSection(&g_cs);
@@ -909,8 +932,79 @@ void ApplySoundFixes() {
     return;
   }
   g_create = reinterpret_cast<CreateFn>(patch::HookIat(kDirectSoundCreate, reinterpret_cast<void*>(&MyDirectSoundCreate)));
-  patch::Log("sound: DirectSoundCreate wrapped (SoundMaxDistanceMute=%d, SoundLog=%d, SoundPauseLog=%d)",
-             GetConfig().sound_max_distance_mute, g_log ? 1 : 0, g_pause_log ? 1 : 0);
+  patch::Log("sound: DirectSoundCreate wrapped (SoundMaxDistanceMute=%d, BackgroundMute=%d, SoundLog=%d, SoundPauseLog=%d)",
+             GetConfig().sound_max_distance_mute, g_bg ? 1 : 0, g_log ? 1 : 0, g_pause_log ? 1 : 0);
+}
+
+// The game window became active or inactive (WM_ACTIVATEAPP).
+void SoundOnActivate(bool active) {
+  if (!g_cs_ready || !g_bg) return;
+  Lock lock;
+  if (!g_device) return;
+  if (g_windows_ds) {
+    if (!active) patch::Log("sound: game inactive; Windows' DirectSound silences it itself (BackgroundMute not needed)");
+    return;
+  }
+  using GetVolFn = HRESULT(WINAPI*)(void*, LONG*);
+  if (!active && !g_bg_muted) {
+    HRESULT hr = E_FAIL, hg = E_FAIL, hc = S_OK;
+    if (!g_primary) {
+      // Between races the game holds no primary buffer: make one of our own
+      // (DirectSound has only one; its volume is the whole device's).
+      BufferDesc d = {};
+      d.size = 20;  // DSBUFFERDESC1 size: works with every DirectSound version
+      d.flags = kCapsPrimary | kCapsCtrlVolume;
+      using Fn = HRESULT(WINAPI*)(void*, BufferDesc*, void**, void*);
+      hc = reinterpret_cast<Fn>(Orig(g_device, 0xc / 4))(g_device, &d, &g_own_primary, nullptr);
+      if (FAILED(hc)) g_own_primary = nullptr;
+    }
+    if (void* p = g_primary ? g_primary : g_own_primary) {
+      g_primary_vol = 0;
+      hg = reinterpret_cast<GetVolFn>(Orig(p, 0x18 / 4))(p, &g_primary_vol);
+      hr = reinterpret_cast<SetVolumeFn>(Orig(p, 0x3c / 4))(p, kVolumeMin);
+    }
+    if (SUCCEEDED(hr)) {
+      g_bg_muted = 1;
+      patch::Log("sound: game inactive; silenced through %s primary buffer (volume was %ld, get %08lx)",
+                 g_primary ? "the game's" : "our own", g_primary_vol, static_cast<unsigned long>(hg));
+      return;
+    }
+    unsigned n = 0, failed = 0;
+    for (Buffer* b : g_buffers) {
+      if (!b->buffer) continue;
+      if (SUCCEEDED(reinterpret_cast<SetVolumeFn>(Orig(b->buffer, 0x3c / 4))(b->buffer, kVolumeMin))) ++n;
+      else ++failed;
+    }
+    g_bg_muted = 2;
+    patch::Log("sound: game inactive; primary buffer volume %s (%08lx, own primary %08lx), so %u 3D buffers silenced "
+               "instead (%u failed; 2D sounds keep playing)",
+               g_primary || g_own_primary ? "refused" : "unavailable", static_cast<unsigned long>(hr),
+               static_cast<unsigned long>(hc), n, failed);
+    if (g_own_primary) {
+      reinterpret_cast<ULONG(WINAPI*)(void*)>(Orig(g_own_primary, 2))(g_own_primary);
+      g_own_primary = nullptr;
+    }
+  } else if (active && g_bg_muted) {
+    void* p = g_primary ? g_primary : g_own_primary;
+    if (g_bg_muted == 1 && p) {
+      const HRESULT hr = reinterpret_cast<SetVolumeFn>(Orig(p, 0x3c / 4))(p, g_primary_vol);
+      patch::Log("sound: game active again; primary buffer volume back to %ld (%08lx)", g_primary_vol,
+                 static_cast<unsigned long>(hr));
+      if (g_own_primary) {
+        reinterpret_cast<ULONG(WINAPI*)(void*)>(Orig(g_own_primary, 2))(g_own_primary);
+        g_own_primary = nullptr;
+      }
+    } else if (g_bg_muted == 2) {
+      unsigned n = 0;
+      for (Buffer* b : g_buffers) {
+        if (!b->buffer) continue;
+        reinterpret_cast<SetVolumeFn>(Orig(b->buffer, 0x3c / 4))(b->buffer, b->muted && !g_watch ? kVolumeMin : b->volume);
+        ++n;
+      }
+      patch::Log("sound: game active again; %u 3D buffers back to their volume", n);
+    }
+    g_bg_muted = 0;
+  }
 }
 
 // ---------------------------------------------------------- SoundPauseLog

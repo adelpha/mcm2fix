@@ -12,9 +12,14 @@
 #include <mmsystem.h>
 
 #include <cstdint>
+#include <cstdio>
 
 #include "config.h"
 #include "patch.h"
+#include "framerate.h"
+#include "simd.h"
+
+DWORD FocusClock(DWORD raw_ms);  // diagnostics.cpp: time away taken off
 
 namespace {
 
@@ -22,14 +27,17 @@ namespace {
 
 LARGE_INTEGER g_freq, g_q0;
 DWORD g_ms0;
+bool g_clock_replaced = false;
 
-DWORD __cdecl GameMs() {
+DWORD RawMs() {
   LARGE_INTEGER q;
   QueryPerformanceCounter(&q);
   const uint64_t d = static_cast<uint64_t>(q.QuadPart - g_q0.QuadPart);
   const uint64_t f = static_cast<uint64_t>(g_freq.QuadPart);
   return g_ms0 + static_cast<DWORD>((d / f) * 1000 + (d % f) * 1000 / f);
 }
+
+DWORD __cdecl GameMs() { return FocusClock(RawMs()); }
 
 void PatchClock() {
   const uint8_t original[] = {
@@ -52,6 +60,7 @@ void PatchClock() {
   g_ms0 = timeGetTime();
   QueryPerformanceCounter(&g_q0);
   patch::Jump(kAt, reinterpret_cast<uintptr_t>(&GameMs), sizeof(original));
+  g_clock_replaced = true;
   patch::Log("perf: game clock 0x4c41d0 reads QPC (%lld Hz); timer period 1 ms set once", g_freq.QuadPart);
 }
 
@@ -330,9 +339,20 @@ void PatchSoundCommit() {
 
 }  // namespace
 
+// The game clock's raw source once replaced here (QPC, ms), for the focus
+// code in diagnostics.cpp, which holds the clock while the game is inactive.
+bool PerfClockReplaced() { return g_clock_replaced; }
+DWORD PerfRawMs() { return RawMs(); }
+
 // Called by both renderers just before Present: the game thread is about to
 // wait for VSync, so the pending 3D sound commit runs now.
+namespace power {
+void Frame(bool racing);
+}
+
 void PerfBeforePresent() {
+  simd::ReportStats();
+  power::Frame(SimRacing());
   if (g_at_present && g_npending) SetEvent(g_commit_event);
 }
 

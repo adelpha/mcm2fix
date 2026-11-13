@@ -330,6 +330,11 @@ float __stdcall GameFrameTime(uintptr_t game) {
   } else {
     now_ms = kGameMs();
     dt = static_cast<float>(static_cast<double>(now - g_last_tick) / g_freq.QuadPart);
+    if (dt > 1.0f) {  // back from the background or a stall: one ordinary step (see FixedTickBody)
+      patch::Log("frame time: %.1f s since the last tick (game inactive or stalled); counted as one 33 ms step", dt);
+      dt = 1.0f / 30.0f;
+      last_ms = now_ms - 33;
+    }
   }
   g_last_tick = now;
   if (!GetConfig().precise_timer) {
@@ -467,6 +472,18 @@ void FixedTickBody(uintptr_t g) {
   } else {
     now_ms = kGameMs();
     dt = static_cast<double>(now - g_last_tick) / g_freq.QuadPart;
+    // The main loop doesn't tick while the game is in the background (or
+    // the window is being dragged): coming back, the whole time away would
+    // arrive as one step, and the game's unclamped frame time (+0x2f0) and
+    // millisecond stamps would jump by it, so the race stalled and then ran
+    // fast to catch up (StOo, 2026-11-13). Count it as one ordinary step.
+    if (dt > 1.0) {
+      const double away = dt;
+      dt = 1.0 / (GetConfig().sim_rate > 0 ? GetConfig().sim_rate : 30);
+      last_ms = now_ms - static_cast<DWORD>(dt * 1000.0 + 0.5);
+      patch::Log("frame time: %.1f s since the last tick (game inactive or stalled); counted as one %.0f ms step",
+                 away, dt * 1000.0);
+    }
   }
   g_last_tick = now;
 

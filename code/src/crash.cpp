@@ -44,6 +44,10 @@ void ReplacementMemoryLog();
 void GpuMemoryLog();
 }  // namespace dd
 
+namespace power {
+void Shutdown(const char* why);
+}
+
 namespace crash {
 namespace {
 
@@ -186,6 +190,7 @@ LONG WINAPI UnhandledFilter(EXCEPTION_POINTERS* ep) {
   LogFault("crash", ep);
   LogMemoryNow("at the crash");
   WriteDump(ep);
+  power::Shutdown("crash");
   return g_prev_filter ? g_prev_filter(ep) : EXCEPTION_CONTINUE_SEARCH;
 }
 
@@ -198,6 +203,7 @@ void WINAPI HookedExitProcess(UINT code) {
              name ? ", " : "", name ? name : "", w, g_faults);
   if (name || code >= 0xC0000000u) LogStack(reinterpret_cast<uintptr_t>(CRASH_FRAME()), "exit");
   LogMemoryNow("at exit");
+  power::Shutdown("game closing");
   (g_exit ? g_exit : &ExitProcess)(code);
 }
 

@@ -12,10 +12,16 @@ struct Config {
   bool profile = false;       // Profile: performance profiling (see prof.cpp)
   int profile_sample_us = 1000;  // ProfileSampleUs: sampling profiler interval (0 = off)
   bool fast_crt = true;
+  bool simd = true;           // Simd: SSE2 fast paths for mcm2fix's own pixel and vertex work, when the CPU has SSE2 (simd.cpp)
+  bool simd_log = false;      // SimdLog: time the SSE2 and plain paths at start-up, and log their use every 5 s
+  bool pause_on_focus_loss = true;  // PauseOnFocusLoss: alt-tabbing out of a race opens the pause menu (diagnostics.cpp)
+  bool dpi_aware = true;     // DpiAware: tell Windows the game is DPI aware (no scaling blur, no mouse drift) (fixes_startup.cpp)
+  int race_power = 1;        // RacePower: 1 = High performance power plan while racing, 2 = while the game runs (power.cpp)
   bool fast_game_code = true;  // FastGameCode: badly compiled game loops rewritten in place, same results (fixes_perf.cpp)
   int async_sound = 2;        // AsyncSound: 3D sound listener commit on a worker thread; 2 = started at Present (fixes_perf.cpp)
   int sound_max_distance_mute = 1;  // SoundMaxDistanceMute: 1 = mute 3D sounds past their max distance ourselves (DSOAL ignores it), 2 = only log them (fixes_sound.cpp)
   char outdoor_reverb[6][32] = {};  // QuarryReverb/BajaReverb/NationalsReverb/SupercrossReverb/TagReverb/EnduroReverb: EAX 1.0 preset per event, by event number (Default = game's values) (fixes_reverb.cpp)
+  bool background_mute = true;  // BackgroundMute: silence sound while the game is in the background (replacement DirectSound only) (fixes_sound.cpp)
   bool sound_log = false;     // SoundLog: log 3D sound buffers, mutes and unmutes
   bool sound_pause_log = false;  // SoundPauseLog: trace DirectSound calls and buffer states around race pause/unpause
   bool state_cache = true;    // StateCache: skip D3D11 state the device already has bound (device.cpp)       // FastCrt: QPC game clock and table-driven _stricmp (fixes_perf.cpp)
@@ -56,10 +62,12 @@ struct Config {
   int tree_cache_mb = 32;     // TreeCacheMB: trim the vegetation cache only when this much is unused (0 = original 256 KB)
   bool sort_log = false;      // SortLog: sort calls per caller every 10 s
   bool input_timing = true;   // InputTiming: race steps get the input of their own time slice; taps held one step (input_timing.cpp)
+  bool alt_tab_fix = true;    // AltTabFix: keys let go while alt-tabbed are released; lost devices acquired again (input_timing.cpp)
   bool input_log = false;     // InputLog: log input timing (events per step, held taps, joystick samples)
   int sim_rate = 30;          // SimRate: race simulation steps per second, drawing stays per frame (0 = one step per frame)
   int ai_accel[3] = {80, 130, 150};      // AiAccelEasy/Normal/Hard: computer rider acceleration, percent of the base curve (fixes_ai.cpp)
   int ai_top_speed[3] = {90, 100, 100};  // AiTopSpeedEasy/Normal/Hard: computer rider top speed, percent
+  bool ai_pick_fix = true;                // AiPickFix: computer riders' random bike/rider picks can choose the last one too
   bool ai_log = false;                    // AiLog: log computer rider speeds, jumps and respawns
   int ai_steer_rate = 0;    // AiSteerRate: fastest a computer rider's front wheel turns, degrees/s (0 = no limit)
   int ref_rate = 30;          // RefRate: frame rate those per-frame steps were tuned for

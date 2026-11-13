@@ -22,6 +22,8 @@ add_library(mcm2fix SHARED
   src/fixes_restart.cpp
   src/fixes_help.cpp
   src/fixes_textures.cpp
+  src/fixes_grid.cpp
+  src/power.cpp
   src/fixes_perf.cpp
   src/fixes_sound.cpp
   src/fixes_reverb.cpp
@@ -34,6 +36,9 @@ add_library(mcm2fix SHARED
   src/framerate.cpp
   src/input_timing.cpp
   src/prof.cpp
+  src/simd.cpp
+  src/simd_plain.cpp
+  src/simd_sse2.cpp
   src/smooth.cpp
   src/smooth_parts.cpp
   src/xp_compat.cpp
@@ -75,6 +80,13 @@ set_target_properties(mcm2fix PROPERTIES PREFIX "" OUTPUT_NAME "mcm2fix")
 # so the DLL loads where they are missing and the renderer can fall back.
 target_link_libraries(mcm2fix PRIVATE dxguid gdi32 user32 ole32 windowscodecs winmm shell32 shlwapi)
 target_compile_definitions(mcm2fix PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+
+# SSE2 kernels (simd_sse2.cpp) are only called after a CPU check; the rest
+# of the DLL stays plain i686 so it still runs without SSE2. -mstackrealign:
+# 32-bit Windows only keeps the stack 4-byte aligned.
+if(NOT MSVC)
+  set_source_files_properties(src/simd_sse2.cpp PROPERTIES COMPILE_OPTIONS "-msse2;-mstackrealign")
+endif()
 
 if(MSVC)
   # Static CRT so the DLL needs no Visual C++ redistributable.

@@ -262,6 +262,86 @@ bool PatchTablePointer() {
   return true;
 }
 
+// AiPickFix: the game picks computer riders' bikes and riders (and the
+// bike/rider shown in the selection screens' look-alikes) with
+// _ftol(rand() / 32768 * (count - 1)), which never reaches the last entry.
+// The four "dec" before the multiply become nops; rand() < 32768 keeps the
+// result below count. A pick of an entry that isn't allowed is retried by
+// the game as before (and with the last entry reachable, a list whose only
+// allowed entry is the last no longer loops forever).
+struct PickSite {
+  uintptr_t dec;     // dec ecx / dec eax
+  uint8_t dec_op;
+  uintptr_t ftol;    // call _ftol after the multiply
+  uint8_t count_at;  // caller's [esp+N] holds the count after the store
+  const char* what;
+};
+const PickSite kPicks[] = {
+    {0x49c8a2, 0x49, 0x49c8b1, 0x28, "opponent bike"},
+    {0x49c99e, 0x49, 0x49c9ad, 0x28, "opponent rider"},
+    {0x49cd06, 0x48, 0x49cd15, 0x10, "bike look"},
+    {0x49cf96, 0x48, 0x49cfa5, 0x10, "rider look"},
+};
+constexpr uintptr_t kFtol = 0x53a0f8;
+long g_picks = 0;
+long g_last_picks[4] = {};
+
+extern "C" void __cdecl AiPickSeen(uint32_t site, int32_t index, int32_t count) {
+  const long n = ++g_picks;
+  for (int i = 0; i < 4; ++i)
+    if (kPicks[i].ftol == site) {
+      if (index == count - 1) ++g_last_picks[i];
+      if (n <= 400 || n % 200 == 0)
+        patch::Log("ai: random %s pick %ld of 0..%ld%s (%ld picks so far, %ld of them the last entry)", kPicks[i].what,
+                   static_cast<long>(index), static_cast<long>(count - 1),
+                   index < 0 || index >= count ? " OUT OF RANGE" : "", n, g_last_picks[i]);
+      return;
+    }
+}
+
+bool PatchPicks() {
+  int done = 0;
+  for (const PickSite& p : kPicks) {
+    uint8_t call[5] = {0xE8};
+    const int32_t rel = static_cast<int32_t>(kFtol - (p.ftol + 5));
+    std::memcpy(call + 1, &rel, 4);
+    if (!patch::Matches(p.dec, &p.dec_op, 1) || !patch::Matches(p.ftol, call, 5)) {
+      patch::Log("ai: %s pick code at %08lx differs, AiPickFix not applied there", p.what,
+                 static_cast<unsigned long>(p.dec));
+      continue;
+    }
+    auto* t = static_cast<uint8_t*>(VirtualAlloc(nullptr, 48, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+    if (!t) continue;
+    size_t n = 0;
+    auto rel_to = [&](uintptr_t target) {
+      const int32_t r = static_cast<int32_t>(target - (reinterpret_cast<uintptr_t>(t) + n + 4));
+      std::memcpy(t + n, &r, 4);
+      n += 4;
+    };
+    t[n++] = 0xE8;  // call _ftol
+    rel_to(kFtol);
+    t[n++] = 0x60;  // pushad
+    // push dword [esp + 36 + count_at]: the caller's [esp+count_at] (ret addr + pushad above it)
+    t[n++] = 0xFF; t[n++] = 0x74; t[n++] = 0x24; t[n++] = static_cast<uint8_t>(36 + p.count_at);
+    t[n++] = 0x50;  // push eax (index)
+    t[n++] = 0x68;  // push site
+    const uint32_t site = static_cast<uint32_t>(p.ftol);
+    std::memcpy(t + n, &site, 4);
+    n += 4;
+    t[n++] = 0xE8;  // call AiPickSeen
+    rel_to(reinterpret_cast<uintptr_t>(&AiPickSeen));
+    t[n++] = 0x83; t[n++] = 0xC4; t[n++] = 0x0C;  // add esp, 12
+    t[n++] = 0x61;  // popad
+    t[n++] = 0xC3;  // ret
+    FlushInstructionCache(GetCurrentProcess(), t, n);
+    const uint8_t nop = 0x90;
+    patch::Write(p.dec, &nop, 1);
+    patch::Call(p.ftol, t, 5);
+    ++done;
+  }
+  return done == 4;
+}
+
 }  // namespace
 
 void ApplyAiFixes() {
@@ -271,6 +351,13 @@ void ApplyAiFixes() {
       c.ai_top_speed[0] != 100 || c.ai_top_speed[1] != 100 || c.ai_top_speed[2] != 100;
   if (accel_changed) PatchMultipliers();
   if (top_changed || c.ai_log) PatchTablePointer();
+  if (c.ai_pick_fix) {
+    const bool ok = PatchPicks();
+    patch::Log("ai: AiPickFix=1: random bike/rider picks can choose the last entry too (%s)",
+               ok ? "all 4 places patched" : "NOT all places patched");
+  } else {
+    patch::Log("ai: AiPickFix=0: the game's random picks never choose the last bike or rider");
+  }
   patch::Log("ai: acceleration %d/%d/%d %%, top speed %d/%d/%d %% (Easy/Normal/Hard)%s",
              c.ai_accel[0], c.ai_accel[1], c.ai_accel[2], c.ai_top_speed[0],
              c.ai_top_speed[1], c.ai_top_speed[2], c.ai_log ? ", AiLog on" : "");

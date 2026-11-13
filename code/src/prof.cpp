@@ -66,6 +66,28 @@ bool g_frame_pending = false;
 int64_t g_start = 0;
 double g_gpu_last = -1.0;
 
+// Stutter diagnostics: how much of each frame the game thread actually ran
+// on a CPU (QueryThreadCycleTime, Vista+), which logical CPU it ran on, and
+// the CPUs' clock (CallNtPowerInformation). A frame that took long while the
+// thread ran for all of it was slow code or a slow CPU; one where it ran for
+// much less was the thread waiting or pushed off its core.
+typedef BOOL(WINAPI* QueryThreadCycleTimeFn)(HANDLE, PULONG64);
+typedef DWORD(WINAPI* GetCurrentProcessorNumberFn)();
+QueryThreadCycleTimeFn g_cycle_fn = nullptr;
+GetCurrentProcessorNumberFn g_cpu_fn = nullptr;
+HANDLE g_main_thread = nullptr;
+uint64_t g_cycles_last = 0;
+double g_cycles_per_ms = 0.0;   // TSC rate, measured against QPC
+uint64_t g_cal_tsc = 0;
+int64_t g_cal_qpc = 0;
+int g_cpu_at_start = -1;        // CPU the last frame began on
+unsigned g_cpu_moves = 0;       // frames whose start and end CPU differ (this window)
+uint64_t g_win_cycles = 0;      // window totals for the summary
+double g_win_busy = 0.0;
+double g_win_slow_run = 0.0, g_win_slow_busy = 0.0;  // the same for hitch frames
+unsigned g_win_slow = 0;
+int CurrentCpu() { return g_cpu_fn ? static_cast<int>(g_cpu_fn()) : -1; }
+
 // Changes between draws.
 const void* g_last_tex = nullptr;
 const void* g_last_blend = nullptr;
@@ -145,6 +167,7 @@ void OpenFiles() {
   for (int z = 0; z < kZoneCount; ++z) head += std::string(",") + kZoneNames[z] + "_ms";
   for (int z = 0; z < kZoneCount; ++z) head += std::string(",") + kZoneNames[z] + "_n";
   for (int c = 0; c < cCounterCount; ++c) head += std::string(",") + kCounterNames[c];
+  head += ",thread_run_ms,cpu_start,cpu_end";
   head += "\n";
   EnterCriticalSection(&g_csv_cs);
   g_csv_buf += head;
@@ -559,6 +582,68 @@ DWORD WINAPI SamplerMain(void*) {
 
 // ---------------------------------------------------------------- summary
 
+// Processor clocks now (MHz), from the power manager.
+struct PPI {
+  ULONG Number, MaxMhz, CurrentMhz, MhzLimit, MaxIdleState, CurrentIdleState;
+};
+typedef LONG(WINAPI* CallNtPowerInformationFn)(int, PVOID, ULONG, PVOID, ULONG);
+CallNtPowerInformationFn PowerInfoFn() {
+  static CallNtPowerInformationFn fn = nullptr;
+  static bool tried = false;
+  if (!tried) {
+    tried = true;
+    if (HMODULE m = LoadLibraryA("powrprof.dll"))
+      fn = reinterpret_cast<CallNtPowerInformationFn>(GetProcAddress(m, "CallNtPowerInformation"));
+  }
+  return fn;
+}
+std::string CpuClocks() {
+  CallNtPowerInformationFn fn = PowerInfoFn();
+  SYSTEM_INFO si{};
+  GetSystemInfo(&si);
+  if (!fn || si.dwNumberOfProcessors == 0 || si.dwNumberOfProcessors > 256) return "?";
+  std::vector<PPI> p(si.dwNumberOfProcessors);
+  if (fn(11 /* ProcessorInformation */, nullptr, 0, p.data(), static_cast<ULONG>(p.size() * sizeof(PPI))) != 0)
+    return "?";
+  unsigned lo = ~0u, hi = 0, sum = 0;
+  for (const PPI& x : p) {
+    lo = std::min<unsigned>(lo, x.CurrentMhz);
+    hi = std::max<unsigned>(hi, x.CurrentMhz);
+    sum += x.CurrentMhz;
+  }
+  char b[96];
+  std::snprintf(b, sizeof(b), "%u-%u MHz (avg %u, max %lu, limit %lu)", lo, hi, sum / static_cast<unsigned>(p.size()),
+                p[0].MaxMhz, p[0].MhzLimit);
+  return b;
+}
+
+void Calibrate() {
+  // TSC ticks per ms against QPC, refined over the run.
+  const uint64_t tsc = __rdtsc();
+  const int64_t q = Now();
+  if (!g_cal_tsc) {
+    g_cal_tsc = tsc;
+    g_cal_qpc = q;
+    return;
+  }
+  const double ms = Ms(q - g_cal_qpc);
+  if (ms > 50) g_cycles_per_ms = static_cast<double>(tsc - g_cal_tsc) / ms;
+}
+
+void LogCpuWindow(size_t frames) {
+  Calibrate();
+  if (g_cycles_per_ms <= 0) return;
+  const double run = g_win_cycles / g_cycles_per_ms;
+  patch::Log("perf   game thread: ran %.0f of %.0f busy ms (%.0f%%); hitch frames ran %.1f of %.1f busy ms (%.0f%%, %u); "
+             "frames moved CPU %u of %zu; CPU %d; clocks %s",
+             run, g_win_busy, g_win_busy > 0 ? 100.0 * run / g_win_busy : 0.0, g_win_slow_run, g_win_slow_busy,
+             g_win_slow_busy > 0 ? 100.0 * g_win_slow_run / g_win_slow_busy : 0.0, g_win_slow, g_cpu_moves, frames,
+             CurrentCpu(), CpuClocks().c_str());
+  g_win_cycles = 0;
+  g_win_busy = g_win_slow_run = g_win_slow_busy = 0;
+  g_win_slow = g_cpu_moves = 0;
+}
+
 void WriteSummary(int64_t now) {
   Window& w = g_win;
   const size_t n = w.frame_ms.size();
@@ -596,6 +681,7 @@ void WriteSummary(int64_t now) {
     counts += part;
   }
   patch::Log("perf   per frame: %s", counts.c_str());
+  LogCpuWindow(n);
   g_win = Window{};
   g_win.start = now;
   g_win.frame_ms.reserve(4096);
@@ -702,11 +788,28 @@ void CloseFrame() {
   }
   const FrameAcc a = g_cur;
   g_cur = FrameAcc{};
+  // Time the game thread ran this frame (TSC cycles while scheduled).
+  if (g_cycles_per_ms <= 0) Calibrate();
+  float run_ms = -1.0f;
+  if (g_cycle_fn && g_main_thread) {
+    ULONG64 cyc = 0;
+    if (g_cycle_fn(g_main_thread, &cyc)) {
+      if (g_cycles_last && g_cycles_per_ms > 0) {
+        run_ms = static_cast<float>((cyc - g_cycles_last) / g_cycles_per_ms);
+        g_win_cycles += cyc - g_cycles_last;
+      }
+      g_cycles_last = cyc;
+    }
+  }
+  const int cpu_start = g_cpu_at_start, cpu_end = CurrentCpu();
+  g_cpu_at_start = cpu_end;
   const float frame_ms = static_cast<float>(Ms(now - g_last_frame_end));
   g_last_frame_end = now;
   const float wait_ms = static_cast<float>(Ms(a.zt[kSwapPresent] + a.zt[kCapWait]));
   const float busy_ms = std::max(0.0f, frame_ms - wait_ms);
   const bool race = SimRacing();
+  if (cpu_start != cpu_end) ++g_cpu_moves;
+  g_win_busy += busy_ms;
   const LONG frame = g_frame;
 
   Window& w = g_win;
@@ -729,6 +832,11 @@ void CloseFrame() {
   }
   if (g_recent_n > 30 && frame_ms > std::max(g_median * 1.6f, g_median + 3.0f)) {
     ++w.hitches;
+    if (run_ms >= 0) {
+      ++g_win_slow;
+      g_win_slow_run += run_ms;
+      g_win_slow_busy += busy_ms;
+    }
     if (g_hitch_logs < 300) {
       ++g_hitch_logs;
       std::string zones;
@@ -740,9 +848,11 @@ void CloseFrame() {
         zones += part;
       }
       patch::Log("perf hitch frame %ld: %.2f ms (median %.2f), %s, steps %u, draws %u, uploads %u (%u KB), "
-                 "readbacks %u, locks %u, tex creates %u; zones ms/calls: %s",
+                 "readbacks %u, locks %u, tex creates %u; thread ran %.2f of %.2f busy ms, CPU %d -> %d; "
+                 "zones ms/calls: %s",
                  frame, frame_ms, g_median, race ? "race" : "menu", a.c[cSteps], a.c[cDraws], a.c[cUploads],
-                 a.c[cUploadKB], a.c[cReadbacks], a.c[cLocks], a.c[cTexCreates], zones.c_str());
+                 a.c[cUploadKB], a.c[cReadbacks], a.c[cLocks], a.c[cTexCreates], run_ms, busy_ms, cpu_start, cpu_end,
+                 zones.c_str());
       const unsigned i = g_hitch_w.load();
       g_hitch_q[i % 64] = Hitch{frame, frame_ms};
       g_hitch_w.store(i + 1);
@@ -750,13 +860,14 @@ void CloseFrame() {
   }
 
   // CSV line.
-  char line[2048];
+  char line[2100];
   int len = std::snprintf(line, sizeof(line), "%ld,%.4f,%d,%.3f,%.3f,%.3f", frame, Ms(now - g_start) / 1000.0,
                           race ? 1 : 0, frame_ms, busy_ms, g_gpu_last);
   for (int z = 0; z < kZoneCount && len < 1900; ++z) len += std::snprintf(line + len, 40, ",%.3f", Ms(a.zt[z]));
   for (int z = 0; z < kZoneCount && len < 1950; ++z) len += std::snprintf(line + len, 20, ",%u", a.zc[z]);
   for (int c = 0; c < cCounterCount && len < 2000; ++c) len += std::snprintf(line + len, 20, ",%u", a.c[c]);
-  if (len < 2046) {
+  if (len < 2010) len += std::snprintf(line + len, 36, ",%.3f,%d,%d", run_ms, cpu_start, cpu_end);
+  if (len < 2098) {
     line[len++] = '\n';
     EnterCriticalSection(&g_csv_cs);
     g_csv_buf.append(line, len);
@@ -774,6 +885,15 @@ void Start() {
   g_ms_per_tick = 1000.0 / static_cast<double>(g_freq.QuadPart);
   g_main_tid = GetCurrentThreadId();
   g_start = Now();
+  if (HMODULE k = GetModuleHandleA("kernel32.dll")) {
+    g_cycle_fn = reinterpret_cast<QueryThreadCycleTimeFn>(GetProcAddress(k, "QueryThreadCycleTime"));
+    g_cpu_fn = reinterpret_cast<GetCurrentProcessorNumberFn>(GetProcAddress(k, "GetCurrentProcessorNumber"));
+  }
+  DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &g_main_thread,
+                  THREAD_QUERY_INFORMATION | THREAD_QUERY_LIMITED_INFORMATION, FALSE, 0);
+  Calibrate();
+  patch::Log("perf: game thread run time %s, CPU number %s (clocks in the 5 s summaries)",
+             g_cycle_fn ? "measured" : "not available", g_cpu_fn ? "logged" : "not available");
   InitializeCriticalSection(&g_csv_cs);
   InitializeCriticalSection(&g_map_cs);
   g_win.frame_ms.reserve(4096);

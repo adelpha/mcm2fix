@@ -23,6 +23,8 @@
 #include "../config.h"
 #include "../prof.h"
 #include "device.h"
+
+#include "../simd.h"
 #include "msaa.h"
 #include "surface.h"
 
@@ -409,29 +411,18 @@ void Device::Submit9(const Draw& d) {
   scratch_.resize(static_cast<size_t>(d.count) * sizeof(GpuVertex));
   auto* out = reinterpret_cast<GpuVertex*>(scratch_.data());
   const int t0 = set0 < l.ntex ? l.tex[set0] : -1, t1 = set1 < l.ntex ? l.tex[set1] : -1;
-  const bool t0_uv = t0 >= 0 && l.tex_dim[set0] >= 2, t1_uv = t1 >= 0 && l.tex_dim[set1] >= 2;
-  for (DWORD i = 0; i < d.count; ++i) {
-    const uint8_t* s = d.verts + static_cast<size_t>(d.first + i) * l.stride;
-    GpuVertex& v = out[i];
-    if (clip) {
-      std::memcpy(v.pos, clip[d.first + i].obj, 12);
-      v.pos[3] = 1.0f;
-    } else if (l.tl) {
-      std::memcpy(v.pos, s, 16);
-    } else {
-      std::memcpy(v.pos, s, 12);
-      v.pos[3] = 1.0f;
-    }
-    v.diffuse = 0xffffffff;
-    v.specular = 0;
-    if (l.diffuse >= 0) std::memcpy(&v.diffuse, s + l.diffuse, 4);
-    if (l.specular >= 0) std::memcpy(&v.specular, s + l.specular, 4);
-    v.t0[0] = v.t0[1] = v.t1[0] = v.t1[1] = 0;
-    if (t0_uv) std::memcpy(v.t0, s + t0, 8);  // fixed sizes: no memcpy call per field
-    else if (t0 >= 0) std::memcpy(v.t0, s + t0, 4);
-    if (t1_uv) std::memcpy(v.t1, s + t1, 8);
-    else if (t1 >= 0) std::memcpy(v.t1, s + t1, 4);
-  }
+  simd::VertexIn in;
+  in.stride = l.stride;
+  in.xyzw = l.tl && !clip;
+  in.diffuse = l.diffuse;
+  in.specular = l.specular;
+  in.t0 = t0;
+  in.t1 = t1;
+  in.t0_uv = t0 >= 0 && l.tex_dim[set0] >= 2;
+  in.t1_uv = t1 >= 0 && l.tex_dim[set1] >= 2;
+  simd::ConvertVertices(in, d.verts + static_cast<size_t>(d.first) * l.stride, d.count, out);
+  if (clip)  // processed vertices: their object-space positions (w = 1 already)
+    for (DWORD i = 0; i < d.count; ++i) std::memcpy(out[i].pos, clip[d.first + i].obj, 12);
 
   zone.Switch(prof::kStateApply);
   if (prof::On()) prof::NoteDrawState(tex_[0], nullptr, nullptr, nullptr);

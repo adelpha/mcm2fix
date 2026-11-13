@@ -194,6 +194,7 @@ class Device : public d3d7::IDirect3DDevice7 {
   };
   void Submit(const Draw& d);
   bool BatchAdd(const Draw& d);
+  bool StageStateUnused(DWORD stage, DWORD type) const;
   HRESULT SetTransformNow(DWORD type, d3d7::D3DMATRIX* m);
  public:
   void FlushBatch(BatchBreak why);
@@ -226,7 +227,8 @@ class Device : public d3d7::IDirect3DDevice7 {
   ID3D11DepthStencilState* GetDepth(bool has_depth);
   ID3D11RasterizerState* GetRaster(bool depth_clip);
   ID3D11SamplerState* GetSampler(int stage);
-  UINT PushVertices(const void* data, UINT bytes);
+  // Maps room for `bytes` of vertices and has fill(ctx, dst) write them.
+  UINT PushVertices(UINT bytes, void (*fill)(void* ctx, void* dst), void* ctx);
   UINT PushIndices(const void* data, UINT bytes);
 
   LONG refs_ = 1;

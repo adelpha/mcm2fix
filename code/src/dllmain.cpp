@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "config.h"
+#include "simd.h"
 #include "patch.h"
 #include "prof.h"
 #include "video/player.h"
@@ -11,6 +12,7 @@
 
 void ApplyStep1Fixes();
 void ApplyStartupFixes();
+void ApplyDpiAwareness();
 void ApplyRegistryFixes();
 void ApplyFileFixes();
 void ApplyDiagnostics();
@@ -24,6 +26,7 @@ void ApplyRestartFixes();
 void ApplyHelpFix();
 void ApplyTextureFixes();
 void ApplyPerfFixes();
+void ApplyGridFix();
 void ApplySoundFixes();
 void ApplyReverbFixes();
 void ApplySortFixes();
@@ -31,6 +34,7 @@ void ApplyAiFixes();
 namespace input { void Apply(); }
 void LogTextureSummary();
 namespace crash { void Apply(); }
+namespace power { void Shutdown(const char* why); }
 
 namespace {
 
@@ -46,7 +50,7 @@ bool IsSupportedGame() {
 
 }  // namespace
 
-BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
+BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved) {
   if (reason == DLL_PROCESS_ATTACH) {
     DisableThreadLibraryCalls(inst);
     LoadConfig();
@@ -68,6 +72,9 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
                  "Renderer=D3D%d RendererLabel=%d D3D9Log=%d",
                  c.fov, c.anisotropy, c.msaa, c.mip_bias, c.fog_scale, c.view_distance, c.model_lod, c.tree_always_near ? 0 : 1,
                  c.texture_replace, c.texture_dump, c.renderer, c.renderer_label, c.d3d9_log);
+      simd::Init();
+      if (c.dpi_aware) ApplyDpiAwareness();
+      else patch::Log("dpi: DpiAware=0, Windows scales the game as before");
       if (c.startup) ApplyStartupFixes();
       if (c.registry) ApplyRegistryFixes();
       if (c.files) ApplyFileFixes();
@@ -81,18 +88,20 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
       ApplyHelpFix();
       ApplyTextureFixes();
       ApplyPerfFixes();
+      ApplyGridFix();
       ApplySoundFixes();
       ApplyReverbFixes();
       ApplySortFixes();
       ApplyAiFixes();
       input::Apply();
       video::ApplyVideoPlayer();
-      if (c.activate_log) ApplyDiagnostics();
+      ApplyDiagnostics();  // WM_ACTIVATEAPP hook: logs focus changes, tells input and sound
       prof::Start();
     } else {
       patch::Log("not the supported Mcm2.exe; no fixes applied");
     }
   } else if (reason == DLL_PROCESS_DETACH) {
+    if (!reserved) power::Shutdown("unloading");  // not at process exit (loader lock; next start restores)
     prof::Stop();
     LogTextureSummary();
   }

@@ -387,6 +387,14 @@ SimSmooth=1
 ; missed.
 InputTiming=1
 
+; AltTabFix: 1 = keys and buttons held when the game goes to the background
+; (such as Alt from Alt+Tab) are released, any let go meanwhile count as let
+; go when it comes back, and a keyboard or joystick Windows took
+; away is acquired again (default; needs InputTiming=1). 0 = the original:
+; such keys stay held until pressed again, and the keyboard can stop working
+; after alt-tab.
+AltTabFix=1
+
 ; PreciseTimer: 1 = the game's frame time is measured with the precise
 ; QueryPerformanceCounter instead of whole milliseconds (default). Only used
 ; with SimRate=0; with SimRate the precise timer is always used.
@@ -413,6 +421,11 @@ AiRate=30
 ; AI rides.
 AiSteerRate=0
 
+; AiPickFix: 1 = computer riders' random bike and rider picks can choose the
+; last entry in the list (default). 0 = the original off-by-one: the last bike
+; and rider are never picked.
+AiPickFix=1
+
 ; RestartFix: 1 = "Restart Race" in the pause menu puts every rider back on
 ; their start position facing the course, and FINAL LAP shows again on the
 ; last lap (default). 0 = the original bugs: riders that had crashed or left
@@ -438,6 +451,12 @@ AsyncSound=2
 ; distance, and how often the game restarts a sound that is still playing.
 SoundMaxDistanceMute=1
 
+; BackgroundMute: 1 = with a replacement DirectSound such as DSOAL, silence
+; the game while it is in the background (default; Windows' own DirectSound
+; does this itself). 0 = leave the sound alone: the game stops while in the
+; background and its sounds keep repeating their last fraction of a second.
+BackgroundMute=1
+
 ; BajaReverb, EnduroReverb, QuarryReverb, NationalsReverb, SupercrossReverb,
 ; TagReverb: the EAX 1.0 reverb preset used in each kind of event. The game
 ; turns reverb off for every outdoor event, but with values (decay time 0) that
@@ -462,6 +481,39 @@ TagReverb=Default
 ; case-insensitive name comparisons use a lookup table (default). Both were
 ; measurable slowdowns. 0 = the game's own code.
 FastCrt=1
+
+; Simd: 1 = mcm2fix's own per-frame work (converting vertices for the GPU,
+; blending objects between simulation steps, 16-bit texture uploads, the
+; pause menu's copy of the frame) uses SSE2 when the CPU has it (default).
+; The CPU is checked at start-up and a self test makes sure both versions
+; give the same results. 0 = plain code only. The game's own code, physics
+; included, is not affected either way.
+Simd=1
+
+; SimdLog: 1 = log how fast the SSE2 and plain versions run on this CPU at
+; start-up, and how much work went through them every 5 seconds.
+SimdLog=0
+
+; PauseOnFocusLoss: 1 = switching away from the game mid-race opens the pause
+; menu, as Escape does (default). 0 = the race isn't paused (the game still
+; stops while in the background, and its clock with it).
+PauseOnFocusLoss=1
+
+; DpiAware: 1 = tell Windows the game handles display scaling itself, so with
+; scaling above 100% it runs at the screen's real resolution instead of being
+; stretched (blurry, with a drifting menu mouse) (default). 0 = Windows
+; scales the game as before.
+DpiAware=1
+
+; RacePower: keeps the CPU at full speed while racing. The game needs so
+; little CPU that on the Balanced power plan Windows lowers the clock while
+; it waits for VSync, and some frames then run late (regular stutter,
+; mostly on older CPUs). 1 = switch Windows to the High performance power
+; plan when a race starts and back to your plan after it (also put right at
+; the next start if the game crashed). 2 = High performance the whole time
+; the game runs. 0 = off. Nothing is changed on battery or when the plan is
+; already High performance.
+RacePower=1
 
 ; FastGameCode: 1 = a few of the game's own loops that its 1999 compiler
 ; built badly are rewritten in place with the same maths, so the results are

@@ -63,6 +63,7 @@ void LoadConfig() {
     }
     g_config.ai_log = GetPrivateProfileIntA("mcm2fix", "AiLog", 0, ini) != 0;
   }
+  g_config.ai_pick_fix = GetPrivateProfileIntA("mcm2fix", "AiPickFix", 1, ini) != 0;
   g_config.ai_steer_rate = GetPrivateProfileIntA("mcm2fix", "AiSteerRate", 0, ini);
   if (g_config.ai_steer_rate < 0) g_config.ai_steer_rate = 0;
   g_config.smooth_log = GetPrivateProfileIntA("mcm2fix", "SmoothLog", 0, ini);
@@ -89,6 +90,11 @@ void LoadConfig() {
   g_config.profile = GetPrivateProfileIntA("mcm2fix", "Profile", 0, ini) != 0;
   g_config.profile_sample_us = GetPrivateProfileIntA("mcm2fix", "ProfileSampleUs", 1000, ini);
   g_config.fast_crt = GetPrivateProfileIntA("mcm2fix", "FastCrt", 1, ini) != 0;
+  g_config.simd = GetPrivateProfileIntA("mcm2fix", "Simd", 1, ini) != 0;
+  g_config.simd_log = GetPrivateProfileIntA("mcm2fix", "SimdLog", 0, ini) != 0;
+  g_config.pause_on_focus_loss = GetPrivateProfileIntA("mcm2fix", "PauseOnFocusLoss", 1, ini) != 0;
+  g_config.dpi_aware = GetPrivateProfileIntA("mcm2fix", "DpiAware", 1, ini) != 0;
+  g_config.race_power = GetPrivateProfileIntA("mcm2fix", "RacePower", 1, ini);
   g_config.fast_game_code = GetPrivateProfileIntA("mcm2fix", "FastGameCode", 1, ini) != 0;
   g_config.async_sound = GetPrivateProfileIntA("mcm2fix", "AsyncSound", 2, ini);
   g_config.sound_max_distance_mute = GetPrivateProfileIntA("mcm2fix", "SoundMaxDistanceMute", 1, ini);
@@ -98,6 +104,7 @@ void LoadConfig() {
   if (g_config.tree_cache_mb > 512) g_config.tree_cache_mb = 512;
   g_config.sort_log = GetPrivateProfileIntA("mcm2fix", "SortLog", 0, ini) != 0;
   g_config.input_timing = GetPrivateProfileIntA("mcm2fix", "InputTiming", 1, ini) != 0;
+  g_config.alt_tab_fix = GetPrivateProfileIntA("mcm2fix", "AltTabFix", 1, ini) != 0;
   g_config.input_log = GetPrivateProfileIntA("mcm2fix", "InputLog", 0, ini) != 0;
   g_config.sound_log = GetPrivateProfileIntA("mcm2fix", "SoundLog", 0, ini) != 0;
   {
@@ -111,6 +118,7 @@ void LoadConfig() {
       v[std::strcspn(v, "\t; ")] = 0;  // drop an inline comment
     }
   }
+  g_config.background_mute = GetPrivateProfileIntA("mcm2fix", "BackgroundMute", 1, ini) != 0;
   g_config.sound_pause_log = GetPrivateProfileIntA("mcm2fix", "SoundPauseLog", 0, ini) != 0;
   g_config.state_cache = GetPrivateProfileIntA("mcm2fix", "StateCache", 1, ini) != 0;
   g_config.dd_stats = GetPrivateProfileIntA("mcm2fix", "DDStats", 0, ini) != 0;

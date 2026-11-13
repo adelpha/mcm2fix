@@ -17,6 +17,7 @@
 
 #include "../src/config.h"
 #include "../src/prof.h"
+#include "../src/simd.h"
 #include "../src/dd/d3d7.h"
 #include "../src/dd/directdraw.h"
 #include "../src/dd/gdihook.h"
@@ -100,6 +101,8 @@ int main(int argc, char** argv) {
   for (int i = 2; i < argc; ++i)
     if (std::strncmp(argv[i], "us=", 3) == 0) sample_us = std::atoi(argv[i] + 3);
   bool exclusive = false;  // "exclusive": Fullscreen=Exclusive
+  bool plain = false;      // "plain": Simd=0 (no SSE2 paths)
+  for (int i = 2; i < argc; ++i) plain |= std::strcmp(argv[i], "plain") == 0;
   for (int i = 2; i < argc; ++i) exclusive |= std::strcmp(argv[i], "exclusive") == 0;
   char ini[MAX_PATH];
   GetModuleFileNameA(nullptr, ini, MAX_PATH);
@@ -108,8 +111,10 @@ int main(int argc, char** argv) {
   std::fprintf(f, "[mcm2fix]\nRenderer=%s\nAntialiasing=4\nAlphaToCoverage=2\nAlphaLog=1\nVSync=0\nD3D9Log=1\nDDStats=1\nGdiLog=1\nTextLog=1\nGpuText=%d\nTextureReplace=0\nProfile=%d\nProfileSampleUs=%d\n", api,
                gputext ? 1 : 0, profile ? 1 : 0, sample_us);
   if (exclusive) std::fprintf(f, "Fullscreen=Exclusive\n");
+  std::fprintf(f, "Simd=%d\nSimdLog=1\n", plain ? 0 : 1);
   std::fclose(f);
   LoadConfig();
+  simd::Init();
   prof::Start();
   dd::InstallGdiHooks();
 
@@ -296,15 +301,27 @@ int main(int argc, char** argv) {
     //     state, as a fan, a strip and an indexed list, then a fourth after a
     //     world matrix change (the first three must keep the old matrix).
     //     At z 5: pixel x = 320 + 48 x, pixel y = 240 - 48 y.
+    //     Drawn with "select arg 2" (the vertex colour); between the draws
+    //     arg 1, which that op doesn't read, changes to a black texture
+    //     factor: the batch carries on, and the colours must not change.
+    dev->SetRenderState(RS_TEXTUREFACTOR, 0xff000000);
+    dev->SetTextureStageState(0, TSS_COLOROP, 3);  // select arg 2
+    dev->SetTextureStageState(0, TSS_ALPHAOP, 3);
     V3 fa[4] = {{-2.0f, 2, 5, 0xff00ffff, 0, 0}, {-1.6f, 2, 5, 0xff00ffff, 0, 0},
                 {-1.6f, 3, 5, 0xff00ffff, 0, 0}, {-2.0f, 3, 5, 0xff00ffff, 0, 0}};
     dev->DrawPrimitive(D3DPT_TRIANGLEFAN, fvf_3d, fa, 4, 0);
+    dev->SetTextureStageState(0, TSS_COLORARG1, 3);  // texture factor (black), not read by select arg 2
+    dev->SetTextureStageState(0, TSS_ALPHAARG1, 3);
     V3 st[4] = {{-1.4f, 2, 5, 0xffff00ff, 0, 0}, {-1.0f, 2, 5, 0xffff00ff, 0, 0},
                 {-1.4f, 3, 5, 0xffff00ff, 0, 0}, {-1.0f, 3, 5, 0xffff00ff, 0, 0}};
     dev->DrawPrimitive(D3DPT_TRIANGLESTRIP, fvf_3d, st, 4, 0);
     V3 li[4] = {{-0.8f, 2, 5, 0xff0000ff, 0, 0}, {-0.4f, 2, 5, 0xff0000ff, 0, 0},
                 {-0.8f, 3, 5, 0xff0000ff, 0, 0}, {-0.4f, 3, 5, 0xff0000ff, 0, 0}};
     dev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, fvf_3d, li, 4, idx, 6, 0);
+    dev->SetTextureStageState(0, TSS_COLOROP, 4);  // back to modulate: ends the batch first
+    dev->SetTextureStageState(0, TSS_ALPHAOP, 4);
+    dev->SetTextureStageState(0, TSS_COLORARG1, 2);
+    dev->SetTextureStageState(0, TSS_ALPHAARG1, 2);
     D3DMATRIX down = I;
     down.m[3][1] = -1.5f;
     dev->SetTransform(D3DTRANSFORMSTATE_WORLD, &down);
