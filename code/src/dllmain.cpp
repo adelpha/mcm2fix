@@ -32,6 +32,7 @@ void ApplyAiFixes();
 namespace input { void Apply(); }
 void LogTextureSummary();
 namespace crash { void Apply(); }
+namespace power { void Shutdown(const char* why); }
 
 namespace {
 
@@ -47,7 +48,7 @@ bool IsSupportedGame() {
 
 }  // namespace
 
-BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
+BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved) {
   if (reason == DLL_PROCESS_ATTACH) {
     DisableThreadLibraryCalls(inst);
     LoadConfig();
@@ -95,6 +96,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
       patch::Log("not the supported Mcm2.exe; no fixes applied");
     }
   } else if (reason == DLL_PROCESS_DETACH) {
+    if (!reserved) power::Shutdown("unloading");  // not at process exit (loader lock; next start restores)
     prof::Stop();
     LogTextureSummary();
   }

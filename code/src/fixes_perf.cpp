@@ -16,6 +16,7 @@
 
 #include "config.h"
 #include "patch.h"
+#include "framerate.h"
 #include "simd.h"
 
 namespace {
@@ -334,67 +335,13 @@ void PatchSoundCommit() {
 
 // Called by both renderers just before Present: the game thread is about to
 // wait for VSync, so the pending 3D sound commit runs now.
-// ThreadBoost=1: ask Windows to keep the game thread running. Done once,
-// from the game thread, at its first Present (not in DllMain: it loads
-// avrt.dll). Each call is looked up at run time (XP has none of them).
-static void ApplyThreadBoost() {
-  static bool done = false;
-  if (done) return;
-  done = true;
-  const int mode = GetConfig().thread_boost;
-  char thread_info[160] = "";
-  {
-    int prio = GetThreadPriority(GetCurrentThread());
-    std::snprintf(thread_info, sizeof(thread_info), "thread %lu priority %d, process class %lx", GetCurrentThreadId(),
-                  prio, GetPriorityClass(GetCurrentProcess()));
-  }
-  if (!mode) {
-    patch::Log("perf: ThreadBoost=0 (%s)", thread_info);
-    return;
-  }
-  // No EcoQoS / power throttling for the process (Windows 10 1709+).
-  struct PowerThrottling {
-    ULONG Version, ControlMask, StateMask;
-  };
-  typedef BOOL(WINAPI* SetProcessInformationFn)(HANDLE, int, LPVOID, DWORD);
-  typedef BOOL(WINAPI* SetThreadInformationFn)(HANDLE, int, LPVOID, DWORD);
-  HMODULE k = GetModuleHandleA("kernel32.dll");
-  auto set_proc = reinterpret_cast<SetProcessInformationFn>(GetProcAddress(k, "SetProcessInformation"));
-  auto set_thread = reinterpret_cast<SetThreadInformationFn>(GetProcAddress(k, "SetThreadInformation"));
-  BOOL proc_ok = FALSE, thread_ok = FALSE;
-  DWORD proc_err = 0, thread_err = 0;
-  if (set_proc) {
-    // Control execution speed (1) and timer resolution (4); state 0 = not throttled.
-    PowerThrottling pt{1, 0x1 | 0x4, 0};
-    proc_ok = set_proc(GetCurrentProcess(), 4 /* ProcessPowerThrottling */, &pt, sizeof(pt));
-    if (!proc_ok) proc_err = GetLastError();
-  }
-  if (set_thread) {
-    PowerThrottling pt{1, 0x1, 0};
-    thread_ok = set_thread(GetCurrentThread(), 3 /* ThreadPowerThrottling */, &pt, sizeof(pt));
-    if (!thread_ok) thread_err = GetLastError();
-  }
-  // MMCSS "Games": the scheduler favours the thread over ordinary work while
-  // still keeping some time for everything else.
-  typedef HANDLE(WINAPI* AvSetFn)(LPCWSTR, LPDWORD);
-  HANDLE task = nullptr;
-  DWORD task_index = 0, mm_err = 0;
-  if (HMODULE av = LoadLibraryA("avrt.dll")) {
-    if (auto fn = reinterpret_cast<AvSetFn>(GetProcAddress(av, "AvSetMmThreadCharacteristicsW"))) {
-      task = fn(L"Games", &task_index);
-      if (!task) mm_err = GetLastError();
-    }
-  }
-  patch::Log("perf: ThreadBoost=1 (%s): power throttling off for process %s (%lu), thread %s (%lu); "
-             "MMCSS Games %s (%lu), priority now %d",
-             thread_info, set_proc ? (proc_ok ? "ok" : "failed") : "n/a", proc_err,
-             set_thread ? (thread_ok ? "ok" : "failed") : "n/a", thread_err, task ? "ok" : "failed", mm_err,
-             GetThreadPriority(GetCurrentThread()));
+namespace power {
+void Frame(bool racing);
 }
 
 void PerfBeforePresent() {
   simd::ReportStats();
-  ApplyThreadBoost();
+  power::Frame(SimRacing());
   if (g_at_present && g_npending) SetEvent(g_commit_event);
 }
 
