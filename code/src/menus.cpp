@@ -74,16 +74,19 @@ struct MenuSlider {
   const int* steps;
   int nsteps;
   bool live;
+  bool hundredths;  // steps are value x100, shown as "1.5x"
   int pos;    // bound to the slider while the page is up
   int saved;  // ini value as last saved (or loaded)
 };
 constexpr int kAnisoSteps[] = {0, 2, 4, 8, 16};
 constexpr int kMsaaSteps[] = {0, 2, 4, 8};
+constexpr int kViewSteps[] = {50, 75, 100, 125, 150, 200, 300, 400};
 MenuSlider g_sliders[] = {
-    {"Mcm2fixAniso", "Anisotropy", "Anisotropy", kAnisoSteps, 5, true},
-    {"Mcm2fixMsaa", "Antialiasing", "Antialiasing", kMsaaSteps, 4, false},
+    {"Mcm2fixAniso", "Anisotropy", "Anisotropy", kAnisoSteps, 5, true, false},
+    {"Mcm2fixMsaa", "Antialiasing", "Antialiasing", kMsaaSteps, 4, false, false},
+    {"Mcm2fixView", "View Distance", "ViewDistance", kViewSteps, 8, false, true},
 };
-constexpr int kNumSliders = 2;
+constexpr int kNumSliders = 3;
 constexpr int kMsaaSlider = 1;
 constexpr int kNumChecks = static_cast<int>(sizeof(g_checks) / sizeof(g_checks[0]));
 constexpr char kFootName[] = "Mcm2fixFootnote";
@@ -102,7 +105,7 @@ constexpr int kRowTop = 27, kRowStep = 22;  // first checkbox, checkbox to check
 constexpr int kFeaturesH = kRowTop + 2 * kRowStep + 20 + 7;
 constexpr int kRows = kNumSliders + kNumChecks;
 constexpr int kBoxH = kRowTop + kRows * kRowStep + 22;
-constexpr int kSliderLabelW = 118, kSliderX = 128, kSliderW = 90;
+constexpr int kSliderLabelW = 140, kSliderX = 148, kSliderW = 70;
 
 int CurrentValue(const char* key) {
   const Config& c = GetConfig();
@@ -115,6 +118,7 @@ int CurrentValue(const char* key) {
   if (!std::strcmp(key, "TextureReplace")) return c.texture_replace ? 1 : 0;
   if (!std::strcmp(key, "Anisotropy")) return c.anisotropy;
   if (!std::strcmp(key, "Antialiasing")) return c.msaa;
+  if (!std::strcmp(key, "ViewDistance")) return static_cast<int>(c.view_distance * 100.0f + 0.5f);
   return 0;
 }
 
@@ -605,7 +609,8 @@ void InitChecks() {
 void SliderLabel(uintptr_t page, const MenuSlider& m, int pos) {
   char text[64];
   const int v = m.steps[pos < 0 ? 0 : pos >= m.nsteps ? m.nsteps - 1 : pos];
-  if (v) std::snprintf(text, sizeof(text), "%s %dx%s", m.label, v, m.live ? "" : " *");
+  if (m.hundredths) std::snprintf(text, sizeof(text), "%s %gx%s", m.label, v / 100.0, m.live ? "" : " *");
+  else if (v) std::snprintf(text, sizeof(text), "%s %dx%s", m.label, v, m.live ? "" : " *");
   else std::snprintf(text, sizeof(text), "%s Off%s", m.label, m.live ? "" : " *");
   char name[64];
   std::snprintf(name, sizeof(name), "%sText", m.name);

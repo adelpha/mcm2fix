@@ -42,6 +42,7 @@ const char* SetFromMenu(const char* key, int value) {
   else if (!std::strcmp(key, "Anisotropy")) g_config.anisotropy = value;
   char v[16];
   std::snprintf(v, sizeof(v), "%d", value);
+  if (!std::strcmp(key, "ViewDistance")) std::snprintf(v, sizeof(v), "%g", value / 100.0);  // value in hundredths
   // mcm2fix.ini itself when it can be written (only that key's line changes);
   // then any older choice for the key in the per-user file is dropped so it
   // can't win at the next start. Otherwise the per-user file.
@@ -274,6 +275,7 @@ void LoadConfig() {
   float fog = ReadFloat("FogDistance", 1.0f, ini);
   g_config.fog_scale = fog >= 0.1f && fog <= 20.0f ? fog : 1.0f;
   float view = ReadFloat("ViewDistance", 1.0f, ini);
+  if (g_config.menu_options && g_menu_ini[0]) view = ReadFloat("ViewDistance", view, g_menu_ini);
   g_config.view_distance = view >= 0.25f && view <= 10.0f ? view : 1.0f;
   g_config.tree_always_near = ReadFloat("TreeDetailDistance", 1.0f, ini) == 0.0f;
   float lod = ReadFloat("ModelLod", 1.0f, ini);

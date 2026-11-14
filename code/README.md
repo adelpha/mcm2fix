@@ -296,11 +296,11 @@ LiquidMetal=0
 MotionBlur=1
 
 ; MenuOptions: 1 = mcm2fix settings on the game's own Options pages. Options >
-; Graphics gets an "Enhancements" box: Anisotropy and Antialiasing sliders,
+; Graphics gets an "Enhancements" box: Anisotropy, Antialiasing and View Distance (ViewDistance) sliders,
 ; VSync, Widescreen View (WideFov), Motion Blur, Smooth Tree Edges
 ; (AlphaToCoverage), Soft Rider Shadows (RiderShadows), Bike Reflections
 ; (Reflections) and Replacement Textures (TextureReplace; menu pictures are
-; always used). Antialiasing, Widescreen View, Soft Rider Shadows, Bike
+; always used). Antialiasing, View Distance, Widescreen View, Soft Rider Shadows, Bike
 ; Reflections and Replacement Textures apply when the game is next started.
 ; What you pick there is written into this file. If this file can't be
 ; written (read-only, or a protected folder), it goes to
