@@ -26,6 +26,7 @@
 #include "config.h"
 #include "patch.h"
 #include "xp_compat.h"
+#include "dd/menubg.h"
 
 namespace {
 
@@ -98,8 +99,6 @@ constexpr char kOptGraphControls[] =
 using CreateFileAFn = HANDLE(WINAPI*)(LPCSTR, DWORD, DWORD, LPSECURITY_ATTRIBUTES, DWORD, DWORD, HANDLE);
 CreateFileAFn g_create_file = nullptr;
 
-std::string g_patched_path;  // the patched OPTGRAPH.DAT, once made
-bool g_patch_tried = false;
 CRITICAL_SECTION g_cs;
 
 bool EndsWithNoCase(const char* s, const char* tail) {
@@ -128,62 +127,107 @@ uint32_t Get32(const std::vector<char>& d, size_t at) {
 }
 void Put32(std::vector<char>& d, size_t at, uint32_t v) { std::memcpy(d.data() + at, &v, 4); }
 
-// Makes the patched copy of the archive the game asked for. Returns its path,
-// or empty (the game then gets its own file).
-std::string MakePatchedOptGraph(const char* original) {
-  std::vector<char> d;
-  if (!ReadWhole(original, d)) {
-    patch::Log("menus: could not read %s", original);
-    return {};
-  }
-  if (std::memcmp(d.data(), "RS2", 4) != 0) {
-    patch::Log("menus: %s is not an RS2 archive", original);
-    return {};
-  }
+// Where an archive entry's offset/size pair sits in the directory, or 0.
+size_t FindEntry(const std::vector<char>& d, const char* wanted) {
+  if (d.size() < 8 || std::memcmp(d.data(), "RS2", 4) != 0) return patch::Log("menus: not an RS2 archive"), 0;
   const uint32_t count = Get32(d, 4);
   size_t p = 8;
-  size_t dtm_entry = 0;
   for (uint32_t i = 0; i < count; ++i) {
-    if (p + 4 > d.size()) return patch::Log("menus: archive directory cut short"), std::string();
+    if (p + 4 > d.size()) return patch::Log("menus: archive directory cut short"), 0;
     const uint32_t len = Get32(d, p);
     p += 4;
-    if (len == 0 || len > 260 || p + len + 8 > d.size()) return patch::Log("menus: bad archive entry %u", i), std::string();
+    if (len == 0 || len > 260 || p + len + 8 > d.size()) return patch::Log("menus: bad archive entry %u", i), 0;
     const std::string name(d.data() + p, strnlen(d.data() + p, len));
     p += len;
-    if (_stricmp(name.c_str(), "OptGraph.dtm") == 0) dtm_entry = p;
+    if (_stricmp(name.c_str(), wanted) == 0) {
+      const uint32_t off = Get32(d, p), size = Get32(d, p + 4);
+      if (off > d.size() || size > d.size() - off) return patch::Log("menus: %s out of range", wanted), 0;
+      return p;
+    }
     p += 8;
   }
-  if (!dtm_entry) return patch::Log("menus: OptGraph.dtm not in the archive"), std::string();
-  const uint32_t off = Get32(d, dtm_entry), size = Get32(d, dtm_entry + 4);
-  if (off > d.size() || size > d.size() - off) return patch::Log("menus: OptGraph.dtm out of range"), std::string();
-  std::string text(d.data() + off, size);
-  if (text.find(kMotionBlurName) != std::string::npos) {
-    patch::Log("menus: OptGraph.dtm already has our controls");
-    return {};
-  }
-  const size_t anim = text.find("[Set_Anim]");
-  if (anim == std::string::npos) return patch::Log("menus: OptGraph.dtm has no [Set_Anim]"), std::string();
-  text.insert(anim, kOptGraphControls);
-  // The new text goes at the end; its directory entry points there.
-  const size_t new_off = d.size();
-  d.insert(d.end(), text.begin(), text.end());
-  Put32(d, dtm_entry, static_cast<uint32_t>(new_off));
-  Put32(d, dtm_entry + 4, static_cast<uint32_t>(text.size()));
+  patch::Log("menus: %s not in the archive", wanted);
+  return 0;
+}
 
+// The new data goes at the end of the archive; the entry points there.
+void ReplaceEntry(std::vector<char>& d, size_t entry, const void* data, size_t n) {
+  const size_t at = d.size();
+  d.insert(d.end(), static_cast<const char*>(data), static_cast<const char*>(data) + n);
+  Put32(d, entry, static_cast<uint32_t>(at));
+  Put32(d, entry + 4, static_cast<uint32_t>(n));
+}
+
+// OptGraph.dtm with our controls before [Set_Anim].
+bool EditOptGraph(std::vector<char>& d) {
+  const size_t e = FindEntry(d, "OptGraph.dtm");
+  if (!e) return false;
+  std::string text(d.data() + Get32(d, e), Get32(d, e + 4));
+  if (text.find(kMotionBlurName) != std::string::npos) return patch::Log("menus: OptGraph.dtm already has our controls"), false;
+  const size_t anim = text.find("[Set_Anim]");
+  if (anim == std::string::npos) return patch::Log("menus: OptGraph.dtm has no [Set_Anim]"), false;
+  const size_t before = text.size();
+  text.insert(anim, kOptGraphControls);
+  ReplaceEntry(d, e, text.data(), text.size());
+  patch::Log("menus: Options > Graphics layout: added Enhancements box + Motion Blur checkbox (dtm %u -> %u bytes)",
+             static_cast<unsigned>(before), static_cast<unsigned>(text.size()));
+  return true;
+}
+
+// MenuFlag: the main menu background becomes flat key green (dd/menubg.cpp
+// draws the flag and the MenuBackground picture where it shows).
+bool EditMainMenu(std::vector<char>& d) {
+  if (!dd::MenuBgWanted()) return false;
+  const size_t e = FindEntry(d, "01_Main\\BackGround_01.tga");
+  if (!e) return false;
+  std::vector<char> tga(18 + 640 * 480 * 2);
+  tga[2] = 2;  // uncompressed true colour
+  tga[12] = static_cast<char>(640 & 0xff);
+  tga[13] = static_cast<char>(640 >> 8);
+  tga[14] = static_cast<char>(480 & 0xff);
+  tga[15] = static_cast<char>(480 >> 8);
+  tga[16] = 16;
+  for (size_t i = 18; i < tga.size(); i += 2) {
+    tga[i] = static_cast<char>(dd::kMenuBgKey555 & 0xff);
+    tga[i + 1] = static_cast<char>(dd::kMenuBgKey555 >> 8);
+  }
+  const uint32_t old_size = Get32(d, e + 4);
+  ReplaceEntry(d, e, tga.data(), tga.size());
+  patch::Log("menus: main menu background (%u bytes) replaced by key green for the flag", old_size);
+  return true;
+}
+
+struct PatchedArchive {
+  const char* file;  // name the game opens, e.g. OPTGRAPH.DAT
+  bool (*edit)(std::vector<char>& d);
+  bool on;
+  bool tried;
+  std::string path;  // the patched copy, empty = the game's own file
+};
+PatchedArchive g_archives[] = {
+    {"OPTGRAPH.DAT", &EditOptGraph, false, false, {}},
+    {"MAINMENU.DAT", &EditMainMenu, false, false, {}},
+};
+
+// Makes the patched copy of the archive the game asked for. Returns its path,
+// or empty (the game then gets its own file).
+std::string MakePatched(const char* original, PatchedArchive& a) {
+  std::vector<char> d;
+  if (!ReadWhole(original, d)) return patch::Log("menus: could not read %s", original), std::string();
+  if (!a.edit(d)) return {};
   const std::string root = xp::LocalAppData();
   if (root.empty()) return patch::Log("menus: no per-user folder"), std::string();
   const std::string dir = root + "\\Motocross Madness 2\\cache";
   CreateDirectoryA((root + "\\Motocross Madness 2").c_str(), nullptr);
   CreateDirectoryA(dir.c_str(), nullptr);
-  const std::string out = dir + "\\OPTGRAPH.DAT";
+  const std::string out = dir + "\\" + a.file;
   HANDLE h = g_create_file(out.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (h == INVALID_HANDLE_VALUE) return patch::Log("menus: cannot write %s (%lu)", out.c_str(), GetLastError()), std::string();
   DWORD put = 0;
   const bool ok = WriteFile(h, d.data(), static_cast<DWORD>(d.size()), &put, nullptr) && put == d.size();
   CloseHandle(h);
   if (!ok) return patch::Log("menus: write of %s failed", out.c_str()), std::string();
-  patch::Log("menus: Options > Graphics layout: added Enhancements box + Motion Blur checkbox (dtm %u -> %u bytes) -> %s",
-             size, static_cast<unsigned>(text.size()), out.c_str());
+  patch::Log("menus: %s -> %s", original, out.c_str());
   return out;
 }
 
@@ -193,22 +237,25 @@ HANDLE WINAPI MenuCreateFileA(LPCSTR name, DWORD access, DWORD share, LPSECURITY
                               DWORD flags, HANDLE templ) {
   // Options closed and a track loading: the saved checkbox value is in by now.
   ApplyIfChanged("file open", name);
-  if (name && !(access & GENERIC_WRITE) && disposition == OPEN_EXISTING && EndsWithNoCase(name, "OPTGRAPH.DAT") &&
-      std::strstr(name, "\\cache\\") == nullptr) {
-    EnterCriticalSection(&g_cs);
-    if (!g_patch_tried) {
-      g_patch_tried = true;
-      g_patched_path = MakePatchedOptGraph(name);
-    }
-    const std::string patched = g_patched_path;
-    LeaveCriticalSection(&g_cs);
-    if (!patched.empty()) {
-      HANDLE h = g_create_file(patched.c_str(), access, share, sa, disposition, flags, templ);
-      if (h != INVALID_HANDLE_VALUE) {
-        if (GetConfig().menu_log) patch::Log("menus: %s -> %s", name, patched.c_str());
-        return h;
+  if (name && !(access & GENERIC_WRITE) && disposition == OPEN_EXISTING && std::strstr(name, "\\cache\\") == nullptr) {
+    for (PatchedArchive& a : g_archives) {
+      if (!a.on || !EndsWithNoCase(name, a.file)) continue;
+      EnterCriticalSection(&g_cs);
+      if (!a.tried) {
+        a.tried = true;
+        a.path = MakePatched(name, a);
       }
-      patch::Log("menus: could not open %s (%lu), using the game's file", patched.c_str(), GetLastError());
+      const std::string patched = a.path;
+      LeaveCriticalSection(&g_cs);
+      if (!patched.empty()) {
+        HANDLE h = g_create_file(patched.c_str(), access, share, sa, disposition, flags, templ);
+        if (h != INVALID_HANDLE_VALUE) {
+          if (GetConfig().menu_log) patch::Log("menus: %s -> %s", name, patched.c_str());
+          return h;
+        }
+        patch::Log("menus: could not open %s (%lu), using the game's file", patched.c_str(), GetLastError());
+      }
+      break;
     }
   }
   return g_create_file(name, access, share, sa, disposition, flags, templ);
@@ -299,19 +346,19 @@ void __fastcall OptGraphEvent(uintptr_t self, void* edx, uintptr_t event) {
 
 void ApplyMenuOptions() {
   const Config& c = GetConfig();
-  if (!c.menu_options) {
-    patch::Log("menus: MenuOptions=0, the game's menus as they were");
-    return;
-  }
-  if (*reinterpret_cast<const uintptr_t*>(kOptGraphEventSlot) != kOptGraphEvent) {
-    patch::Log("menus: Options > Graphics page code differs, not applied");
-    return;
-  }
+  g_archives[0].on = c.menu_options && *reinterpret_cast<const uintptr_t*>(kOptGraphEventSlot) == kOptGraphEvent;
+  g_archives[1].on = c.menu_flag;
+  if (c.menu_options && !g_archives[0].on) patch::Log("menus: Options > Graphics page code differs, not applied");
+  if (!c.menu_options) patch::Log("menus: MenuOptions=0, the game's Options pages as they were");
+  if (!g_archives[0].on && !g_archives[1].on) return;
   InitializeCriticalSection(&g_cs);
   g_create_file = reinterpret_cast<CreateFileAFn>(patch::HookIat(kIatCreateFileA, reinterpret_cast<void*>(&MenuCreateFileA)));
   if (!g_create_file) g_create_file = &CreateFileA;
-  void* hook = reinterpret_cast<void*>(&OptGraphEvent);
-  patch::Write(kOptGraphEventSlot, &hook, sizeof(hook));
-  patch::Log("menus: on: Options > Graphics gets an Enhancements box (Motion Blur); menu choices saved to %s; MenuLog=%d",
-             MenuIniPath()[0] ? MenuIniPath() : "(no per-user folder)", c.menu_log ? 1 : 0);
+  if (g_archives[0].on) {
+    void* hook = reinterpret_cast<void*>(&OptGraphEvent);
+    patch::Write(kOptGraphEventSlot, &hook, sizeof(hook));
+    patch::Log("menus: on: Options > Graphics gets an Enhancements box (Motion Blur); menu choices saved to %s; MenuLog=%d",
+               MenuIniPath()[0] ? MenuIniPath() : "(no per-user folder)", c.menu_log ? 1 : 0);
+  }
+  if (g_archives[1].on) patch::Log("menus: MenuFlag=1, MenuBackground=%s (checked when the main menu loads)", c.menu_background);
 }

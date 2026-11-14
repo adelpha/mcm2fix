@@ -142,6 +142,10 @@ bool Decode(const std::wstring& path, std::vector<uint8_t>& px, UINT& w, UINT& h
 
 }  // namespace
 
+bool DecodeImageFile(const std::wstring& path, std::vector<uint8_t>& px, UINT& w, UINT& h) {
+  return Decode(path, px, w, h);
+}
+
 uint64_t TextureHash(const uint8_t* bgra, UINT w, UINT h) {
   // FNV-1a, 64-bit.
   uint64_t x = 14695981039346656037ull;

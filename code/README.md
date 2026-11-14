@@ -302,6 +302,18 @@ MotionBlur=1
 ; 0 = the menus as they were. Default 1.
 MenuOptions=1
 
+; MenuFlag: 1 = a waving dark blue chequered flag behind the main menu, seen
+; through the transparent parts of MenuBackground (fills the whole window,
+; also the sides of a wide screen). Needs the MenuBackground picture and the
+; Direct3D 11 renderer; without them the main menu is as it was. Default 1.
+MenuFlag=1
+
+; MenuBackground: the main menu background picture used with MenuFlag: a
+; 640x480 PNG with transparency, relative to the game folder (or a full path).
+; It replaces the game's own background (01_Main\BackGround_01 in
+; UI\MAINMENU.DAT; tools/mcm2dat unpacks the original to start from).
+MenuBackground=UI\MAINMENU\01_MAIN\BackGround_01.png
+
 ; MotionBlurStrength: length of the streaks at full speed, in percent (higher
 ; = longer streaks), 0 to 300. Default 80.
 MotionBlurStrength=80

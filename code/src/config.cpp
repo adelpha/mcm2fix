@@ -56,6 +56,18 @@ void LoadConfig() {
   g_config.alpha_cut = GetPrivateProfileIntA("mcm2fix", "AlphaCut", 128, ini);
   g_config.menu_options = GetPrivateProfileIntA("mcm2fix", "MenuOptions", 1, ini) != 0;
   g_config.menu_log = GetPrivateProfileIntA("mcm2fix", "MenuLog", 0, ini) != 0;
+  g_config.menu_flag = GetPrivateProfileIntA("mcm2fix", "MenuFlag", 1, ini) != 0;
+  {
+    // A path: stop at a ';' comment, trim the ends.
+    char v[260] = {};
+    GetPrivateProfileStringA("mcm2fix", "MenuBackground", "UI\\MAINMENU\\01_MAIN\\BackGround_01.png", v, sizeof(v), ini);
+    if (char* semi = std::strchr(v, ';')) *semi = '\0';
+    size_t n = std::strlen(v);
+    while (n && (v[n - 1] == ' ' || v[n - 1] == '\t')) v[--n] = '\0';
+    const char* start = v;
+    while (*start == ' ' || *start == '\t') ++start;
+    xp::Copy(g_config.menu_background, *start ? start : "UI\\MAINMENU\\01_MAIN\\BackGround_01.png");
+  }
   {
     const std::string dir = xp::LocalAppData();
     if (!dir.empty()) xp::Copy(g_menu_ini, (dir + "\\Motocross Madness 2\\mcm2fix-menu.ini").c_str());

@@ -1,5 +1,6 @@
 #include "backend9.h"
 #include "gputext.h"
+#include "menubg.h"
 #include "msaa.h"
 
 #include <d3dcompiler.h>
@@ -880,7 +881,7 @@ void Present(const GpuTexture& src_tex, UINT src_w, UINT src_h, UINT interval) {
     p.src_h = src_h;
     p.src_rect = {0, 0, static_cast<LONG>(src_w), static_cast<LONG>(src_h)};
     p.linear = true;
-    Blit(p);
+    if (!MenuBgPresent(src, src_w, src_h, p.dst_rect)) Blit(p);  // MenuFlag: main menu over a waving flag
     GpuTextComposite(src_tex, b.swap_rtv, nullptr, b.swap_w, b.swap_h, p.dst_rect);
   }
   DrawRendererLabel(b.swap_rtv, nullptr, b.swap_w, b.swap_h);

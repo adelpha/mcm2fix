@@ -57,6 +57,7 @@ add_library(mcm2fix SHARED
   src/dd/oneshot.cpp
   src/dd/hook.cpp
   src/dd/msaa.cpp
+  src/dd/menubg.cpp
   src/dd/texreplace.cpp
   src/dd/reflect.cpp
   src/dd/gpushadow.cpp

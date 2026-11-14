@@ -108,6 +108,8 @@ struct Config {
   bool texture_log = false;         // TextureLog: log the format of each texture the game creates
   bool menu_options = true;   // MenuOptions: mcm2fix settings added to the game's own Options pages (menus.cpp)
   bool menu_log = false;      // MenuLog: log every event on the pages mcm2fix adds settings to
+  bool menu_flag = true;      // MenuFlag: waving flag behind the main menu, under MenuBackground (dd/menubg.cpp)
+  char menu_background[260] = {};  // MenuBackground: 640x480 picture with transparency, replaces the main menu background
 };
 
 const Config& GetConfig();

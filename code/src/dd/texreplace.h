@@ -16,10 +16,14 @@
 #pragma once
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "backend.h"
 
 namespace dd {
+
+// Decode a PNG/JPEG/BMP file to B8G8R8A8 (straight alpha) with WIC.
+bool DecodeImageFile(const std::wstring& path, std::vector<uint8_t>& px, UINT& w, UINT& h);
 
 uint64_t TextureHash(const uint8_t* bgra, UINT w, UINT h);
 // True when the exact TextureHash is needed (TextureDump, or pictures in the
