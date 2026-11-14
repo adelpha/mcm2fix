@@ -109,6 +109,10 @@ struct Config {
   bool menu_options = true;   // MenuOptions: mcm2fix settings added to the game's own Options pages (menus.cpp)
   bool menu_log = false;      // MenuLog: log every event on the pages mcm2fix adds settings to
   bool menu_flag = true;      // MenuFlag: waving flag behind the main menu, under MenuBackground (dd/menubg.cpp)
+  int menu_flag_speed = 100;       // MenuFlagSpeed: % of the default movement speed
+  int menu_flag_brightness = 68;   // MenuFlagBrightness: % (100 = preview-5 colours)
+  int menu_flag_warp = 100;        // MenuFlagWarp: % of how far the chequers are pushed around
+  int menu_flag_shading = 100;     // MenuFlagShading: % of the light, shadow and mottling
   char menu_background[260] = {};  // MenuBackground: 640x480 picture with transparency, replaces the main menu background
 };
 

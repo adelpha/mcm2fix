@@ -308,6 +308,15 @@ MenuOptions=1
 ; Direct3D 11 renderer; without them the main menu is as it was. Default 1.
 MenuFlag=1
 
+; The flag's look, in percent. MenuFlagSpeed: how fast it moves (0 = still,
+; 200 = twice as fast). MenuFlagBrightness: 100 = brighter colours, default
+; 68. MenuFlagWarp: how far the chequers are pushed around (0 = straight).
+; MenuFlagShading: the light, shadow and drifting patches (0 = flat).
+MenuFlagSpeed=100
+MenuFlagBrightness=68
+MenuFlagWarp=100
+MenuFlagShading=100
+
 ; MenuBackground: the main menu background picture used with MenuFlag: a
 ; 640x480 PNG with transparency, relative to the game folder (or a full path).
 ; It replaces the game's own background (01_Main\BackGround_01 in

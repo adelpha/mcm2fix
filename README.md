@@ -485,6 +485,10 @@ The file has three parts:
 | `MotionBlur` | `1` | `0`, `1` | Speed blur: above `MotionBlurMinSpeed` the edges of the 3D scene streak towards the point the bike is heading for, more the faster you go, while the middle of the screen stays sharp. The HUD, text and menus are never blurred. Works the same at any frame rate. |
 | `MenuOptions` | `1` | `0`, `1` | mcm2fix settings on the game's own Options pages: Options > Graphics gets an "Enhancements" box with a Motion Blur checkbox. Choices made there are saved in `%LOCALAPPDATA%\Motocross Madness 2\mcm2fix-menu.ini` and win over `mcm2fix.ini` (delete that file to go back). |
 | `MenuFlag` | `1` | `0`, `1` | A waving dark blue chequered flag behind the main menu, seen through the transparent parts of `MenuBackground` (fills the whole window). Needs that picture and the Direct3D 11 renderer; otherwise the main menu is as it was. |
+| `MenuFlagSpeed` | `100` | `0`-`1000` | How fast the menu flag moves, in percent (`0` = still). |
+| `MenuFlagBrightness` | `68` | `0`-`300` | Brightness of the menu flag, in percent. |
+| `MenuFlagWarp` | `100` | `0`-`500` | How far the flag's chequers are pushed around, in percent (`0` = straight lines). |
+| `MenuFlagShading` | `100` | `0`-`300` | Strength of the flag's light, shadow and drifting patches, in percent (`0` = flat). |
 | `MenuBackground` | `UI\MAINMENU\01_MAIN\BackGround_01.png` | path | The main menu background used with `MenuFlag`: a 640x480 PNG with transparency, relative to the game folder or a full path. `tools/mcm2dat` unpacks the original to start from. |
 | `MotionBlurStrength` | `80` | 0-300 | Length of the streaks at full speed, in percent (higher = longer streaks). |
 | `MotionBlurMinSpeed` | `30` | 0-200 | Speed (mph, as the speedometer shows) where the blur starts. |

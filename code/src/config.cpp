@@ -58,6 +58,16 @@ void LoadConfig() {
   g_config.menu_log = GetPrivateProfileIntA("mcm2fix", "MenuLog", 0, ini) != 0;
   g_config.menu_flag = GetPrivateProfileIntA("mcm2fix", "MenuFlag", 1, ini) != 0;
   {
+    auto pct = [&](const char* key, int def, int hi) {
+      const int v = static_cast<int>(GetPrivateProfileIntA("mcm2fix", key, def, ini));
+      return v < 0 ? 0 : v > hi ? hi : v;
+    };
+    g_config.menu_flag_speed = pct("MenuFlagSpeed", 100, 1000);
+    g_config.menu_flag_brightness = pct("MenuFlagBrightness", 68, 300);
+    g_config.menu_flag_warp = pct("MenuFlagWarp", 100, 500);
+    g_config.menu_flag_shading = pct("MenuFlagShading", 100, 300);
+  }
+  {
     // A path: stop at a ';' comment, trim the ends.
     char v[260] = {};
     GetPrivateProfileStringA("mcm2fix", "MenuBackground", "UI\\MAINMENU\\01_MAIN\\BackGround_01.png", v, sizeof(v), ini);

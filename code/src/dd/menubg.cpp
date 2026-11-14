@@ -20,7 +20,8 @@ namespace {
 const char kMenuShader[] = R"(
 cbuffer Params : register(b0) {
   float4 rect;  // game area in window pixels: x0 y0 w h
-  float4 info;  // x: seconds, y: picture loaded
+  float4 info;  // x: seconds (already times MenuFlagSpeed), y: picture loaded
+  float4 tune;  // x: brightness, y: warp, z: shading (1 = the defaults)
 };
 Texture2D frame : register(t0);
 Texture2D art : register(t1);
@@ -30,8 +31,6 @@ float4 vs_main(uint id : SV_VertexID) : SV_Position {
   float2 c = float2(id & 1, id >> 1);
   return float4(c.x * 2 - 1, 1 - c.y * 2, 0, 1);
 }
-
-static const float kBrightness = 0.85;  // StOo: a little darker than preview-5
 
 bool IsKey(float3 c) { return c.g > 0.85 && c.r < 0.12 && c.b < 0.12; }
 
@@ -70,7 +69,7 @@ float3 Flag(float2 p, float t) {
   Field(u + float2(e, 0), t, q1, rx);
   Field(u + float2(0, e), t, q2, ry);
   float2 grad = float2(rx - r, ry - r) / e;
-  float2 f = (u + (q - 0.5) * 0.10 + (r - 0.5) * 0.06) * 7.5;  // 64 px squares
+  float2 f = (u + (q - 0.5) * 0.10 * tune.y + (r - 0.5) * 0.06 * tune.y) * 7.5;  // 64 px squares
   float3 n = normalize(float3(-grad * 0.35, 1));
   float3 L = normalize(float3(-0.55, -0.45, 0.70));  // from the upper left
   float3 H = normalize(L + float3(0, 0, 1));
@@ -86,8 +85,10 @@ float3 Flag(float2 p, float t) {
   // of light a little above the middle.
   float band = 0.30 + 0.95 * exp(-pow((p.y / 480.0 - 0.47) / 0.30, 2.0));
   float mott = 0.65 + 0.7 * r;  // broad drifting light and dark patches
-  float3 col = c * band * (0.25 + 1.2 * diff) * mott * 1.15 + spec * band * mott * float3(0.45, 0.45, 0.75);
-  return col * kBrightness;
+  // Shading 0 = flat colours at about the average light, 1 = the default.
+  float shade = lerp(1.25, (0.25 + 1.2 * diff) * mott * 1.15, tune.z);
+  float3 col = c * band * shade + spec * tune.z * band * mott * float3(0.45, 0.45, 0.75);
+  return col * tune.x;
 }
 
 float4 ps_main(float4 pos : SV_Position) : SV_Target {
@@ -126,6 +127,7 @@ float4 ps_main(float4 pos : SV_Position) : SV_Target {
 struct MenuCB {
   float rect[4];
   float info[4];
+  float tune[4];
 };
 
 bool g_checked = false, g_wanted = false;
@@ -223,6 +225,8 @@ bool MenuBgWanted() {
   g_wanted = true;
   patch::Log("menu flag: on, picture %ls (%u transparent, %u solid, %u partly transparent pixels)", path.c_str(), clear,
              solid, 640u * 480u - clear - solid);
+  patch::Log("menu flag: speed %d%%, brightness %d%%, warp %d%%, shading %d%%", c.menu_flag_speed,
+             c.menu_flag_brightness, c.menu_flag_warp, c.menu_flag_shading);
   return true;
 }
 
@@ -240,8 +244,13 @@ bool MenuBgPresent(ID3D11ShaderResourceView* frame, UINT frame_w, UINT frame_h, 
   cb.rect[1] = static_cast<float>(r.top);
   cb.rect[2] = static_cast<float>(r.right - r.left);
   cb.rect[3] = static_cast<float>(r.bottom - r.top);
-  cb.info[0] = static_cast<float>(std::fmod(static_cast<double>(now.QuadPart - g_t0.QuadPart) / g_freq.QuadPart, 3600.0));
+  const Config& c = GetConfig();
+  const double secs = static_cast<double>(now.QuadPart - g_t0.QuadPart) / g_freq.QuadPart;
+  cb.info[0] = static_cast<float>(std::fmod(secs * c.menu_flag_speed / 100.0, 3600.0));
   cb.info[1] = g_art_srv ? 1.0f : 0.0f;
+  cb.tune[0] = c.menu_flag_brightness / 100.0f;
+  cb.tune[1] = c.menu_flag_warp / 100.0f;
+  cb.tune[2] = c.menu_flag_shading / 100.0f;
   ContextTouched();
   b.ctx->UpdateSubresource(g_cb, 0, nullptr, &cb, 0, 0);
   b.ctx->OMSetRenderTargets(1, &b.swap_rtv, nullptr);
