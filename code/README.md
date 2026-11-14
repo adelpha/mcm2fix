@@ -291,8 +291,16 @@ LiquidMetal=0
 ; MotionBlur: 1 = speed blur. Above MotionBlurMinSpeed the edges of the 3D
 ; scene streak towards the point your bike is heading for, more the faster
 ; you go, while the middle of the screen stays sharp. The HUD, text and menus
-; are never blurred. 0 = off. Default 1.
+; are never blurred. 0 = off. Default 1. Also on the game's Options >
+; Graphics page (see MenuOptions).
 MotionBlur=1
+
+; MenuOptions: 1 = mcm2fix settings on the game's own Options pages. Options >
+; Graphics gets an "Enhancements" box with a Motion Blur checkbox. What you
+; pick there is saved in %LOCALAPPDATA%\Motocross Madness 2\mcm2fix-menu.ini
+; and wins over this file (delete that file to go back to this one).
+; 0 = the menus as they were. Default 1.
+MenuOptions=1
 
 ; MotionBlurStrength: length of the streaks at full speed, in percent (higher
 ; = longer streaks), 0 to 300. Default 80.
@@ -795,6 +803,10 @@ ReflectLog=0
 ; ReflectDebug: 1 = draw the reflection alone at full strength on everything
 ; that reflects (no Fresnel), to see what is reflected. Default 0.
 ReflectDebug=0
+
+; MenuLog: log every event on the Options pages mcm2fix adds settings to.
+; Default 0.
+MenuLog=0
 
 ; MotionBlurLog: with MotionBlur, every 5 s: speed, blur amount and focus
 ; point, where in the frame the blur went, and a few whole-frame draw lists.

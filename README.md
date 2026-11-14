@@ -105,7 +105,7 @@ Windows 10 and 11.
   (`MipBias`).
 - **Speed blur** (`MotionBlur`, on by default). At speed, the sides of the
   3D scene streak towards where the bike is heading while the middle and the
-  HUD stay sharp. Direct3D 11 and Direct3D 9. Set `MotionBlur=0` to turn it off.
+  HUD stay sharp. Direct3D 11 and Direct3D 9. Set `MotionBlur=0` to turn it off, or untick it in Options > Graphics.
 - **True-colour textures** where the game's own art has more than 16 bits
   (`TrueColorTextures`).
 - **Shadows for every rider, drawn by the graphics card** (`RiderShadows`).
@@ -483,6 +483,7 @@ The file has three parts:
 | `ReflectSkipObjects` | `SIGN*, FLAG*` | frame names | Models with any of these parts get no reflections: the board man at the start line (`SIGN01`) and the flag man (`FLAG01`-`FLAG03`) are the rider model with extra parts, so their bare heads would shine like helmets. |
 | `LiquidMetal` | `0` | `0`, `1` | "T-1000 mode": every bike and rider is drawn in liquid chrome, reflecting the world around it (uses `Reflections=2` if `Reflections` is `0`). |
 | `MotionBlur` | `1` | `0`, `1` | Speed blur: above `MotionBlurMinSpeed` the edges of the 3D scene streak towards the point the bike is heading for, more the faster you go, while the middle of the screen stays sharp. The HUD, text and menus are never blurred. Works the same at any frame rate. |
+| `MenuOptions` | `1` | `0`, `1` | mcm2fix settings on the game's own Options pages: Options > Graphics gets an "Enhancements" box with a Motion Blur checkbox. Choices made there are saved in `%LOCALAPPDATA%\Motocross Madness 2\mcm2fix-menu.ini` and win over `mcm2fix.ini` (delete that file to go back). |
 | `MotionBlurStrength` | `80` | 0-300 | Length of the streaks at full speed, in percent (higher = longer streaks). |
 | `MotionBlurMinSpeed` | `30` | 0-200 | Speed (mph, as the speedometer shows) where the blur starts. |
 | `MotionBlurMaxSpeed` | `70` | 1-250 | Speed (mph) where the blur is at full strength. |
@@ -621,6 +622,7 @@ only when asked to. Logs go to `%LOCALAPPDATA%\Motocross Madness 2\logs`.
 | `ReflectLog` | `0` | Which bike and rider textures and model parts reflect, the sky tiles kept for `Reflections`, and every 5 seconds what the reflections cost. |
 | `ReflectDebug` | `0` | `1` = the reflection alone at full strength on everything that reflects (no Fresnel), to see what is reflected. |
 | `MotionBlurLog` | `0` | With `MotionBlur`, every 5 seconds: speed, blur amount and focus point, where in the frame the blur went, plus a few whole-frame draw lists. |
+| `MenuLog` | `0` | Log every event on the Options pages mcm2fix adds settings to. |
 | `ShadowLog` | `0` | `RiderShadows` counters every 5 seconds: shadows drawn, vertices, time taken, terrain draws shadowed. `2` also logs every shadow's placement for 90 frames, 10 s into each race. |
 | `SmoothLog` | `0` | `SimSmooth` tracing: `1` = matrices and draws for a few frames, `2` = camera only (120 frames), `3` = rider shadows, `4` = camera and projection after each race start. |
 

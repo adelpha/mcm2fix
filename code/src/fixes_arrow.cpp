@@ -228,7 +228,7 @@ void __stdcall AdjustCue(uintptr_t cue, float* dir) {
 
 void ApplyArrowFix() {
   const Config& c = GetConfig();
-  if (!c.arrow_heading && c.arrow_scale == 1.0f && !c.motion_blur) return;
+  if (!c.arrow_heading && c.arrow_scale == 1.0f && !c.motion_blur && !c.menu_options) return;
   if (!patch::Matches(kSetOrientation, kSetOrientationEntry, sizeof(kSetOrientationEntry))) {
     patch::Log("direction arrow: code differs, not applied");
     return;

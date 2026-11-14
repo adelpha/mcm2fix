@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 
 namespace {
 Config g_config;
@@ -19,6 +20,23 @@ float ReadFloat(const char* key, float def, const char* ini) {
 }
 
 int Clamp(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+char g_menu_ini[MAX_PATH] = {};
+
+// A key set from the menus (mcm2fix-menu.ini) wins over mcm2fix.ini.
+int ReadMenuInt(const char* key, int value) {
+  if (!g_config.menu_options || !g_menu_ini[0]) return value;
+  return GetPrivateProfileIntA("mcm2fix", key, value, g_menu_ini);
+}
+}
+
+const char* MenuIniPath() { return g_menu_ini; }
+
+void SetMotionBlurFromMenu(bool on) {
+  g_config.motion_blur = on ? 1 : 0;
+  if (!g_menu_ini[0]) return;
+  CreateDirectoryA(xp::LocalAppData().append("\\Motocross Madness 2").c_str(), nullptr);
+  WritePrivateProfileStringA("mcm2fix", "MotionBlur", on ? "1" : "0", g_menu_ini);
 }
 
 const Config& GetConfig() { return g_config; }
@@ -36,7 +54,13 @@ void LoadConfig() {
   g_config.reg_log = GetPrivateProfileIntA("mcm2fix", "RegLog", 0, ini) != 0;
   g_config.wide_fov = GetPrivateProfileIntA("mcm2fix", "WideFov", 1, ini) != 0;
   g_config.alpha_cut = GetPrivateProfileIntA("mcm2fix", "AlphaCut", 128, ini);
-  g_config.motion_blur = GetPrivateProfileIntA("mcm2fix", "MotionBlur", 1, ini) != 0;
+  g_config.menu_options = GetPrivateProfileIntA("mcm2fix", "MenuOptions", 1, ini) != 0;
+  g_config.menu_log = GetPrivateProfileIntA("mcm2fix", "MenuLog", 0, ini) != 0;
+  {
+    const std::string dir = xp::LocalAppData();
+    if (!dir.empty()) xp::Copy(g_menu_ini, (dir + "\\Motocross Madness 2\\mcm2fix-menu.ini").c_str());
+  }
+  g_config.motion_blur = ReadMenuInt("MotionBlur", GetPrivateProfileIntA("mcm2fix", "MotionBlur", 1, ini)) != 0;
   g_config.motion_blur_strength = Clamp(GetPrivateProfileIntA("mcm2fix", "MotionBlurStrength", 80, ini), 0, 300);
   g_config.motion_blur_min_speed = Clamp(GetPrivateProfileIntA("mcm2fix", "MotionBlurMinSpeed", 30, ini), 0, 200);
   g_config.motion_blur_max_speed = Clamp(GetPrivateProfileIntA("mcm2fix", "MotionBlurMaxSpeed", 70, ini), 1, 250);

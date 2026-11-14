@@ -65,6 +65,7 @@ add_library(mcm2fix SHARED
   src/video/audio_out.cpp
   src/video/player.cpp
   src/music.cpp
+  src/menus.cpp
   src/music_decoders.cpp
   mcm2fix.def)
 # Indeo 5 video decoding needs a static FFmpeg (tools/build-ffmpeg.sh). Without

@@ -106,7 +106,16 @@ struct Config {
   bool texture_dump = false;    // TextureDump: save every texture the game uploads as PNG
   bool true_color_textures = true;  // TrueColorTextures: load textures as 24/32-bit instead of 16-bit
   bool texture_log = false;         // TextureLog: log the format of each texture the game creates
+  bool menu_options = true;   // MenuOptions: mcm2fix settings added to the game's own Options pages (menus.cpp)
+  bool menu_log = false;      // MenuLog: log every event on the pages mcm2fix adds settings to
 };
 
 const Config& GetConfig();
 void LoadConfig();
+
+// Settings changed from the game's menus (MenuOptions) are saved in
+// %LOCALAPPDATA%\Motocross Madness 2\mcm2fix-menu.ini and win over mcm2fix.ini.
+// Empty if there is no per-user folder.
+const char* MenuIniPath();
+// Change MotionBlur now and save it to MenuIniPath().
+void SetMotionBlurFromMenu(bool on);

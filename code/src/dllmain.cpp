@@ -25,6 +25,7 @@ void ApplyDetailFixes();
 void ApplyArrowFix();
 void ApplyRestartFixes();
 void ApplyHelpFix();
+void ApplyMenuOptions();
 void ApplyTextureFixes();
 void ApplyPerfFixes();
 void ApplyGridFix();
@@ -93,6 +94,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved) {
       ApplyGridFix();
       ApplySoundFixes();
       music::Apply();  // after the file fixes: chains their CreateFileA hook
+      ApplyMenuOptions();  // chains the same CreateFileA hook
       ApplyReverbFixes();
       ApplySortFixes();
       ApplyAiFixes();

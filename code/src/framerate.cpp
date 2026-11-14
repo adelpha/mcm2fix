@@ -675,7 +675,7 @@ void ApplyFramePacing() {
   } else if (c.precise_timer || c.frame_fix || c.ai_steer_rate > 0) {
     PatchFrameTime();
   }
-  if (c.motion_blur) PatchBikeSimNote(c.sim_rate <= 0);
+  if (c.motion_blur || c.menu_options) PatchBikeSimNote(c.sim_rate <= 0);  // MenuOptions: can be switched on later
   patch::Log("frame pacing: VSync=%d FrameCap=%d PreciseTimer=%d FrameFix=%d RefRate=%d AiRate=%d "
              "AiSteerRate=%d SimRate=%d",
              c.vsync, c.frame_cap, c.precise_timer, c.frame_fix, c.ref_rate, c.ai_rate,
