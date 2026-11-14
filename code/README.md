@@ -296,8 +296,11 @@ LiquidMetal=0
 MotionBlur=1
 
 ; MenuOptions: 1 = mcm2fix settings on the game's own Options pages. Options >
-; Graphics gets an "Enhancements" box with a Motion Blur checkbox. What you
-; pick there is saved in %LOCALAPPDATA%\Motocross Madness 2\mcm2fix-menu.ini
+; Graphics gets an "Enhancements" box: Motion Blur, Smooth Tree Edges
+; (AlphaToCoverage), VSync, Soft Rider Shadows (RiderShadows), Bike
+; Reflections (Reflections) and Widescreen View (WideFov); the last three
+; apply when the game is next started. What you pick there is saved in
+; %LOCALAPPDATA%\Motocross Madness 2\mcm2fix-menu.ini
 ; and wins over this file (delete that file to go back to this one).
 ; 0 = the menus as they were. Default 1.
 MenuOptions=1

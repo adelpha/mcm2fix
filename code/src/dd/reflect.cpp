@@ -157,7 +157,7 @@ const RCfg& Cfg() {
   GetModuleFileNameA(nullptr, ini, MAX_PATH);
   if (char* slash = std::strrchr(ini, '\\')) slash[1] = '\0';
   xp::Append(ini, "mcm2fix.ini");
-  g_cfg.mode = std::clamp(static_cast<int>(GetPrivateProfileIntA("mcm2fix", "Reflections", 2, ini)), 0, 2);
+  g_cfg.mode = GetConfig().reflections;  // mcm2fix.ini, or the menus' choice
   g_cfg.strength = std::clamp(ReadF("ReflectStrength", 1.0f, ini), 0.0f, 4.0f);
   g_cfg.bike = std::clamp(ReadF("ReflectBike", 1.0f, ini), 0.0f, 1.0f);
   g_cfg.helmet = std::clamp(ReadF("ReflectHelmet", 1.0f, ini), 0.0f, 1.0f);

@@ -58,6 +58,7 @@ struct Config {
   bool frame_fix = true;      // FrameFix: per-frame animation/physics steps scale with frame time
   int ai_rate = 30;           // AiRate: computer riders re-plan this many times a second (0 = every frame)
   int smooth_log = 0;         // SmoothLog: 1 = trace a few frames of matrices and draws, 2 = camera only, 120 frames, 3 = rider shadows
+  int reflections = 2;     // Reflections (also read by dd/reflect.cpp through here)
   int rider_shadows = 2;      // RiderShadows: 0 = the game's CPU shadow, 1 = GPU shadow for the rider the camera follows, 2 = GPU shadows for every rider (dd/gpushadow.cpp)
   int shadow_strength = 0;    // ShadowStrength: GPU shadow darkness in percent (0 = the game's own)
   int shadow_softness = 100;  // ShadowSoftness: how much GPU shadows blur and fade with the caster's height above the ground, percent (0 = sharp)
@@ -123,5 +124,8 @@ void LoadConfig();
 // %LOCALAPPDATA%\Motocross Madness 2\mcm2fix-menu.ini and win over mcm2fix.ini.
 // Empty if there is no per-user folder.
 const char* MenuIniPath();
-// Change MotionBlur now and save it to MenuIniPath().
-void SetMotionBlurFromMenu(bool on);
+// Save a setting chosen in the menus to MenuIniPath(). MotionBlur, VSync and
+// AlphaToCoverage also change at once; the rest apply at the next start.
+void SetFromMenu(const char* key, int value);
+// A value read from mcm2fix.ini, replaced by the menus' choice if there is one.
+int MenuOverride(const char* key, int value);

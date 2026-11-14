@@ -8,14 +8,16 @@
 // - Layout: when the game opens UI\OPTGRAPH.DAT we hand it a copy (in
 //   %LOCALAPPDATA%\Motocross Madness 2\cache\) whose OptGraph.dtm has our
 //   controls added before [Set_Anim]: an "Enhancements" plate on the free right
-//   side under Overall Graphics Quality, holding a Motion Blur checkbox. It
-//   reuses the page's own plate sprite and the game's shared checkbox sprites.
+//   side under Overall Graphics Quality, holding a checkbox per setting in
+//   g_checks. The plate is a frame only (BorderPlate); the checkboxes use the
+//   game's shared sprites; labels are set at page set-up (SetLabel).
 // - Behaviour: the Options > Graphics page class (vtable 0x55ab2c) gets its
 //   event handler (slot 29, 0x4b6ac0) wrapped. On the page's set-up event (5)
-//   our checkbox is bound to an int of ours (UIControl::Bind, vtable +0xd8),
+//   each checkbox is bound to an int of ours (UIControl::Bind, vtable +0xd8),
 //   before the game loads every bound value into its control. After any event
-//   the checkbox state (control +0x1f0) is compared with the setting; a change
-//   is applied at once and saved to mcm2fix-menu.ini (config.cpp).
+//   the checkbox states (control +0x1f0) are compared with the settings; a
+//   change is saved to mcm2fix-menu.ini (config.cpp) and, for live settings,
+//   applied at once.
 #include <windows.h>
 
 #include <cstdint>
@@ -39,62 +41,81 @@ constexpr uintptr_t kUIMultiStateVtable = 0x5582C8;
 constexpr size_t kBindSlot = 0xD8;         // UIControl::Bind(int* value)
 constexpr size_t kStateOffset = 0x1F0;     // UIMultiState current state
 
-constexpr char kMotionBlurName[] = "Mcm2fixMotionBlur";
+// The Enhancements box (Options > Graphics): mcm2fix switches as checkboxes.
+// Live ones change at once; the others are saved and apply at the next start
+// (their hooks are put in when the game starts), marked with a '*'.
+struct MenuCheck {
+  const char* name;   // dtm control name
+  const char* label;
+  const char* key;    // ini key
+  int def_on;         // value written for "on" when the setting is off now
+  bool live;
+  int value;          // bound to the checkbox while the page is up (0/1)
+  int on_value;       // value written for "on"
+  int saved;          // value as last saved (or loaded)
+};
+MenuCheck g_checks[] = {
+    {"Mcm2fixMotionBlur", "Motion Blur", "MotionBlur", 1, true},
+    {"Mcm2fixSmoothEdges", "Smooth Tree Edges", "AlphaToCoverage", 2, true},
+    {"Mcm2fixVSync", "VSync", "VSync", 1, true},
+    {"Mcm2fixShadows", "Soft Rider Shadows *", "RiderShadows", 2, false},
+    {"Mcm2fixReflections", "Bike Reflections *", "Reflections", 2, false},
+    {"Mcm2fixWideView", "Widescreen View *", "WideFov", 1, false},
+};
+constexpr int kNumChecks = static_cast<int>(sizeof(g_checks) / sizeof(g_checks[0]));
+constexpr char kFootName[] = "Mcm2fixFootnote";
+constexpr char kFootText[] = "* after restarting the game";
+constexpr int kRowTop = 30, kRowStep = 26;
+constexpr int kBoxH = kRowTop + kNumChecks * kRowStep + 20;
+
+int CurrentValue(const char* key) {
+  const Config& c = GetConfig();
+  if (!std::strcmp(key, "MotionBlur")) return c.motion_blur ? 1 : 0;
+  if (!std::strcmp(key, "AlphaToCoverage")) return c.alpha_to_coverage;
+  if (!std::strcmp(key, "VSync")) return c.vsync ? 1 : 0;
+  if (!std::strcmp(key, "RiderShadows")) return c.rider_shadows;
+  if (!std::strcmp(key, "Reflections")) return c.reflections;
+  if (!std::strcmp(key, "WideFov")) return c.wide_fov ? 1 : 0;
+  return 0;
+}
 
 // Added to OptGraph.dtm before [Set_Anim]. Positions are page pixels
-// (the page itself sits at 48,40 in the 640x480 menu).
-constexpr char kOptGraphControls[] =
-    "[Mcm2fixBox]\r\n"
-    "Type = STATIC\r\n"
-    "Height = 1125\r\nLeft = 5010\r\nTabIndex = 20\r\nTop = 2505\r\nWidth = 3420\r\n"
-    "_ExtentX = 6033\r\n_ExtentY = 1984\r\n"
-    "Show = -1  'True\r\n"
-    "TextDrop = -1  'True\r\n"
-    "TextAlign = RIGHT\r\n"
-    "TextAlignV = MIDDLE\r\n"
-    "TextColor = 16777215\r\n"
-    "AnimNorm = \"Mcm2fixPlate\"\r\n"
-    "Broken_Enable = 0   'False\r\n"
-    "Xywh = 334, 167, 228, 123\r\n"
-    "\r\n"
-    "[Mcm2fixBoxText]\r\n"
-    "Type=STATICTEXT\r\n"
-    "Anchor=Mcm2fixBox\r\n"
-    "RelAnchor=1\r\n"
-    "Height=270\r\nLeft=120\r\nTabIndex=21\r\nTop=90\r\nWidth=3165\r\n"
-    "_ExtentX=5583\r\n_ExtentY=476\r\n"
-    "TextDrop=-1'True\r\n"
-    "TextColor=16777215\r\n"
-    "TextAlignV=TOP\r\n"
-    "TextAlign=LEFT\r\n"
-    "Text=\"Enhancements\"\r\n"
-    "Xywh=8,6,211,18\r\n"
-    "\r\n"
-    "[Mcm2fixMotionBlur]\r\n"
-    "NumStates=2\r\n"
-    "Type=MULTISTATE\r\n"
-    "Anchor=Mcm2fixBox\r\n"
-    "RelAnchor=1\r\n"
-    "Height=300\r\nLeft=120\r\nTabIndex=22\r\n"
-    "ToolTipText=\"Blurs the edges of the picture at speed. Turn off to make the game run faster\"\r\n"
-    "Top=480\r\nWidth=3165\r\n"
-    "_ExtentX=5583\r\n_ExtentY=529\r\n"
-    "DropColor=0\r\n"
-    "TextDrop=-1'True\r\n"
-    "TextAlignV=TOP\r\n"
-    "TextAlign=RIGHT\r\n"
-    "SourceBlit=-1'True\r\n"
-    "SoundPush=\"Beep\"\r\n"
-    "Broken_Enable=0'False\r\n"
-    "State0=\"CheckBoxOff\"\r\n"
-    "State1=\"CheckBoxOn\"\r\n"
-    "StateDisable0=\"CheckBoxOffGrey\"\r\n"
-    "StateDisable1=\"CheckBoxOnGrey\"\r\n"
-    "Text=\"Motion Blur\"\r\n"
-    "TextColor=16777215\r\n"
-    "TextLMargin=3\r\n"
-    "Xywh=8,32,211,20\r\n"
-    "\r\n";
+// (the page itself sits at 48,40 in the 640x480 menu); the box goes on the
+// free right side under Overall Graphics Quality, level with Graphic Features.
+std::string OptGraphControls() {
+  std::string t;
+  char buf[2048];
+  std::snprintf(buf, sizeof(buf),
+                "[Mcm2fixBox]\r\nType = STATIC\r\nHeight = %d\r\nLeft = 5010\r\nTabIndex = 20\r\nTop = 2505\r\n"
+                "Width = 3420\r\nShow = -1  'True\r\nTextDrop = -1  'True\r\nTextAlign = RIGHT\r\n"
+                "TextAlignV = MIDDLE\r\nTextColor = 16777215\r\nAnimNorm = \"Mcm2fixPlate\"\r\n"
+                "Broken_Enable = 0   'False\r\nXywh = 334, 167, 228, %d\r\n\r\n"
+                "[Mcm2fixBoxText]\r\nType=STATICTEXT\r\nAnchor=Mcm2fixBox\r\nRelAnchor=1\r\nHeight=270\r\nLeft=120\r\n"
+                "TabIndex=21\r\nTop=90\r\nWidth=3165\r\nTextDrop=-1'True\r\nTextColor=16777215\r\nTextAlignV=TOP\r\n"
+                "TextAlign=LEFT\r\nText=\"Enhancements\"\r\nXywh=8,6,211,18\r\n\r\n",
+                kBoxH * 15, kBoxH);
+  t += buf;
+  for (int i = 0; i < kNumChecks; ++i) {
+    const int y = kRowTop + i * kRowStep;
+    std::snprintf(buf, sizeof(buf),
+                  "[%s]\r\nNumStates=2\r\nType=MULTISTATE\r\nAnchor=Mcm2fixBox\r\nRelAnchor=1\r\nHeight=300\r\n"
+                  "Left=120\r\nTabIndex=%d\r\nTop=%d\r\nWidth=3165\r\nDropColor=0\r\nTextDrop=-1'True\r\n"
+                  "TextAlignV=TOP\r\nTextAlign=RIGHT\r\nSourceBlit=-1'True\r\nSoundPush=\"Beep\"\r\n"
+                  "Broken_Enable=0'False\r\nState0=\"CheckBoxOff\"\r\nState1=\"CheckBoxOn\"\r\n"
+                  "StateDisable0=\"CheckBoxOffGrey\"\r\nStateDisable1=\"CheckBoxOnGrey\"\r\nText=\"%s\"\r\n"
+                  "TextColor=16777215\r\nTextLMargin=3\r\nXywh=8,%d,211,20\r\n\r\n",
+                  g_checks[i].name, 22 + i, y * 15, g_checks[i].label, y);
+    t += buf;
+  }
+  std::snprintf(buf, sizeof(buf),
+                "[%s]\r\nType=STATICTEXT\r\nAnchor=Mcm2fixBox\r\nRelAnchor=1\r\nHeight=240\r\nLeft=120\r\n"
+                "TabIndex=%d\r\nTop=%d\r\nWidth=3165\r\nTextDrop=-1'True\r\nTextColor=16777215\r\nTextAlignV=TOP\r\n"
+                "TextAlign=LEFT\r\nText=\"%s\"\r\nXywh=8,%d,211,16\r\n\r\n",
+                kFootName, 22 + kNumChecks, (kRowTop + kNumChecks * kRowStep - 4) * 15, kFootText,
+                kRowTop + kNumChecks * kRowStep - 4);
+  t += buf;
+  return t;
+}
 
 using CreateFileAFn = HANDLE(WINAPI*)(LPCSTR, DWORD, DWORD, LPSECURITY_ATTRIBUTES, DWORD, DWORD, HANDLE);
 CreateFileAFn g_create_file = nullptr;
@@ -240,18 +261,18 @@ bool EditOptGraph(std::vector<char>& d) {
   const size_t e = FindEntry(d, "OptGraph.dtm");
   if (!e) return false;
   std::string text(d.data() + Get32(d, e), Get32(d, e + 4));
-  if (text.find(kMotionBlurName) != std::string::npos) return patch::Log("menus: OptGraph.dtm already has our controls"), false;
+  if (text.find(g_checks[0].name) != std::string::npos) return patch::Log("menus: OptGraph.dtm already has our controls"), false;
   const size_t anim = text.find("[Set_Anim]");
   if (anim == std::string::npos) return patch::Log("menus: OptGraph.dtm has no [Set_Anim]"), false;
   const size_t before = text.size();
   std::vector<char> plate;
-  if (!BorderPlate(d, "Options\\Graphics\\GPlate03.tga", 228, 123, plate)) return false;
+  if (!BorderPlate(d, "Options\\Graphics\\GPlate03.tga", 228, kBoxH, plate)) return false;
   text.insert(anim + std::strlen("[Set_Anim]\r\n"), kPlateAnim);
-  text.insert(anim, kOptGraphControls);
+  text.insert(anim, OptGraphControls());
   ReplaceEntry(d, e, text.data(), text.size());
   AddEntry(d, "Options\\Graphics\\Mcm2fixPlate.tga", plate);
-  patch::Log("menus: border-only plate added (228x123, edge of GPlate03, magenta inside)");
-  patch::Log("menus: Options > Graphics layout: added Enhancements box + Motion Blur checkbox (dtm %u -> %u bytes)",
+  patch::Log("menus: border-only plate added (228x%d, edge of GPlate03, magenta inside)", kBoxH);
+  patch::Log("menus: Options > Graphics layout: added Enhancements box with %d checkboxes (dtm %u -> %u bytes)", kNumChecks,
              static_cast<unsigned>(before), static_cast<unsigned>(text.size()));
   return true;
 }
@@ -371,31 +392,44 @@ void SetLabel(uintptr_t page, const char* name, const char* text) {
              static_cast<unsigned>(*reinterpret_cast<uintptr_t*>(c)));
 }
 
-int g_motion_blur_value = 0;  // bound to the checkbox while the page is up
 unsigned g_events_logged = 0;
-bool g_bound = false;  // the checkbox has been bound to g_motion_blur_value
+bool g_bound = false;  // the checkboxes have been bound to g_checks[].value
 
-uintptr_t FindOurCheckbox(uintptr_t page) {
-  const uintptr_t c = reinterpret_cast<FindControlFn>(kFindControl)(page, nullptr, kMotionBlurName, 0);
+uintptr_t FindCheckbox(uintptr_t page, const char* name) {
+  const uintptr_t c = reinterpret_cast<FindControlFn>(kFindControl)(page, nullptr, name, 0);
   if (!c) return 0;
   if (IsBadReadPtr(reinterpret_cast<void*>(c), kStateOffset + 4) ||
       *reinterpret_cast<uintptr_t*>(c) != kUIMultiStateVtable) {
-    patch::Log("menus: %s is not a checkbox (vtable %08x)", kMotionBlurName,
+    patch::Log("menus: %s is not a checkbox (vtable %08x)", name,
                c ? static_cast<unsigned>(*reinterpret_cast<uintptr_t*>(c)) : 0u);
     return 0;
   }
   return c;
 }
 
-// The game writes the checkbox state into g_motion_blur_value when it saves
-// the page's values; act on it whenever we get to look.
+void InitChecks() {
+  static bool done = false;
+  if (done) return;
+  done = true;
+  for (MenuCheck& m : g_checks) {
+    const int v = CurrentValue(m.key);
+    m.saved = v;
+    m.on_value = v ? v : m.def_on;
+  }
+}
+
+// The game writes each checkbox's state into its bound value when it saves
+// the page's values; act on any change whenever we get to look.
 void ApplyIfChanged(const char* when, const char* control) {
   if (!g_bound) return;
-  const bool on = g_motion_blur_value != 0;
-  if (on == (GetConfig().motion_blur != 0)) return;
-  SetMotionBlurFromMenu(on);
-  patch::Log("menus: Motion Blur %s from Options > Graphics (%s%s%s); saved to %s", on ? "on" : "off", when,
-             control ? ", " : "", control ? control : "", MenuIniPath());
+  for (MenuCheck& m : g_checks) {
+    const int want = m.value ? m.on_value : 0;
+    if ((want != 0) == (m.saved != 0)) continue;
+    m.saved = want;
+    SetFromMenu(m.key, want);
+    patch::Log("menus: %s=%d from Options > Graphics (%s%s%s)%s; saved to %s", m.key, want, when, control ? ", " : "",
+               control ? control : "", m.live ? ", applied now" : ", applies at the next start", MenuIniPath());
+  }
 }
 
 const char* SafeName(uintptr_t event) {
@@ -412,38 +446,43 @@ void __fastcall OptGraphEvent(uintptr_t self, void* edx, uintptr_t event) {
     patch::Log("menus: graphics page event %d control %s", type, SafeName(event));
   }
   if (type == 5) {  // page set-up: bind before the game loads values into controls
-    const uintptr_t box = FindOurCheckbox(self);
-    if (box) {
-      g_motion_blur_value = GetConfig().motion_blur ? 1 : 0;
+    InitChecks();
+    int bound = 0;
+    for (MenuCheck& m : g_checks) {
+      const uintptr_t box = FindCheckbox(self, m.name);
+      if (!box) {
+        patch::Log("menus: %s not on the page", m.name);
+        continue;
+      }
+      m.value = m.saved ? 1 : 0;
       const uintptr_t bind = *reinterpret_cast<uintptr_t*>(*reinterpret_cast<uintptr_t*>(box) + kBindSlot);
-      reinterpret_cast<BindFn>(bind)(box, nullptr, &g_motion_blur_value);
-      g_bound = true;
-      patch::Log("menus: Motion Blur checkbox found, bound (MotionBlur=%d)", g_motion_blur_value);
-    } else {
-      patch::Log("menus: Motion Blur checkbox not on the page");
+      reinterpret_cast<BindFn>(bind)(box, nullptr, &m.value);
+      ++bound;
     }
+    g_bound = bound > 0;
+    patch::Log("menus: %d of %d checkboxes bound", bound, kNumChecks);
   }
   reinterpret_cast<EventFn>(kOptGraphEvent)(self, edx, event);
   if (type == 5) {
     SetLabel(self, "Mcm2fixBoxText", "Enhancements");
-    SetLabel(self, kMotionBlurName, "Motion Blur");
-    if (const uintptr_t box = FindOurCheckbox(self))
-      patch::Log("menus: after set-up the checkbox shows %d",
-                 *reinterpret_cast<const int*>(box + kStateOffset));
+    for (const MenuCheck& m : g_checks) SetLabel(self, m.name, m.label);
+    SetLabel(self, kFootName, kFootText);
     return;
   }
   // A click (event 3, the one the game's own handler acts on): read the
-  // checkbox itself. Other events only check the bound value (the page may
-  // be going away, so no control lookups then).
+  // clicked checkbox itself. Other events only check the bound values (the
+  // page may be going away, so no control lookups then).
   if (type == 3) {
-    if (const uintptr_t box = FindOurCheckbox(self)) {
-      const int state = *reinterpret_cast<const int*>(box + kStateOffset);
-      if (log) patch::Log("menus: checkbox state %d", state);
-      if ((state != 0) != (GetConfig().motion_blur != 0)) {
-        g_motion_blur_value = state != 0;
-        ApplyIfChanged("click", SafeName(event));
+    const char* clicked = SafeName(event);
+    for (MenuCheck& m : g_checks) {
+      if (std::strcmp(clicked, m.name) != 0) continue;
+      if (const uintptr_t box = FindCheckbox(self, m.name)) {
+        const int state = *reinterpret_cast<const int*>(box + kStateOffset);
+        if (log) patch::Log("menus: %s state %d", m.name, state);
+        m.value = state != 0;
       }
     }
+    ApplyIfChanged("click", clicked);
   }
   ApplyIfChanged("page event", nullptr);
 }
@@ -463,8 +502,8 @@ void ApplyMenuOptions() {
   if (g_archives[0].on) {
     void* hook = reinterpret_cast<void*>(&OptGraphEvent);
     patch::Write(kOptGraphEventSlot, &hook, sizeof(hook));
-    patch::Log("menus: on: Options > Graphics gets an Enhancements box (Motion Blur); menu choices saved to %s; MenuLog=%d",
-               MenuIniPath()[0] ? MenuIniPath() : "(no per-user folder)", c.menu_log ? 1 : 0);
+    patch::Log("menus: on: Options > Graphics gets an Enhancements box (%d settings); menu choices saved to %s; MenuLog=%d",
+               kNumChecks, MenuIniPath()[0] ? MenuIniPath() : "(no per-user folder)", c.menu_log ? 1 : 0);
   }
   if (g_archives[1].on) patch::Log("menus: MenuFlag=1, MenuBackground=%s (checked when the main menu loads)", c.menu_background);
 }
