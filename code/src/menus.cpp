@@ -53,7 +53,7 @@ constexpr char kOptGraphControls[] =
     "TextAlign = RIGHT\r\n"
     "TextAlignV = MIDDLE\r\n"
     "TextColor = 16777215\r\n"
-    "AnimNorm = \"GPlate03\"\r\n"
+    "AnimNorm = \"Mcm2fixPlate\"\r\n"
     "Broken_Enable = 0   'False\r\n"
     "Xywh = 334, 167, 228, 123\r\n"
     "\r\n"
@@ -158,6 +158,83 @@ void ReplaceEntry(std::vector<char>& d, size_t entry, const void* data, size_t n
   Put32(d, entry + 4, static_cast<uint32_t>(n));
 }
 
+// Adds a file to the archive (rebuilds the directory; the data stays where it is,
+// only shifted by the longer directory).
+void AddEntry(std::vector<char>& d, const char* name, const std::vector<char>& data) {
+  struct E { std::string name; uint32_t off, size; };
+  std::vector<E> es;
+  const uint32_t count = Get32(d, 4);
+  size_t p = 8;
+  for (uint32_t i = 0; i < count; ++i) {
+    const uint32_t len = Get32(d, p);
+    p += 4;
+    E e{std::string(d.data() + p, strnlen(d.data() + p, len)), 0, 0};
+    p += len;
+    e.off = Get32(d, p);
+    e.size = Get32(d, p + 4);
+    p += 8;
+    es.push_back(e);
+  }
+  const size_t old_dir_end = p;
+  std::vector<char> out(d.begin(), d.begin() + 4);
+  out.resize(8);
+  Put32(out, 4, count + 1);
+  size_t dir = 8;
+  for (const E& e : es) dir += 4 + e.name.size() + 1 + 8;
+  dir += 4 + std::strlen(name) + 1 + 8;
+  const size_t shift = dir - old_dir_end;
+  auto put_entry = [&](const std::string& n, uint32_t off, uint32_t size) {
+    const size_t at = out.size();
+    out.resize(at + 4 + n.size() + 1 + 8);
+    Put32(out, at, static_cast<uint32_t>(n.size() + 1));
+    std::memcpy(out.data() + at + 4, n.c_str(), n.size() + 1);
+    Put32(out, at + 4 + n.size() + 1, off);
+    Put32(out, at + 4 + n.size() + 1 + 4, size);
+  };
+  for (const E& e : es) put_entry(e.name, static_cast<uint32_t>(e.off + shift), e.size);
+  put_entry(name, static_cast<uint32_t>(d.size() + shift), static_cast<uint32_t>(data.size()));
+  out.insert(out.end(), d.begin() + old_dir_end, d.end());
+  out.insert(out.end(), data.begin(), data.end());
+  d.swap(out);
+}
+
+// A plate that is only a frame: the 2-pixel edge of one of the page's own
+// plates (stretched to w x h), magenta inside. Magenta is the game's sprite
+// transparency key, so the page background shows through and the panel
+// matches wherever it is put (the game's plates have the background baked
+// in, lit for the place they were cut from).
+bool BorderPlate(const std::vector<char>& d, const char* src_name, int w, int h, std::vector<char>& tga) {
+  const size_t e = FindEntry(d, src_name);
+  if (!e) return false;
+  const uint32_t off = Get32(d, e), size = Get32(d, e + 4);
+  const unsigned char* s = reinterpret_cast<const unsigned char*>(d.data() + off);
+  if (size < 18 || s[2] != 2 || s[16] != 16) return patch::Log("menus: %s is not a plain 16-bit TGA", src_name), false;
+  const int sw = s[12] | s[13] << 8, sh = s[14] | s[15] << 8;
+  const size_t start = 18 + s[0];
+  if (sw < 8 || sh < 8 || start + static_cast<size_t>(sw) * sh * 2 > size) return patch::Log("menus: %s too small", src_name), false;
+  auto map = [](int v, int n, int sn) { return v < 2 ? v : v >= n - 2 ? sn - (n - v) : 2 + (v - 2) * (sn - 4) / (n - 4); };
+  tga.assign(18 + static_cast<size_t>(w) * h * 2, 0);
+  std::memcpy(tga.data(), s, 18);
+  tga[0] = 0;
+  tga[12] = static_cast<char>(w & 0xff);
+  tga[13] = static_cast<char>(w >> 8);
+  tga[14] = static_cast<char>(h & 0xff);
+  tga[15] = static_cast<char>(h >> 8);
+  for (int y = 0; y < h; ++y)
+    for (int x = 0; x < w; ++x) {
+      uint16_t v = 0x7C1F;  // magenta (X1R5G5B5): see-through
+      if (x < 2 || y < 2 || x >= w - 2 || y >= h - 2) {
+        const size_t si = start + (static_cast<size_t>(map(y, h, sh)) * sw + map(x, w, sw)) * 2;
+        v = static_cast<uint16_t>(s[si] | s[si + 1] << 8);
+      }
+      std::memcpy(tga.data() + 18 + (static_cast<size_t>(y) * w + x) * 2, &v, 2);
+    }
+  return true;
+}
+
+constexpr char kPlateAnim[] =
+    "[Mcm2fixPlate]\r\nFiles1 = Options\\Graphics\\Mcm2fixPlate.tga\r\nMSecDelay = 0\r\nLoopCount = 0\r\n\r\n";
+
 // OptGraph.dtm with our controls before [Set_Anim].
 bool EditOptGraph(std::vector<char>& d) {
   const size_t e = FindEntry(d, "OptGraph.dtm");
@@ -167,8 +244,13 @@ bool EditOptGraph(std::vector<char>& d) {
   const size_t anim = text.find("[Set_Anim]");
   if (anim == std::string::npos) return patch::Log("menus: OptGraph.dtm has no [Set_Anim]"), false;
   const size_t before = text.size();
+  std::vector<char> plate;
+  if (!BorderPlate(d, "Options\\Graphics\\GPlate03.tga", 228, 123, plate)) return false;
+  text.insert(anim + std::strlen("[Set_Anim]\r\n"), kPlateAnim);
   text.insert(anim, kOptGraphControls);
   ReplaceEntry(d, e, text.data(), text.size());
+  AddEntry(d, "Options\\Graphics\\Mcm2fixPlate.tga", plate);
+  patch::Log("menus: border-only plate added (228x123, edge of GPlate03, magenta inside)");
   patch::Log("menus: Options > Graphics layout: added Enhancements box + Motion Blur checkbox (dtm %u -> %u bytes)",
              static_cast<unsigned>(before), static_cast<unsigned>(text.size()));
   return true;
