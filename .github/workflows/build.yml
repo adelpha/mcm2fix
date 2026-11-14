@@ -68,3 +68,11 @@ jobs:
           path: |
             mcm2sky.exe
             tools/mcm2sky/README.md
+      - name: Build mcm2dat (menu archive unpacker)
+        run: i686-w64-mingw32-g++ -O2 -std=c++17 -static -s -o mcm2dat.exe tools/mcm2dat/mcm2dat.cpp
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mcm2dat
+          path: |
+            mcm2dat.exe
+            tools/mcm2dat/README.md
