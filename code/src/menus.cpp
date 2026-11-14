@@ -53,9 +53,9 @@ constexpr char kOptGraphControls[] =
     "TextAlign = RIGHT\r\n"
     "TextAlignV = MIDDLE\r\n"
     "TextColor = 16777215\r\n"
-    "AnimNorm = \"GPlate02\"\r\n"
+    "AnimNorm = \"GPlate03\"\r\n"
     "Broken_Enable = 0   'False\r\n"
-    "Xywh = 334, 167, 228, 75\r\n"
+    "Xywh = 334, 167, 228, 123\r\n"
     "\r\n"
     "[Mcm2fixBoxText]\r\n"
     "Type=STATICTEXT\r\n"
@@ -266,6 +266,28 @@ HANDLE WINAPI MenuCreateFileA(LPCSTR name, DWORD access, DWORD share, LPSECURITY
 using EventFn = void(__fastcall*)(uintptr_t self, void* edx, uintptr_t event);
 using FindControlFn = uintptr_t(__fastcall*)(uintptr_t self, void* edx, const char* name, int type);
 using BindFn = void(__fastcall*)(uintptr_t self, void* edx, int* value);
+using SetTextFn = void(__fastcall*)(uintptr_t self, void* edx, const char* text);
+using RedrawFn = void(__fastcall*)(uintptr_t self, void* edx);
+
+// The game only shows a control's text when the layout gives it a
+// LocalTextId (a string in UILANG.DLL); our controls have none, so their
+// Text= is set here the way the game sets a LocalTextId string
+// (0x4719b0: UIControl::SetText 0x471a50, then vtable +0xc8 to redraw).
+constexpr uintptr_t kSetText = 0x471A50;
+constexpr size_t kRedrawSlot = 0xC8;
+
+void SetLabel(uintptr_t page, const char* name, const char* text) {
+  const uintptr_t c = reinterpret_cast<FindControlFn>(kFindControl)(page, nullptr, name, 0);
+  if (!c || IsBadReadPtr(reinterpret_cast<void*>(c), 4)) {
+    patch::Log("menus: %s not on the page, no label", name);
+    return;
+  }
+  reinterpret_cast<SetTextFn>(kSetText)(c, nullptr, text);
+  const uintptr_t redraw = *reinterpret_cast<uintptr_t*>(*reinterpret_cast<uintptr_t*>(c) + kRedrawSlot);
+  reinterpret_cast<RedrawFn>(redraw)(c, nullptr);
+  patch::Log("menus: %s labelled \"%s\" (control %08x, vtable %08x)", name, text, static_cast<unsigned>(c),
+             static_cast<unsigned>(*reinterpret_cast<uintptr_t*>(c)));
+}
 
 int g_motion_blur_value = 0;  // bound to the checkbox while the page is up
 unsigned g_events_logged = 0;
@@ -321,6 +343,8 @@ void __fastcall OptGraphEvent(uintptr_t self, void* edx, uintptr_t event) {
   }
   reinterpret_cast<EventFn>(kOptGraphEvent)(self, edx, event);
   if (type == 5) {
+    SetLabel(self, "Mcm2fixBoxText", "Enhancements");
+    SetLabel(self, kMotionBlurName, "Motion Blur");
     if (const uintptr_t box = FindOurCheckbox(self))
       patch::Log("menus: after set-up the checkbox shows %d",
                  *reinterpret_cast<const int*>(box + kStateOffset));
