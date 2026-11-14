@@ -22,6 +22,7 @@
 #include <cstring>
 #include <memory>
 
+#include "../music.h"
 #include "../patch.h"
 #include "adpcm.h"
 #include "audio_out.h"
@@ -148,6 +149,7 @@ class Stream final : public IUnknown {
         pcm = PcmAudio{};
       }
     }
+    music::VideoOpened(path);
     duration_ = static_cast<int64_t>(avi.frames.size()) * avi.scale * kUnits / avi.rate;
     patch::Log("video: %s: %ux%u, %zu frames at %.2f fps, %s", path, avi.width, avi.height,
                avi.frames.size(), static_cast<double>(avi.rate) / avi.scale,
@@ -213,11 +215,13 @@ class Stream final : public IUnknown {
     if (state == 1 && !running_) {
       started_ = Now();
       running_ = true;
+      if (!pcm.samples.empty()) music::VideoPlaying(true);  // only videos with sound silence the music (not the menus' silent animations)
       StartAudio();
     } else if (state == 0 && running_) {
       pos_ = Time();
       running_ = false;
       audio.Stop();
+      if (!pcm.samples.empty()) music::VideoPlaying(false);
     }
     return S_OK;
   }
@@ -243,7 +247,9 @@ class Stream final : public IUnknown {
   }
 
  private:
-  ~Stream() = default;
+  ~Stream() {
+    if (running_ && !pcm.samples.empty()) music::VideoPlaying(false);
+  }
   void StartAudio() {
     if (pcm.samples.empty()) return;
     const size_t frame = static_cast<size_t>(pos_ * pcm.rate / kUnits);

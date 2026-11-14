@@ -6,6 +6,7 @@
 #include "config.h"
 #include "framerate.h"
 #include "input_timing.h"
+#include "music.h"
 #include "patch.h"
 
 void SoundOnActivate(bool active);
@@ -118,6 +119,7 @@ extern "C" void __cdecl LogActivateApp(DWORD active) {
   }
   input::OnActivate(active != 0);
   SoundOnActivate(active != 0);
+  music::OnActivate(active != 0);
 }
 
 #if defined(_MSC_VER)

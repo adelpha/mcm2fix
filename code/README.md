@@ -583,6 +583,8 @@ SoundMaxDistanceMute=1
 ; the game while it is in the background (default; Windows' own DirectSound
 ; does this itself). 0 = leave the sound alone: the game stops while in the
 ; background and its sounds keep repeating their last fraction of a second.
+; With any DirectSound, 1 also pauses mcm2fix's music ([Music]) while the
+; game is in the background.
 BackgroundMute=1
 
 ; BajaReverb, EnduroReverb, QuarryReverb, NationalsReverb, SupercrossReverb,
@@ -808,6 +810,66 @@ ShadowLog=0
 ; a few frames, 2 = camera only (120 frames), 3 = rider shadows, 4 = camera and
 ; projection after each race start.
 SmoothLog=0
+
+[Music]
+; Music for the menus and races. Off until you set some: every music key
+; below is empty. Files are .wav, .flac or .mp3, played in stereo outside the
+; game's 3D sound, so EAX reverb and 3D effects never touch them. A value is
+; a file or a folder (every .wav/.flac/.mp3 in it), relative to the game
+; folder (its MUSIC\ folder is a good place) or a full path; list several
+; with ; between them, e.g. Menu=MUSIC\menu1.mp3;MUSIC\menu2.flac
+; A list plays in turn and repeats; a single file loops. Changes to the music
+; keys take effect at the next race or return to the menus (if some music was
+; set when the game started; otherwise restart it).
+;
+; Menu: music in the menus.
+Menu=
+
+; Race: music in any race that has none of its own below.
+Race=
+
+; Music for every track of one kind of event (instead of Race).
+Baja=
+Enduro=
+Nationals=
+Quarry=
+Supercross=
+Tag=
+
+; Music for one track (instead of its event's): add a line named after the
+; track's file in the game's Teraform folder, without .env, for example
+;   BAJA01=MUSIC\baja.flac
+;   SX05=MUSIC\supercross
+;   urbanjunglebaja=D:\Music\Racing\track7.mp3
+; Stock tracks: BAJA01-05, AIRFIELD, FARM, OPENPIT, SKILODGE, TRAILER,
+; CHANOS, HILLSIDE, IFFENDIC, NAT01-12, VV, QUARRY01-05, SX01-17, TAG01-03.
+
+; MusicVolume: music volume in the menus, 0 to 100. Default 80. Music volume is
+; separate from the game's sound volume and AnnouncerVolume.
+MusicVolume=80
+
+; RaceMusicVolume: music volume during races, 0 to 100. Empty = MusicVolume.
+RaceMusicVolume=
+
+; Shuffle: 1 = a list plays in random order, a new order each time round
+; (default). 0 = in order (a folder's files by name).
+Shuffle=1
+
+; PauseInRace: 1 = race music pauses while the race is paused (default).
+; 0 = it keeps playing. Music always pauses while the game is in the
+; background when BackgroundMute=1.
+PauseInRace=1
+
+; FadeTime: milliseconds to fade the music out when it changes, 0 to 10000.
+; Default 1000. (Loading a track and finishing a race always fade in 0.3 s;
+; nothing plays during the intro, the podium cutscene or the game's videos,
+; and the results screen gets the menu music.)
+FadeTime=1000
+
+; Log: 1 = log every music file, loop and state change, plus a playback
+; summary every 30 s. Default 0 (starts, stops and problems are always
+; logged while music is set).
+Log=0
 ```
 
 ## True-colour textures

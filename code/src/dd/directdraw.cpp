@@ -6,6 +6,7 @@
 #include <utility>
 #include <algorithm>
 
+#include "../music.h"
 #include "backend.h"
 #include "device.h"
 #include "surface.h"
@@ -266,6 +267,7 @@ HRESULT DirectDraw::SetDisplayMode(DWORD w, DWORD h, DWORD bpp, DWORD, DWORD) {
   DD_LOCK;
   Log("SetDisplayMode %lux%lux%lu (virtual)", w, h, bpp);
   crash::OnModeChange(w, h);
+  music::DisplayMode(w, h);
   ++g_surface_gen;
   if (!w || !h) return DDERR_INVALIDMODE;
   mode_w_ = w;
