@@ -124,8 +124,9 @@ void LoadConfig();
 // %LOCALAPPDATA%\Motocross Madness 2\mcm2fix-menu.ini and win over mcm2fix.ini.
 // Empty if there is no per-user folder.
 const char* MenuIniPath();
-// Save a setting chosen in the menus to MenuIniPath(). MotionBlur, VSync and
+// Save a setting chosen in the menus: to mcm2fix.ini when it can be written,
+// else to MenuIniPath(); returns the file used. MotionBlur, VSync and
 // AlphaToCoverage and Anisotropy also change at once; the rest apply at the next start.
-void SetFromMenu(const char* key, int value);
+const char* SetFromMenu(const char* key, int value);
 // A value read from mcm2fix.ini, replaced by the menus' choice if there is one.
 int MenuOverride(const char* key, int value);

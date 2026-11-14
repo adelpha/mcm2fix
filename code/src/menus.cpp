@@ -55,15 +55,15 @@ struct MenuCheck {
   int saved;          // value as last saved (or loaded)
 };
 MenuCheck g_checks[] = {
+    {"Mcm2fixVSync", "VSync", "VSync", 1, true},
+    {"Mcm2fixWideView", "Widescreen View *", "WideFov", 1, false},
     {"Mcm2fixMotionBlur", "Motion Blur", "MotionBlur", 1, true},
     {"Mcm2fixSmoothEdges", "Smooth Tree Edges", "AlphaToCoverage", 2, true},
-    {"Mcm2fixVSync", "VSync", "VSync", 1, true},
     {"Mcm2fixShadows", "Soft Rider Shadows *", "RiderShadows", 2, false},
     {"Mcm2fixReflections", "Bike Reflections *", "Reflections", 2, false},
-    {"Mcm2fixWideView", "Widescreen View *", "WideFov", 1, false},
     {"Mcm2fixTextures", "Replacement Textures *", "TextureReplace", 1, false},
 };
-constexpr int kSmoothEdges = 1;  // greyed while Antialiasing is off (it needs MSAA)
+constexpr int kSmoothEdges = 3;  // greyed while Antialiasing is off (it needs MSAA)
 
 // Sliders at the top of the box: "<label> <value>" on the left, a short
 // slider on the right. Positions are steps; the ini gets steps[pos].
@@ -630,17 +630,17 @@ void ApplyIfChanged(const char* when, const char* control) {
     const int want = m.steps[m.pos];
     if (PosOf(m, m.saved) == m.pos) continue;
     m.saved = want;
-    SetFromMenu(m.key, want);
+    const char* file = SetFromMenu(m.key, want);
     patch::Log("menus: %s=%d from Options > Graphics (%s%s%s)%s; saved to %s", m.key, want, when, control ? ", " : "",
-               control ? control : "", m.live ? ", applied now" : ", applies at the next start", MenuIniPath());
+               control ? control : "", m.live ? ", applied now" : ", applies at the next start", file);
   }
   for (MenuCheck& m : g_checks) {
     const int want = m.value ? m.on_value : 0;
     if ((want != 0) == (m.saved != 0)) continue;
     m.saved = want;
-    SetFromMenu(m.key, want);
+    const char* file = SetFromMenu(m.key, want);
     patch::Log("menus: %s=%d from Options > Graphics (%s%s%s)%s; saved to %s", m.key, want, when, control ? ", " : "",
-               control ? control : "", m.live ? ", applied now" : ", applies at the next start", MenuIniPath());
+               control ? control : "", m.live ? ", applied now" : ", applies at the next start", file);
   }
 }
 

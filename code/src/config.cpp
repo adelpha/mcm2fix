@@ -22,6 +22,7 @@ float ReadFloat(const char* key, float def, const char* ini) {
 int Clamp(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
 
 char g_menu_ini[MAX_PATH] = {};
+char g_game_ini[MAX_PATH] = {};  // mcm2fix.ini next to Mcm2.exe
 
 // A key set from the menus (mcm2fix-menu.ini) wins over mcm2fix.ini.
 int ReadMenuInt(const char* key, int value) {
@@ -34,16 +35,27 @@ const char* MenuIniPath() { return g_menu_ini; }
 
 int MenuOverride(const char* key, int value) { return ReadMenuInt(key, value); }
 
-void SetFromMenu(const char* key, int value) {
+const char* SetFromMenu(const char* key, int value) {
   if (!std::strcmp(key, "MotionBlur")) g_config.motion_blur = value != 0;
   else if (!std::strcmp(key, "VSync")) g_config.vsync = value != 0;
   else if (!std::strcmp(key, "AlphaToCoverage")) g_config.alpha_to_coverage = value;
   else if (!std::strcmp(key, "Anisotropy")) g_config.anisotropy = value;
-  if (!g_menu_ini[0]) return;
-  CreateDirectoryA(xp::LocalAppData().append("\\Motocross Madness 2").c_str(), nullptr);
   char v[16];
   std::snprintf(v, sizeof(v), "%d", value);
+  // mcm2fix.ini itself when it can be written (only that key's line changes);
+  // then any older choice for the key in the per-user file is dropped so it
+  // can't win at the next start. Otherwise the per-user file.
+  const DWORD attr = g_game_ini[0] ? GetFileAttributesA(g_game_ini) : INVALID_FILE_ATTRIBUTES;
+  if (attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_READONLY) &&
+      WritePrivateProfileStringA("mcm2fix", key, v, g_game_ini)) {
+    if (g_menu_ini[0] && GetFileAttributesA(g_menu_ini) != INVALID_FILE_ATTRIBUTES)
+      WritePrivateProfileStringA("mcm2fix", key, nullptr, g_menu_ini);
+    return g_game_ini;
+  }
+  if (!g_menu_ini[0]) return "(nowhere: no per-user folder)";
+  CreateDirectoryA(xp::LocalAppData().append("\\Motocross Madness 2").c_str(), nullptr);
   WritePrivateProfileStringA("mcm2fix", key, v, g_menu_ini);
+  return g_menu_ini;
 }
 
 const Config& GetConfig() { return g_config; }
@@ -53,6 +65,7 @@ void LoadConfig() {
   GetModuleFileNameA(nullptr, ini, MAX_PATH);
   if (char* slash = std::strrchr(ini, '\\')) slash[1] = '\0';
   xp::Append(ini, "mcm2fix.ini");
+  xp::Copy(g_game_ini, ini);
   // First: the menus' saved choices (ReadMenuInt) need these.
   g_config.menu_options = GetPrivateProfileIntA("mcm2fix", "MenuOptions", 1, ini) != 0;
   {
