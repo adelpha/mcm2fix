@@ -797,6 +797,12 @@ bool PatchCallSite(uintptr_t site, uintptr_t original, const void* hook) {
 
 }  // namespace
 
+void ShadowRaceGone(uintptr_t race) {
+  if (!race || race != g_race) return;
+  Log("rider shadows: race %08x destroyed, forgotten", static_cast<unsigned>(race));
+  g_race = 0;
+}
+
 void InstallGpuShadows() {
   const Config& c = GetConfig();
   // The race update hook only notes which race runs; reflections use it for

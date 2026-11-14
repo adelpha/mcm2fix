@@ -28,6 +28,11 @@ namespace dd {
 // Install the hooks (after the smoothing and restart hooks, which it chains).
 void InstallGpuShadows();
 
+// A BikeRace is being destroyed (racetitle.cpp's destructor hook): stop
+// using it. The next race's loading screen draws the garage shadow before
+// that race's first update, which used to read the freed race (crash).
+void ShadowRaceGone(uintptr_t race);
+
 // True while the game draws a terrain patch (shadow receivers).
 bool ShadowReceiverNow();
 

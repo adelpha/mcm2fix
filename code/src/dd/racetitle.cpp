@@ -10,6 +10,7 @@
 #include "../music.h"
 #include "../patch.h"
 #include "backend.h"
+#include "gpushadow.h"
 #include "gdihook.h"
 #include "gputext.h"
 #include "hudtext.h"
@@ -288,6 +289,7 @@ void __fastcall RaceDtorHook(uintptr_t race, void* edx) {
     g.vtable = 0;
   }
   music::RaceEnd(race);
+  ShadowRaceGone(race);
   reinterpret_cast<InitFn>(kRaceDtor)(race, edx);
 }
 
@@ -544,8 +546,8 @@ void InstallRaceTitleHooks() {
   const Config& c = GetConfig();
   if (!c.race_title && !c.announcer) {
     Log("race title: off (RaceTitle=0, Announcer=0), the game's corner text stays");
-    if (music::Enabled()) {
-      // Music still needs to know when races start and end.
+    if (music::Enabled() || c.rider_shadows > 0) {
+      // Music and the GPU rider shadows still need to know when races start and end.
       int calls = 0;
       for (uintptr_t site : kCountdownCalls)
         calls += PatchCall(site, kCountdownInit, reinterpret_cast<const void*>(&CountdownInitHook)) ? 1 : 0;
