@@ -409,7 +409,8 @@ BAJA01=D:\Music\desert.mp3
   the results. Other changes fade over `FadeTime`.
 - Race music pauses with the race's pause menu (`PauseInRace`), all music
   pauses while the game is in the background (`BackgroundMute`), and nothing
-  plays while one of the game's videos does.
+  plays while one of the game's videos with sound (the intro) does; the
+  menus' silent animations don't count.
 - `MusicVolume` and `RaceMusicVolume` only set the music. The game's own sound volume
   and `AnnouncerVolume` don't change it; Windows' volume mixer entry for the
   game turns everything down together.

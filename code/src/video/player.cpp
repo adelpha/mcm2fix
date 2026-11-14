@@ -215,13 +215,13 @@ class Stream final : public IUnknown {
     if (state == 1 && !running_) {
       started_ = Now();
       running_ = true;
-      music::VideoPlaying(true);
+      if (!pcm.samples.empty()) music::VideoPlaying(true);  // only videos with sound silence the music (not the menus' silent animations)
       StartAudio();
     } else if (state == 0 && running_) {
       pos_ = Time();
       running_ = false;
       audio.Stop();
-      music::VideoPlaying(false);
+      if (!pcm.samples.empty()) music::VideoPlaying(false);
     }
     return S_OK;
   }
@@ -248,7 +248,7 @@ class Stream final : public IUnknown {
 
  private:
   ~Stream() {
-    if (running_) music::VideoPlaying(false);
+    if (running_ && !pcm.samples.empty()) music::VideoPlaying(false);
   }
   void StartAudio() {
     if (pcm.samples.empty()) return;
