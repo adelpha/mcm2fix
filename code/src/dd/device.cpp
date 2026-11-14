@@ -1745,8 +1745,10 @@ ID3D11SamplerState* Device::GetSampler(int stage) {
   DWORD au = t[TSS_ADDRESSU] & 7, av = t[TSS_ADDRESSV] & 7;
   int bias = static_cast<int>(AsFloat(t[TSS_MIPMAPLODBIAS]) * 4.0f) & 0xff;
   DWORD maxlevel = t[TSS_MAXMIPLEVEL] & 0xf;
+  // Anisotropy is in the key: it can change from the Options menu.
+  const uint32_t aniso = static_cast<uint32_t>(GetConfig().anisotropy) & 0x1f;
   uint32_t key = mag | (min << 3) | (mip << 6) | (au << 8) | (av << 11) | (maxlevel << 14) |
-                 (static_cast<uint32_t>(bias) << 18);
+                 (static_cast<uint32_t>(bias) << 18) | (aniso << 26);
   auto it = sampler_cache_.find(key);
   if (it != sampler_cache_.end()) return it->second;
   D3D11_SAMPLER_DESC s{};

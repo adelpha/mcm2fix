@@ -38,6 +38,7 @@ void SetFromMenu(const char* key, int value) {
   if (!std::strcmp(key, "MotionBlur")) g_config.motion_blur = value != 0;
   else if (!std::strcmp(key, "VSync")) g_config.vsync = value != 0;
   else if (!std::strcmp(key, "AlphaToCoverage")) g_config.alpha_to_coverage = value;
+  else if (!std::strcmp(key, "Anisotropy")) g_config.anisotropy = value;
   if (!g_menu_ini[0]) return;
   CreateDirectoryA(xp::LocalAppData().append("\\Motocross Madness 2").c_str(), nullptr);
   char v[16];
@@ -253,8 +254,8 @@ void LoadConfig() {
 
   float fov = ReadFloat("Fov", 0.0f, ini);
   g_config.fov = fov >= 20.0f && fov <= 150.0f ? fov : 0.0f;
-  g_config.anisotropy = Clamp(GetPrivateProfileIntA("mcm2fix", "Anisotropy", 16, ini), 0, 16);
-  g_config.msaa = Clamp(GetPrivateProfileIntA("mcm2fix", "Antialiasing", 4, ini), 0, 8);
+  g_config.anisotropy = Clamp(ReadMenuInt("Anisotropy", GetPrivateProfileIntA("mcm2fix", "Anisotropy", 16, ini)), 0, 16);
+  g_config.msaa = Clamp(ReadMenuInt("Antialiasing", GetPrivateProfileIntA("mcm2fix", "Antialiasing", 4, ini)), 0, 8);
   float bias = ReadFloat("MipBias", 0.0f, ini);
   g_config.mip_bias = bias < -4.0f ? -4.0f : bias > 4.0f ? 4.0f : bias;
   float fog = ReadFloat("FogDistance", 1.0f, ini);
@@ -264,7 +265,7 @@ void LoadConfig() {
   g_config.tree_always_near = ReadFloat("TreeDetailDistance", 1.0f, ini) == 0.0f;
   float lod = ReadFloat("ModelLod", 1.0f, ini);
   g_config.model_lod = lod >= 0.25f && lod <= 10.0f ? lod : 1.0f;
-  g_config.texture_replace = GetPrivateProfileIntA("mcm2fix", "TextureReplace", 1, ini) != 0;
+  g_config.texture_replace = ReadMenuInt("TextureReplace", GetPrivateProfileIntA("mcm2fix", "TextureReplace", 1, ini)) != 0;
   g_config.texture_dump = GetPrivateProfileIntA("mcm2fix", "TextureDump", 0, ini) != 0;
   g_config.true_color_textures = GetPrivateProfileIntA("mcm2fix", "TrueColorTextures", 1, ini) != 0;
   g_config.texture_log = GetPrivateProfileIntA("mcm2fix", "TextureLog", 0, ini) != 0;

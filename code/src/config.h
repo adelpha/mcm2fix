@@ -125,7 +125,7 @@ void LoadConfig();
 // Empty if there is no per-user folder.
 const char* MenuIniPath();
 // Save a setting chosen in the menus to MenuIniPath(). MotionBlur, VSync and
-// AlphaToCoverage also change at once; the rest apply at the next start.
+// AlphaToCoverage and Anisotropy also change at once; the rest apply at the next start.
 void SetFromMenu(const char* key, int value);
 // A value read from mcm2fix.ini, replaced by the menus' choice if there is one.
 int MenuOverride(const char* key, int value);

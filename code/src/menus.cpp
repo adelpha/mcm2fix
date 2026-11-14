@@ -61,7 +61,30 @@ MenuCheck g_checks[] = {
     {"Mcm2fixShadows", "Soft Rider Shadows *", "RiderShadows", 2, false},
     {"Mcm2fixReflections", "Bike Reflections *", "Reflections", 2, false},
     {"Mcm2fixWideView", "Widescreen View *", "WideFov", 1, false},
+    {"Mcm2fixTextures", "Replacement Textures *", "TextureReplace", 1, false},
 };
+constexpr int kSmoothEdges = 1;  // greyed while Antialiasing is off (it needs MSAA)
+
+// Sliders at the top of the box: "<label> <value>" on the left, a short
+// slider on the right. Positions are steps; the ini gets steps[pos].
+struct MenuSlider {
+  const char* name;   // HSCROLLBAR control; its label is <name>Text
+  const char* label;
+  const char* key;
+  const int* steps;
+  int nsteps;
+  bool live;
+  int pos;    // bound to the slider while the page is up
+  int saved;  // ini value as last saved (or loaded)
+};
+constexpr int kAnisoSteps[] = {0, 2, 4, 8, 16};
+constexpr int kMsaaSteps[] = {0, 2, 4, 8};
+MenuSlider g_sliders[] = {
+    {"Mcm2fixAniso", "Anisotropy", "Anisotropy", kAnisoSteps, 5, true},
+    {"Mcm2fixMsaa", "Antialiasing", "Antialiasing", kMsaaSteps, 4, false},
+};
+constexpr int kNumSliders = 2;
+constexpr int kMsaaSlider = 1;
 constexpr int kNumChecks = static_cast<int>(sizeof(g_checks) / sizeof(g_checks[0]));
 constexpr char kFootName[] = "Mcm2fixFootnote";
 constexpr char kFootText[] = "* after restarting the game";
@@ -77,7 +100,9 @@ constexpr int kTopY = 7, kTopH = 66;
 constexpr int kLowY = kTopY + kTopH + kGap;
 constexpr int kRowTop = 27, kRowStep = 22;  // first checkbox, checkbox to checkbox
 constexpr int kFeaturesH = kRowTop + 2 * kRowStep + 20 + 7;
-constexpr int kBoxH = kRowTop + kNumChecks * kRowStep + 22;
+constexpr int kRows = kNumSliders + kNumChecks;
+constexpr int kBoxH = kRowTop + kRows * kRowStep + 22;
+constexpr int kSliderLabelW = 118, kSliderX = 128, kSliderW = 90;
 
 int CurrentValue(const char* key) {
   const Config& c = GetConfig();
@@ -87,6 +112,9 @@ int CurrentValue(const char* key) {
   if (!std::strcmp(key, "RiderShadows")) return c.rider_shadows;
   if (!std::strcmp(key, "Reflections")) return c.reflections;
   if (!std::strcmp(key, "WideFov")) return c.wide_fov ? 1 : 0;
+  if (!std::strcmp(key, "TextureReplace")) return c.texture_replace ? 1 : 0;
+  if (!std::strcmp(key, "Anisotropy")) return c.anisotropy;
+  if (!std::strcmp(key, "Antialiasing")) return c.msaa;
   return 0;
 }
 
@@ -106,8 +134,25 @@ std::string OptGraphControls() {
                 "TextAlign=LEFT\r\nText=\"Enhancements\"\r\nXywh=8,6,211,18\r\n\r\n",
                 kBoxH * 15, kRightX, kLowY, kBoxH);
   t += buf;
-  for (int i = 0; i < kNumChecks; ++i) {
+  for (int i = 0; i < kNumSliders; ++i) {
+    const MenuSlider& m = g_sliders[i];
     const int y = kRowTop + i * kRowStep;
+    std::snprintf(buf, sizeof(buf),
+                  "[%sText]\r\nType=STATICTEXT\r\nAnchor=Mcm2fixBox\r\nRelAnchor=1\r\nHeight=270\r\nLeft=120\r\n"
+                  "TabIndex=%d\r\nTop=%d\r\nWidth=%d\r\nTextDrop=-1'True\r\nTextColor=16777215\r\nTextAlignV=TOP\r\n"
+                  "TextAlign=LEFT\r\nText=\"%s\"\r\nXywh=8,%d,%d,18\r\n\r\n"
+                  "[%s]\r\nType=HSCROLLBAR\r\nAnchor=Mcm2fixBox\r\nRelAnchor=1\r\nHeight=240\r\nLeft=%d\r\n"
+                  "TabIndex=%d\r\nTop=%d\r\nWidth=%d\r\nDropColor=0\r\nTextDrop=0'False\r\nTextColor=16777215\r\n"
+                  "TextAlignV=MIDDLE\r\nTextAlign=RIGHT\r\nSourceBlit=-1'True\r\nBroken_Enable=0'False\r\n"
+                  "AnimNorm=\"Mcm2fixTrack\"\r\nTickNum=%d\r\nScale=%d\r\nAnimThumb=\"GSmallHSliderUp\"\r\n"
+                  "Xywh=%d,%d,%d,16\r\n\r\n",
+                  m.name, 40 + 2 * i, y * 15, kSliderLabelW * 15, m.label, y, kSliderLabelW, m.name,
+                  kSliderX * 15, 41 + 2 * i, (y + 2) * 15, kSliderW * 15, m.nsteps, m.nsteps - 1, kSliderX, y + 2,
+                  kSliderW);
+    t += buf;
+  }
+  for (int i = 0; i < kNumChecks; ++i) {
+    const int y = kRowTop + (kNumSliders + i) * kRowStep;
     std::snprintf(buf, sizeof(buf),
                   "[%s]\r\nNumStates=2\r\nType=MULTISTATE\r\nAnchor=Mcm2fixBox\r\nRelAnchor=1\r\nHeight=300\r\n"
                   "Left=120\r\nTabIndex=%d\r\nTop=%d\r\nWidth=3165\r\nDropColor=0\r\nTextDrop=-1'True\r\n"
@@ -122,8 +167,8 @@ std::string OptGraphControls() {
                 "[%s]\r\nType=STATICTEXT\r\nAnchor=Mcm2fixBox\r\nRelAnchor=1\r\nHeight=240\r\nLeft=120\r\n"
                 "TabIndex=%d\r\nTop=%d\r\nWidth=3165\r\nTextDrop=-1'True\r\nTextColor=16777215\r\nTextAlignV=TOP\r\n"
                 "TextAlign=LEFT\r\nText=\"%s\"\r\nXywh=8,%d,211,16\r\n\r\n",
-                kFootName, 22 + kNumChecks, (kRowTop + kNumChecks * kRowStep) * 15, kFootText,
-                kRowTop + kNumChecks * kRowStep);
+                kFootName, 22 + kNumChecks, (kRowTop + kRows * kRowStep) * 15, kFootText,
+                kRowTop + kRows * kRowStep);
   t += buf;
   return t;
 }
@@ -264,6 +309,42 @@ bool BorderPlate(const std::vector<char>& d, const char* src_name, int w, int h,
   return true;
 }
 
+// A slider track without the original's tick marks (they are spaced for its
+// own 10 steps): the bar along the top of GHorizontalSlider01 (the rows that
+// are not magenta), stretched to w, magenta below.
+bool TrackSprite(const std::vector<char>& d, const char* src_name, int w, std::vector<char>& tga) {
+  const size_t e = FindEntry(d, src_name);
+  if (!e) return false;
+  const uint32_t off = Get32(d, e), size = Get32(d, e + 4);
+  const unsigned char* s = reinterpret_cast<const unsigned char*>(d.data() + off);
+  if (size < 18 || s[2] != 2 || s[16] != 16) return patch::Log("menus: %s is not a plain 16-bit TGA", src_name), false;
+  const int sw = s[12] | s[13] << 8, sh = s[14] | s[15] << 8;
+  const size_t start = 18 + s[0];
+  if (sw < 8 || sh < 4 || start + static_cast<size_t>(sw) * sh * 2 > size) return patch::Log("menus: %s too small", src_name), false;
+  const bool top_down = (s[17] & 0x20) != 0;
+  auto px = [&](int x, int y) {  // y from the top
+    const int fy = top_down ? y : sh - 1 - y;
+    const size_t i = start + (static_cast<size_t>(fy) * sw + x) * 2;
+    return static_cast<uint16_t>(s[i] | s[i + 1] << 8);
+  };
+  int bar = 0;  // rows of bar at the top: until a row that is mostly magenta
+  while (bar < sh && px(sw / 2, bar) != 0x7C1F) ++bar;
+  tga.assign(18 + static_cast<size_t>(w) * sh * 2, 0);
+  std::memcpy(tga.data(), s, 18);
+  tga[0] = 0;
+  tga[12] = static_cast<char>(w & 0xff);
+  tga[13] = static_cast<char>(w >> 8);
+  for (int y = 0; y < sh; ++y)
+    for (int x = 0; x < w; ++x) {
+      const int sx = x < 2 ? x : x >= w - 2 ? sw - (w - x) : 2 + (x - 2) * (sw - 4) / (w - 4);
+      const uint16_t v = y < bar ? px(sx, y) : 0x7C1F;
+      const int fy = top_down ? y : sh - 1 - y;
+      std::memcpy(tga.data() + 18 + (static_cast<size_t>(fy) * w + x) * 2, &v, 2);
+    }
+  patch::Log("menus: slider track %dx%d made from %s (bar %d rows)", w, sh, src_name, bar);
+  return true;
+}
+
 // Sets Key in [section] (the first such line in it), or adds it.
 bool SetKey(std::string& t, const char* section, const char* key, const std::string& value) {
   const std::string head = std::string("[") + section + "]";
@@ -339,10 +420,14 @@ bool EditOptGraph(std::vector<char>& d) {
     anims += std::string("[") + kPlates[i].anim + "]\r\nFiles1 = Options\\Graphics\\" + kPlates[i].anim +
              ".tga\r\nMSecDelay = 0\r\nLoopCount = 0\r\n\r\n";
   }
+  std::vector<char> track;
+  if (!TrackSprite(d, "Options\\Graphics\\GHorizontalSlider01.tga", kSliderW, track)) return false;
+  anims += "[Mcm2fixTrack]\r\nFiles1 = Options\\Graphics\\Mcm2fixTrack.tga\r\nMSecDelay = 0\r\nLoopCount = 0\r\n\r\n";
   text.insert(anim + std::strlen("[Set_Anim]\r\n"), anims);
   text.insert(anim, OptGraphControls());
   RelayoutOptGraph(text);
   ReplaceEntry(d, e, text.data(), text.size());
+  AddEntry(d, "Options\\Graphics\\Mcm2fixTrack.tga", track);
   for (int i = 0; i < 3; ++i)
     AddEntry(d, (std::string("Options\\Graphics\\") + kPlates[i].anim + ".tga").c_str(), plates[i]);
   patch::Log("menus: border-only plates added (228x%d, 228x%d, 228x%d; edge of GPlate03, magenta inside)", kTopH,
@@ -482,6 +567,29 @@ uintptr_t FindCheckbox(uintptr_t page, const char* name) {
   return c;
 }
 
+using EnableFn = void(__fastcall*)(uintptr_t self, void* edx, int on);
+using ExchangeFn = void(__fastcall*)(uintptr_t self, void* edx, int save);
+constexpr size_t kEnableSlot = 0xC4;    // UIControl::Enable(bool) (0x471500: flag +0x6c, grey text)
+constexpr size_t kExchangeSlot = 0xEC;  // UIControl::Exchange(save): save != 0 = control -> bound value
+
+uintptr_t FindAny(uintptr_t page, const char* name) {
+  const uintptr_t c = reinterpret_cast<FindControlFn>(kFindControl)(page, nullptr, name, 0);
+  if (!c || IsBadReadPtr(reinterpret_cast<void*>(c), 0x200)) return 0;
+  return c;
+}
+
+void CallSlot(uintptr_t c, size_t slot, int arg) {
+  const uintptr_t fn = *reinterpret_cast<uintptr_t*>(*reinterpret_cast<uintptr_t*>(c) + slot);
+  reinterpret_cast<EnableFn>(fn)(c, nullptr, arg);
+}
+
+int PosOf(const MenuSlider& m, int value) {
+  int pos = 0;
+  for (int i = 0; i < m.nsteps; ++i)
+    if (m.steps[i] <= value) pos = i;
+  return pos;
+}
+
 void InitChecks() {
   static bool done = false;
   if (done) return;
@@ -491,12 +599,41 @@ void InitChecks() {
     m.saved = v;
     m.on_value = v ? v : m.def_on;
   }
+  for (MenuSlider& m : g_sliders) m.saved = CurrentValue(m.key);
+}
+
+void SliderLabel(uintptr_t page, const MenuSlider& m, int pos) {
+  char text[64];
+  const int v = m.steps[pos < 0 ? 0 : pos >= m.nsteps ? m.nsteps - 1 : pos];
+  if (v) std::snprintf(text, sizeof(text), "%s %dx%s", m.label, v, m.live ? "" : " *");
+  else std::snprintf(text, sizeof(text), "%s Off%s", m.label, m.live ? "" : " *");
+  char name[64];
+  std::snprintf(name, sizeof(name), "%sText", m.name);
+  SetLabel(page, name, text);
+}
+
+// Smooth Tree Edges needs MSAA: greyed while the Antialiasing slider is at Off.
+void UpdateGreying(uintptr_t page, int msaa_pos) {
+  const uintptr_t c = FindAny(page, g_checks[kSmoothEdges].name);
+  if (!c) return;
+  CallSlot(c, kEnableSlot, msaa_pos > 0 ? 1 : 0);
+  patch::Log("menus: %s %s (Antialiasing %d)", g_checks[kSmoothEdges].name, msaa_pos > 0 ? "enabled" : "greyed",
+             g_sliders[kMsaaSlider].steps[msaa_pos]);
 }
 
 // The game writes each checkbox's state into its bound value when it saves
 // the page's values; act on any change whenever we get to look.
 void ApplyIfChanged(const char* when, const char* control) {
   if (!g_bound) return;
+  for (MenuSlider& m : g_sliders) {
+    if (m.pos < 0 || m.pos >= m.nsteps) continue;
+    const int want = m.steps[m.pos];
+    if (PosOf(m, m.saved) == m.pos) continue;
+    m.saved = want;
+    SetFromMenu(m.key, want);
+    patch::Log("menus: %s=%d from Options > Graphics (%s%s%s)%s; saved to %s", m.key, want, when, control ? ", " : "",
+               control ? control : "", m.live ? ", applied now" : ", applies at the next start", MenuIniPath());
+  }
   for (MenuCheck& m : g_checks) {
     const int want = m.value ? m.on_value : 0;
     if ((want != 0) == (m.saved != 0)) continue;
@@ -534,19 +671,53 @@ void __fastcall OptGraphEvent(uintptr_t self, void* edx, uintptr_t event) {
       reinterpret_cast<BindFn>(bind)(box, nullptr, &m.value);
       ++bound;
     }
-    g_bound = bound > 0;
-    patch::Log("menus: %d of %d checkboxes bound", bound, kNumChecks);
+    int sbound = 0;
+    for (MenuSlider& m : g_sliders) {
+      const uintptr_t c = FindAny(self, m.name);
+      if (!c) {
+        patch::Log("menus: %s not on the page", m.name);
+        continue;
+      }
+      m.pos = PosOf(m, m.saved);
+      CallSlot(c, kBindSlot, reinterpret_cast<int>(&m.pos));
+      ++sbound;
+      patch::Log("menus: slider %s (vtable %08x) bound at step %d (%s=%d)", m.name,
+                 static_cast<unsigned>(*reinterpret_cast<uintptr_t*>(c)), m.pos, m.key, m.saved);
+    }
+    g_bound = bound > 0 || sbound > 0;
+    patch::Log("menus: %d of %d checkboxes and %d of %d sliders bound", bound, kNumChecks, sbound, kNumSliders);
   }
   reinterpret_cast<EventFn>(kOptGraphEvent)(self, edx, event);
   if (type == 5) {
     SetLabel(self, "Mcm2fixBoxText", "Enhancements");
     for (const MenuCheck& m : g_checks) SetLabel(self, m.name, m.label);
     SetLabel(self, kFootName, kFootText);
+    for (const MenuSlider& m : g_sliders) SliderLabel(self, m, m.pos);
+    UpdateGreying(self, g_sliders[kMsaaSlider].pos);
     return;
   }
   // A click (event 3, the one the game's own handler acts on): read the
   // clicked checkbox itself. Other events only check the bound values (the
   // page may be going away, so no control lookups then).
+  // A slider event (any type): pull its position into the bound value.
+  {
+    const char* who = SafeName(event);
+    for (int i = 0; i < kNumSliders; ++i) {
+      MenuSlider& m = g_sliders[i];
+      if (std::strcmp(who, m.name) != 0) continue;
+      const uintptr_t c = FindAny(self, m.name);
+      if (!c) continue;
+      const int before = m.pos;
+      CallSlot(c, kExchangeSlot, 1);
+      if (m.pos < 0) m.pos = 0;
+      if (m.pos >= m.nsteps) m.pos = m.nsteps - 1;
+      if (log || m.pos != before) patch::Log("menus: %s event %d: step %d -> %d", m.name, type, before, m.pos);
+      if (m.pos != before) {
+        SliderLabel(self, m, m.pos);
+        if (i == kMsaaSlider) UpdateGreying(self, m.pos);
+      }
+    }
+  }
   if (type == 3) {
     const char* clicked = SafeName(event);
     for (MenuCheck& m : g_checks) {
