@@ -61,7 +61,7 @@ struct FolderEvent {
 const FolderEvent kFolders[] = {{"baja", "Baja"},         {"enduro", "Enduro"}, {"national", "Nationals"},
                                 {"quarries", "Quarry"},    {"sx", "Supercross"}, {"tag", "Tag"}};
 // [Music] keys that are settings, not music.
-const char* const kSettingKeys[] = {"Volume", "RaceVolume", "Shuffle", "PauseInRace", "FadeTime", "Log"};
+const char* const kSettingKeys[] = {"MusicVolume", "RaceMusicVolume", "Shuffle", "PauseInRace", "FadeTime", "Log"};
 
 constexpr DWORD kVideoGapMs = 1500;  // after a video, before menu music
 constexpr DWORD kRacePauseMs = 250;   // simulation stopped this long = race paused
@@ -135,8 +135,8 @@ void LoadSettings() {
     const std::string value = Trim(eq + 1);
     if (!key.empty() && key[0] != ';' && !value.empty() && !IsSettingKey(key)) S.any = true;
   }
-  S.volume = ReadInt("Volume", 80, 0, 100);
-  S.race_volume = ReadInt("RaceVolume", S.volume, 0, 100);
+  S.volume = ReadInt("MusicVolume", 80, 0, 100);
+  S.race_volume = ReadInt("RaceMusicVolume", S.volume, 0, 100);
   S.shuffle = ReadInt("Shuffle", 1, 0, 1) != 0;
   S.pause_in_race = ReadInt("PauseInRace", 1, 0, 1) != 0;
   S.fade_ms = ReadInt("FadeTime", 1000, 0, 10000);
@@ -779,7 +779,7 @@ void Apply() {
   g_wake = CreateEventA(nullptr, FALSE, FALSE, nullptr);
   g_create_file = reinterpret_cast<CreateFileAFn>(patch::HookIat(kIatCreateFileA, reinterpret_cast<void*>(&MusicCreateFileA)));
   g_applied = g_create_file != nullptr;
-  patch::Log("music: on: volume %d, race volume %d, shuffle %d, PauseInRace %d, BackgroundMute %d, fade %d ms, "
+  patch::Log("music: on: MusicVolume %d, RaceMusicVolume %d, shuffle %d, PauseInRace %d, BackgroundMute %d, fade %d ms, "
              "Log %d; track file watch %s",
              S.volume, S.race_volume, S.shuffle ? 1 : 0, S.pause_in_race ? 1 : 0, GetConfig().background_mute ? 1 : 0,
              S.fade_ms, S.log ? 1 : 0, g_applied ? "on" : "FAILED (race music by event only)");

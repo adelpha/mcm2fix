@@ -410,7 +410,7 @@ BAJA01=D:\Music\desert.mp3
 - Race music pauses with the race's pause menu (`PauseInRace`), all music
   pauses while the game is in the background (`BackgroundMute`), and nothing
   plays while one of the game's videos does.
-- `Volume` and `RaceVolume` only set the music. The game's own sound volume
+- `MusicVolume` and `RaceMusicVolume` only set the music. The game's own sound volume
   and `AnnouncerVolume` don't change it; Windows' volume mixer entry for the
   game turns everything down together.
 - Music is played through Windows' plain audio output (waveOut), not
@@ -635,8 +635,8 @@ return to the menus; the other settings here when the game starts.
 | `Race` | empty | files, folders | Music in any race without its own event or track music. Empty = silent races. |
 | `Baja`, `Enduro`, `Nationals`, `Quarry`, `Supercross`, `Tag` | empty | files, folders | Music for every track of that kind of event, instead of `Race`. Add-on tracks count as the event whose `Teraform` folder they are in. |
 | *track name* | not set | files, folders | Music for one track, instead of its event's. The key is the track's file name in `Teraform` without `.env`: `BAJA01`-`BAJA05`, `AIRFIELD`, `FARM`, `OPENPIT`, `SKILODGE`, `TRAILER`, `CHANOS`, `HILLSIDE`, `IFFENDIC`, `NAT01`-`NAT12`, `VV`, `QUARRY01`-`QUARRY05`, `SX01`-`SX17`, `TAG01`-`TAG03`, or an add-on track's name. |
-| `Volume` | `80` | 0-100 | Music volume in the menus. |
-| `RaceVolume` | empty | 0-100 | Music volume in races. Empty = `Volume`. |
+| `MusicVolume` | `80` | 0-100 | Music volume in the menus. |
+| `RaceMusicVolume` | empty | 0-100 | Music volume in races. Empty = `MusicVolume`. |
 | `Shuffle` | `1` | `0`, `1` | A list plays in random order, a new order each time round. `0` = in order (a folder's files by name). |
 | `PauseInRace` | `1` | `0`, `1` | Race music pauses while the race is paused. `0` = it keeps playing. (Music always pauses while the game is in the background when `BackgroundMute=1`.) |
 | `FadeTime` | `1000` | 0-10000 | Milliseconds to fade the music out when it changes, such as from the results back to the menus. Loading a track and finishing a race always fade in 0.3 s. |

@@ -844,12 +844,12 @@ Tag=
 ; Stock tracks: BAJA01-05, AIRFIELD, FARM, OPENPIT, SKILODGE, TRAILER,
 ; CHANOS, HILLSIDE, IFFENDIC, NAT01-12, VV, QUARRY01-05, SX01-17, TAG01-03.
 
-; Volume: music volume in the menus, 0 to 100. Default 80. Music volume is
+; MusicVolume: music volume in the menus, 0 to 100. Default 80. Music volume is
 ; separate from the game's sound volume and AnnouncerVolume.
-Volume=80
+MusicVolume=80
 
-; RaceVolume: music volume during races, 0 to 100. Empty = Volume.
-RaceVolume=
+; RaceMusicVolume: music volume during races, 0 to 100. Empty = MusicVolume.
+RaceMusicVolume=
 
 ; Shuffle: 1 = a list plays in random order, a new order each time round
 ; (default). 0 = in order (a folder's files by name).
