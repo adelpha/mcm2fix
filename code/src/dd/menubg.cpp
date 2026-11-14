@@ -33,34 +33,49 @@ float4 vs_main(uint id : SV_VertexID) : SV_Position {
 
 bool IsKey(float3 c) { return c.g > 0.85 && c.r < 0.12 && c.b < 0.12; }
 
-// Dark blue chequered flag waving in the wind. p: menu pixels (0..640, 0..480).
+// Cloth height (in flag widths) at p (menu pixels / 480). Slow ripples that
+// travel away from the pole on the left and grow towards the free end:
+// broad bulges with sharper creases, a slow billow and gusts.
+float Fold(float th) { return sin(th) - 0.28 * sin(2.0 * th + 0.6); }
+float Height(float2 u, float t) {
+  float amp = 0.25 + 0.75 * saturate(u.x / 1.333);
+  float gust = 0.85 + 0.12 * sin(t * 0.23) + 0.06 * sin(t * 0.57 + 1.0);
+  float h = 0.060 * Fold(u.x * 4.6 - t * 0.95 + u.y * 0.9 + 0.5 * sin(u.y * 1.9 + t * 0.31));
+  h += 0.026 * Fold(u.x * 8.3 - t * 1.45 - u.y * 1.8 + 1.7);
+  h += 0.009 * sin(u.x * 14.0 - t * 2.1 + u.y * 3.7);
+  h += 0.020 * sin(u.y * 2.4 + u.x * 1.6 - t * 0.6);
+  return h * amp * gust;
+}
+
+// Dark blue chequered flag, lit as cloth. p: menu pixels (0..640, 0..480).
 float3 Flag(float2 p, float t) {
-  float2 uv = p / 480.0;
-  float a1 = uv.x * 5.0 + uv.y * 1.3 - t * 1.5;
-  float a2 = uv.x * 9.5 - uv.y * 2.1 - t * 2.4;
-  float a3 = uv.y * 4.0 + uv.x * 2.0 - t * 1.1;
-  // Cloth displacement, mostly up and down, a little sideways.
-  float2 d = float2(sin(a3) * 0.012, sin(a1) * 0.040 + sin(a2) * 0.014);
-  // Light from the slope of the folds.
-  float slope = cos(a1) * 5.0 * 0.040 + cos(a2) * 9.5 * 0.014;
-  float shade = clamp(1.0 + slope * 1.6, 0.45, 1.6);
-  float2 f = (uv + d) * 7.5;  // 64 px squares
-  float s = sin(f.x * 3.14159265) * sin(f.y * 3.14159265);
-  float w = max(fwidth(s), 1e-4);
-  float chk = smoothstep(-w, w, s);
+  float2 u = p / 480.0;
+  const float e = 1.0 / 480.0;
+  float h = Height(u, t);
+  float hx = (Height(u + float2(e, 0), t) - Height(u - float2(e, 0), t)) / (2 * e);
+  float hy = (Height(u + float2(0, e), t) - Height(u - float2(0, e), t)) / (2 * e);
+  float3 n = normalize(float3(-hx * 1.4, -hy * 1.4, 1));
+  float3 L = normalize(float3(-0.45, -0.55, 0.70));  // from the upper left
+  float3 H = normalize(L + float3(0, 0, 1));
+  float diff = clamp(dot(n, L) * 0.75 + 0.25, 0, 1.2);  // soft, wrapped light
+  float spec = pow(saturate(dot(n, H)), 24.0) * 0.22;   // satin sheen on the bulges
+  float occl = clamp(0.80 + h * 4.0, 0.55, 1.1);         // creases darker
+  // The cloth pattern follows the folds.
+  float2 f = float2(u.x + hx * 0.004, u.y + h * 0.6) * 7.5;  // 64 px squares
+  float2 tri = abs(frac(f * 0.5) * 2.0 - 1.0) * 2.0 - 1.0;  // square wave, also left of the menu (f < 0)
+  float w = 2.0 * 7.5 * 640.0 / (max(rect.z, 1.0) * 480.0);  // one window pixel of edge softening
+  float chk = 0.5 + 0.5 * clamp(tri.x / w, -1, 1) * clamp(tri.y / w, -1, 1);
   float3 dark = float3(0.055, 0.050, 0.130);
   float3 light = float3(0.175, 0.150, 0.330);
   float3 c = lerp(dark, light, chk);
   // The original's vertical light: darkest at the top and bottom, a band
   // of light a little above the middle.
-  float band = exp(-pow((p.y / 480.0 - 0.47) / 0.30, 2.0));
-  c *= (0.30 + 0.95 * band) * shade;
-  return c;
+  float band = 0.30 + 0.95 * exp(-pow((p.y / 480.0 - 0.47) / 0.30, 2.0));
+  return c * band * diff * occl * 1.35 + spec * band * float3(0.55, 0.55, 0.75);
 }
 
 float4 ps_main(float4 pos : SV_Position) : SV_Target {
   float2 g = (pos.xy - rect.xy) / rect.zw * float2(640, 480);
-  // The flag first, outside any branch (it takes screen-space derivatives).
   float3 under = Flag(g, info.x);
   bool inside = all(g >= 0) && all(g < float2(640, 480));
   bool menu = IsKey(frame.Load(int3(3, 3, 0)).rgb) || IsKey(frame.Load(int3(636, 3, 0)).rgb) ||
