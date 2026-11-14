@@ -65,8 +65,19 @@ MenuCheck g_checks[] = {
 constexpr int kNumChecks = static_cast<int>(sizeof(g_checks) / sizeof(g_checks[0]));
 constexpr char kFootName[] = "Mcm2fixFootnote";
 constexpr char kFootText[] = "* after restarting the game";
-constexpr int kRowTop = 30, kRowStep = 26;
-constexpr int kBoxH = kRowTop + kNumChecks * kRowStep + 20;
+// Page layout (control pixels; the page's controls are placed 20,35 menu
+// pixels further on). StOo: every box a border-only plate; the two columns
+// moved up and left to 20 screen pixels (at 1080p, 9 menu pixels) from the
+// bezel's innermost point and below the tab line, 9 apart; uniform checkbox
+// rows, less space under the titles.
+constexpr int kGap = 9;
+constexpr int kBoxW = 228;
+constexpr int kLeftX = 8, kRightX = kLeftX + kBoxW + kGap;
+constexpr int kTopY = 7, kTopH = 66;
+constexpr int kLowY = kTopY + kTopH + kGap;
+constexpr int kRowTop = 27, kRowStep = 22;  // first checkbox, checkbox to checkbox
+constexpr int kFeaturesH = kRowTop + 2 * kRowStep + 20 + 7;
+constexpr int kBoxH = kRowTop + kNumChecks * kRowStep + 22;
 
 int CurrentValue(const char* key) {
   const Config& c = GetConfig();
@@ -89,11 +100,11 @@ std::string OptGraphControls() {
                 "[Mcm2fixBox]\r\nType = STATIC\r\nHeight = %d\r\nLeft = 5010\r\nTabIndex = 20\r\nTop = 2505\r\n"
                 "Width = 3420\r\nShow = -1  'True\r\nTextDrop = -1  'True\r\nTextAlign = RIGHT\r\n"
                 "TextAlignV = MIDDLE\r\nTextColor = 16777215\r\nAnimNorm = \"Mcm2fixPlate\"\r\n"
-                "Broken_Enable = 0   'False\r\nXywh = 334, 167, 228, %d\r\n\r\n"
+                "Broken_Enable = 0   'False\r\nXywh = %d, %d, 228, %d\r\n\r\n"
                 "[Mcm2fixBoxText]\r\nType=STATICTEXT\r\nAnchor=Mcm2fixBox\r\nRelAnchor=1\r\nHeight=270\r\nLeft=120\r\n"
                 "TabIndex=21\r\nTop=90\r\nWidth=3165\r\nTextDrop=-1'True\r\nTextColor=16777215\r\nTextAlignV=TOP\r\n"
                 "TextAlign=LEFT\r\nText=\"Enhancements\"\r\nXywh=8,6,211,18\r\n\r\n",
-                kBoxH * 15, kBoxH);
+                kBoxH * 15, kRightX, kLowY, kBoxH);
   t += buf;
   for (int i = 0; i < kNumChecks; ++i) {
     const int y = kRowTop + i * kRowStep;
@@ -111,8 +122,8 @@ std::string OptGraphControls() {
                 "[%s]\r\nType=STATICTEXT\r\nAnchor=Mcm2fixBox\r\nRelAnchor=1\r\nHeight=240\r\nLeft=120\r\n"
                 "TabIndex=%d\r\nTop=%d\r\nWidth=3165\r\nTextDrop=-1'True\r\nTextColor=16777215\r\nTextAlignV=TOP\r\n"
                 "TextAlign=LEFT\r\nText=\"%s\"\r\nXywh=8,%d,211,16\r\n\r\n",
-                kFootName, 22 + kNumChecks, (kRowTop + kNumChecks * kRowStep - 4) * 15, kFootText,
-                kRowTop + kNumChecks * kRowStep - 4);
+                kFootName, 22 + kNumChecks, (kRowTop + kNumChecks * kRowStep) * 15, kFootText,
+                kRowTop + kNumChecks * kRowStep);
   t += buf;
   return t;
 }
@@ -253,8 +264,64 @@ bool BorderPlate(const std::vector<char>& d, const char* src_name, int w, int h,
   return true;
 }
 
-constexpr char kPlateAnim[] =
-    "[Mcm2fixPlate]\r\nFiles1 = Options\\Graphics\\Mcm2fixPlate.tga\r\nMSecDelay = 0\r\nLoopCount = 0\r\n\r\n";
+// Sets Key in [section] (the first such line in it), or adds it.
+bool SetKey(std::string& t, const char* section, const char* key, const std::string& value) {
+  const std::string head = std::string("[") + section + "]";
+  const size_t sec = t.find(head);
+  if (sec == std::string::npos) return patch::Log("menus: no [%s] in the layout", section), false;
+  size_t end = t.find("\n[", sec + head.size());
+  if (end == std::string::npos) end = t.size();
+  const size_t klen = std::strlen(key);
+  for (size_t line = t.find('\n', sec); line != std::string::npos && line < end; line = t.find('\n', line + 1)) {
+    const size_t a = line + 1;
+    if (t.compare(a, klen, key) != 0) continue;
+    size_t q = a + klen;
+    while (q < t.size() && t[q] == ' ') ++q;
+    if (q >= t.size() || t[q] != '=') continue;
+    size_t eol = t.find('\n', a);
+    if (eol == std::string::npos) eol = t.size();
+    if (eol > a && t[eol - 1] == '\r') --eol;
+    t.replace(a, eol - a, std::string(key) + "=" + value);
+    return true;
+  }
+  const size_t eol = t.find('\n', sec);
+  t.insert(eol + 1, std::string(key) + "=" + value + "\r\n");
+  return true;
+}
+
+// Moves/resizes a control: Xywh in pixels and the twips the designer also wrote.
+void Place(std::string& t, const char* section, int x, int y, int w, int h) {
+  char v[64];
+  std::snprintf(v, sizeof(v), "%d,%d,%d,%d", x, y, w, h);
+  SetKey(t, section, "Xywh", v);
+  SetKey(t, section, "Left", std::to_string(x * 15));
+  SetKey(t, section, "Top", std::to_string(y * 15));
+  SetKey(t, section, "Width", std::to_string(w * 15));
+  SetKey(t, section, "Height", std::to_string(h * 15));
+}
+
+struct Plate {
+  const char* anim;  // sprite section and file name
+  int h;
+};
+constexpr Plate kPlates[] = {{"Mcm2fixPlateTop", kTopH}, {"Mcm2fixPlateFeatures", kFeaturesH}, {"Mcm2fixPlate", kBoxH}};
+
+// The game's own boxes: border-only plates, new places, tighter rows.
+void RelayoutOptGraph(std::string& t) {
+  Place(t, "DisplayResolutionBox", kLeftX, kTopY, kBoxW, kTopH);
+  SetKey(t, "DisplayResolutionBox", "AnimNorm", "\"Mcm2fixPlateTop\"");
+  Place(t, "DisplayResolutionDropDown", 25, 28, 178, 83);
+  Place(t, "TerrainQualityBox", kRightX, kTopY, kBoxW, kTopH);
+  SetKey(t, "TerrainQualityBox", "AnimNorm", "\"Mcm2fixPlateTop\"");
+  Place(t, "TerrainQualitySliderBar", 11, 28, 204, 16);
+  Place(t, "rbwLabel6", 11, 45, 15, 17);
+  Place(t, "rbwLabel7", 197, 45, 18, 17);
+  Place(t, "GraphicFeaturesBox", kLeftX, kLowY, kBoxW, kFeaturesH);
+  SetKey(t, "GraphicFeaturesBox", "AnimNorm", "\"Mcm2fixPlateFeatures\"");
+  Place(t, "ShadowsCheckBox", 8, kRowTop, 211, 20);
+  Place(t, "ParticlesCheckBox", 8, kRowTop + kRowStep, 211, 20);
+  Place(t, "SkyCheckBox", 8, kRowTop + 2 * kRowStep, 211, 20);
+}
 
 // OptGraph.dtm with our controls before [Set_Anim].
 bool EditOptGraph(std::vector<char>& d) {
@@ -265,13 +332,21 @@ bool EditOptGraph(std::vector<char>& d) {
   const size_t anim = text.find("[Set_Anim]");
   if (anim == std::string::npos) return patch::Log("menus: OptGraph.dtm has no [Set_Anim]"), false;
   const size_t before = text.size();
-  std::vector<char> plate;
-  if (!BorderPlate(d, "Options\\Graphics\\GPlate03.tga", 228, kBoxH, plate)) return false;
-  text.insert(anim + std::strlen("[Set_Anim]\r\n"), kPlateAnim);
+  std::vector<char> plates[3];
+  std::string anims;
+  for (int i = 0; i < 3; ++i) {
+    if (!BorderPlate(d, "Options\\Graphics\\GPlate03.tga", kBoxW, kPlates[i].h, plates[i])) return false;
+    anims += std::string("[") + kPlates[i].anim + "]\r\nFiles1 = Options\\Graphics\\" + kPlates[i].anim +
+             ".tga\r\nMSecDelay = 0\r\nLoopCount = 0\r\n\r\n";
+  }
+  text.insert(anim + std::strlen("[Set_Anim]\r\n"), anims);
   text.insert(anim, OptGraphControls());
+  RelayoutOptGraph(text);
   ReplaceEntry(d, e, text.data(), text.size());
-  AddEntry(d, "Options\\Graphics\\Mcm2fixPlate.tga", plate);
-  patch::Log("menus: border-only plate added (228x%d, edge of GPlate03, magenta inside)", kBoxH);
+  for (int i = 0; i < 3; ++i)
+    AddEntry(d, (std::string("Options\\Graphics\\") + kPlates[i].anim + ".tga").c_str(), plates[i]);
+  patch::Log("menus: border-only plates added (228x%d, 228x%d, 228x%d; edge of GPlate03, magenta inside)", kTopH,
+             kFeaturesH, kBoxH);
   patch::Log("menus: Options > Graphics layout: added Enhancements box with %d checkboxes (dtm %u -> %u bytes)", kNumChecks,
              static_cast<unsigned>(before), static_cast<unsigned>(text.size()));
   return true;
