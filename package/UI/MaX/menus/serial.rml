@@ -1,0 +1,41 @@
+<rml>
+<head>
+  <title>serial</title>
+  <link type="text/rcss" href="menus.rcss"/>
+  <link type="text/rcss" href="serial.rcss"/>
+</head>
+<!--
+  A copy of the game's own serial (MaXMenus=1), drawn over it while the game
+  shows it. Made by tools/mcm2rml.py from the game's layouts, then edited by
+  hand. 1dp = one pixel of the game's 640x480 menus. See ..\README.txt.
+
+  game-dialogs     the game dialogs (layouts) this screen copies
+  game-opaque      it covers the whole menu (nothing under it is drawn)
+  game-dialog="x"  the part that copies the game's dialog x: shown while the
+                   game shows x, where the game put it
+  game="Name"      tied to the game's control of that name on that dialog
+  game-back        the control Esc / B / the right mouse button clicks
+-->
+<body game-dialogs="serpopup">
+<div id="screen">
+
+
+  <!-- SERPOPUP.DAT -->
+  <div id="d-serpopup" class="dialog" game-dialog="serpopup" style="left: 213dp; top: 120dp; width: 214dp; height: 240dp;">
+    <div id="serpopup-TitleText" game="TitleText" title="These settings should match those of the computer you're connecting to." class="text" style="left: 10dp; top: 9dp; width: 193dp; height: 25dp; padding-top: 5dp; text-align: center;">Serial Port Settings</div>
+    <div id="serpopup-rbwLabel1" game="rbwLabel1" title="These settings should match those of the computer you're connecting to." class="text" style="left: 19dp; top: 47dp; width: 75dp; height: 21dp; padding-top: 3dp; text-align: right;">Port</div>
+    <div id="serpopup-ButPort" game="ButPort" title="These settings should match those of the computer you're connecting to." class="cycle" style="left: 101dp; top: 48dp; width: 95dp; height: 18dp; color: #7ab9fe; padding-top: 1dp; text-align: center;"></div>
+    <div id="serpopup-rbwLabel2" game="rbwLabel2" title="These settings should match those of the computer you're connecting to." class="text" style="left: 19dp; top: 76dp; width: 75dp; height: 20dp; padding-top: 2dp; text-align: right;">Baud Rate</div>
+    <div id="serpopup-ButBaud" game="ButBaud" title="These settings should match those of the computer you're connecting to." class="cycle" style="left: 101dp; top: 77dp; width: 95dp; height: 18dp; color: #7ab9fe; padding-top: 1dp; text-align: center;"></div>
+    <div id="serpopup-rbwLabel3" game="rbwLabel3" title="These settings should match those of the computer you're connecting to." class="text" style="left: 19dp; top: 105dp; width: 75dp; height: 21dp; padding-top: 3dp; text-align: right;">Stop Bits</div>
+    <div id="serpopup-ButStop" game="ButStop" title="These settings should match those of the computer you're connecting to." class="cycle" style="left: 101dp; top: 106dp; width: 95dp; height: 18dp; color: #7ab9fe; padding-top: 1dp; text-align: center;"></div>
+    <div id="serpopup-rbwLabel4" game="rbwLabel4" title="These settings should match those of the computer you're connecting to." class="text" style="left: 19dp; top: 134dp; width: 75dp; height: 21dp; padding-top: 3dp; text-align: right;">Parity</div>
+    <div id="serpopup-ButParity" game="ButParity" title="These settings should match those of the computer you're connecting to." class="cycle" style="left: 101dp; top: 135dp; width: 95dp; height: 18dp; color: #7ab9fe; padding-top: 1dp; text-align: center;"></div>
+    <div id="serpopup-rbwLabel5" game="rbwLabel5" title="These settings should match those of the computer you're connecting to." class="text" style="left: 19dp; top: 163dp; width: 75dp; height: 20dp; padding-top: 2dp; text-align: right;">Flow</div>
+    <div id="serpopup-ButFlow" game="ButFlow" title="These settings should match those of the computer you're connecting to." class="cycle" style="left: 101dp; top: 164dp; width: 95dp; height: 18dp; color: #7ab9fe; padding-top: 1dp; text-align: center;"></div>
+    <div id="serpopup-ButOk" game="ButOk" class="button" style="left: 16dp; top: 199dp; width: 66dp; height: 25dp; padding-top: 5dp; text-align: center;">OK</div>
+    <div id="serpopup-ButCancel" game="ButCancel" class="button" style="left: 132dp; top: 199dp; width: 66dp; height: 25dp; padding-top: 5dp; text-align: center;">Cancel</div>
+  </div>
+</div>
+</body>
+</rml>

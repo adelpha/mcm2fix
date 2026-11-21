@@ -1,0 +1,78 @@
+<rml>
+<head>
+  <title>MCM2MaX Settings</title>
+  <link type="text/rcss" href="max.rcss"/>
+</head>
+<!--
+  MCM2MaX settings screen (opened by "More Settings" on Options > Graphics).
+  Edit and save while it is open: it reloads at once. See README.txt here.
+  ini="Key"      the control reads and saves that mcm2max.ini setting
+  default="v"    value when the ini does not have the key
+  ini-on="v"     value saved when a checkbox is ticked (default 1)
+  restart        the change applies the next time the game starts
+  game="Name"    a control on the game's own page underneath (checkboxes)
+  ini-text="Key" shows the setting's value (zero="Off", suffix="x")
+  enable-if="Key!=0" / "Key=1"  greyed unless the condition holds
+-->
+<body>
+  <div id="backdrop"/>
+  <div id="panel">
+    <h1>MCM2MaX Settings</h1>
+    <div id="scroll">
+
+      <h2>Display</h2>
+      <div class="row"><div class="label">VSync</div>
+        <input type="checkbox" class="checkbox" id="vsync" ini="VSync" default="1" autofocus/></div>
+      <div class="row"><div class="label">Widescreen View<span class="note">*</span></div>
+        <input type="checkbox" class="checkbox" id="widefov" ini="WideFov" default="1" restart/></div>
+
+      <h2>Image quality</h2>
+      <div class="row"><div class="label">Antialiasing<span class="note">*</span></div>
+        <select id="msaa" ini="Antialiasing" default="4" restart>
+          <option value="0">Off</option>
+          <option value="2">2x</option>
+          <option value="4">4x</option>
+          <option value="8">8x</option>
+        </select></div>
+      <div class="row"><div class="label">Smooth Tree Edges</div>
+        <input type="checkbox" class="checkbox" id="a2c" ini="AlphaToCoverage" default="2" ini-on="2"
+               enable-if="Antialiasing!=0"/></div>
+      <div class="row"><div class="label">Anisotropic Filtering</div>
+        <select id="aniso" ini="Anisotropy" default="16">
+          <option value="0">Off</option>
+          <option value="2">2x</option>
+          <option value="4">4x</option>
+          <option value="8">8x</option>
+          <option value="16">16x</option>
+        </select></div>
+      <div class="row"><div class="label">View Distance<span class="note">*</span></div>
+        <span class="value" ini-text="ViewDistance" default="1" suffix="x"/>
+        <input type="range" class="range" id="view" ini="ViewDistance" default="1" min="1" max="10" step="0.5" restart/></div>
+      <div class="row"><div class="label">Replacement Textures<span class="note">*</span></div>
+        <input type="checkbox" class="checkbox" id="textures" ini="TextureReplace" default="1" restart/></div>
+
+      <h2>Effects</h2>
+      <div class="row"><div class="label">Motion Blur</div>
+        <input type="checkbox" class="checkbox" id="blur" ini="MotionBlur" default="1"/></div>
+      <div class="row"><div class="label">Soft Rider Shadows<span class="note">*</span></div>
+        <input type="checkbox" class="checkbox" id="shadows" ini="RiderShadows" default="2" ini-on="2" restart/></div>
+      <div class="row"><div class="label">Bike Reflections<span class="note">*</span></div>
+        <input type="checkbox" class="checkbox" id="reflect" ini="Reflections" default="2" ini-on="2" restart/></div>
+
+      <h2>The game's own (Graphic Features on the page underneath)</h2>
+      <div class="row"><div class="label">Sky</div>
+        <input type="checkbox" class="checkbox" id="sky" game="SkyCheckBox"/></div>
+      <div class="row"><div class="label">Particles</div>
+        <input type="checkbox" class="checkbox" id="particles" game="ParticlesCheckBox"/></div>
+      <div class="row"><div class="label">Shadows</div>
+        <input type="checkbox" class="checkbox" id="gameshadows" game="ShadowsCheckBox"/></div>
+
+    </div>
+    <div id="bottom">
+      <div id="hint">Arrows / d-pad: move · Enter / A: select · Esc / B: back</div>
+      <div id="restart">* after restarting the game</div>
+      <button id="back" onclick="back">Back</button>
+    </div>
+  </div>
+</body>
+</rml>

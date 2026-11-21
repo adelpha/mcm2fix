@@ -57,8 +57,17 @@ jobs:
       - name: Build SDL3 (controllers only)
         if: steps.sdl3-cache.outputs.cache-hit != 'true'
         run: tools/build-sdl3.sh sdl3-work
+      - name: Cache RmlUi
+        id: rmlui-cache
+        uses: actions/cache@v4
+        with:
+          path: rmlui-work/install
+          key: rmlui-${{ hashFiles('tools/build-rmlui.sh', 'code/toolchain-mingw32.cmake') }}
+      - name: Build RmlUi + FreeType (MenuMaX screens)
+        if: steps.rmlui-cache.outputs.cache-hit != 'true'
+        run: tools/build-rmlui.sh rmlui-work
       - name: Configure
-        run: cmake -S code -B build -DCMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/code/toolchain-mingw32.cmake -DCMAKE_BUILD_TYPE=Release -DMCM2MaX_FFMPEG=$GITHUB_WORKSPACE/ffmpeg-work/install -DMCM2MaX_SDL3=$GITHUB_WORKSPACE/sdl3-work/install
+        run: cmake -S code -B build -DCMAKE_TOOLCHAIN_FILE=$GITHUB_WORKSPACE/code/toolchain-mingw32.cmake -DCMAKE_BUILD_TYPE=Release -DMCM2MaX_FFMPEG=$GITHUB_WORKSPACE/ffmpeg-work/install -DMCM2MaX_SDL3=$GITHUB_WORKSPACE/sdl3-work/install -DMCM2MaX_RMLUI=$GITHUB_WORKSPACE/rmlui-work/install
       - name: Build
         run: cmake --build build
       - name: Check Windows XP imports

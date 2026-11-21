@@ -12,6 +12,14 @@ bool Read(PadState* out, DWORD* packet) {
   *packet = 0;
   return false;
 }
+bool ReadAll(std::vector<PadState>* out) {
+  out->clear();
+  return false;
+}
+bool ReadSticks(std::vector<StickState>* out) {
+  out->clear();
+  return false;
+}
 void Rumble(WORD, WORD) {}
 std::vector<std::pair<WORD, WORD>> GamepadIds() { return {}; }
 Family ActiveFamily() { return kXbox; }

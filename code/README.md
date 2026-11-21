@@ -408,6 +408,44 @@ MotionBlur=1
 ; 0 = the menus as they were. Default 1.
 MenuOptions=1
 
+; MenuHiRes3D: 1 = 3D in the menus (the bike and rider in the garage on the
+; Bike & Rider page) is drawn at the window's resolution instead of 640x480.
+; Needs the Direct3D 11 renderer and GpuText=1. 0 = drawn at 640x480 and
+; scaled up, as before. Default 1.
+MenuHiRes3D=1
+
+; MenuMaX: 1 = new menu screens made from text files in UI\MaX\ (RmlUi,
+; HTML/CSS-style; see UI\MaX\README.txt), drawn at the window's resolution
+; and usable with the mouse, keyboard and controllers. For now: "More
+; Settings" on Options > Graphics. Edit the files while a screen is open and it
+; reloads. Works with both renderers. 0 = no new screens. Default 1.
+MenuMaX=1
+
+; MaXMenus: 1 = the game's menus are drawn by MenuMaX from the screens in
+; UI\MaX\menus\ (copies of the game's own, made from its layouts) wherever
+; one copies every dialog the game shows; they work through the game's menus
+; underneath (which do all the saving), at the window's resolution, with the
+; game's own art read from its UI\*.DAT files. Copies so far: main menu,
+; Options, single player, multiplayer, career, high scores, replays and the
+; popups; others show the game's own. Needs MenuMaX=1. 0 = the game's own
+; menus. Default 1.
+MaXMenus=1
+
+; MenuNav: 1 = the game's own menu screens also work with the keyboard and
+; controllers, and look as they always have: arrows / d-pad / left stick (a
+; wheel's or joystick's hat or stick) move the menu cursor to the nearest
+; button in that direction (it lights up as under the mouse), Enter / A
+; (joystick button 1) clicks it, Esc / B (button 2) clicks the screen's Back
+; or Cancel. Keys a screen uses itself (Enter / Esc on message boxes, the
+; replay player's arrows) stay the game's. The mouse works as before. Needs
+; InputTiming=1. 0 = mouse only, as the game was. Default 1.
+MenuNav=1
+
+; ZoneFix: 1 = the Multiplayer panel's MSN Gaming Zone button (the Zone closed
+; long ago; clicking it crashed or closed the game) is greyed out and does
+; nothing. 0 = as the game was. Default 1.
+ZoneFix=1
+
 ; MenuFlag: 1 = a waving dark blue chequered flag behind the main menu, seen
 ; through the transparent parts of MenuBackground (fills the whole window,
 ; also the sides of a wide screen). Needs the MenuBackground picture and the

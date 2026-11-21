@@ -22,4 +22,5 @@ void OnActivate(bool active);
 // After a frame's steps: input read outside steps (menus) sees everything.
 void EndSteps();
 
+
 }  // namespace input

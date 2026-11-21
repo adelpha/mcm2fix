@@ -1,0 +1,8 @@
+/* careertrans.rml: each control's own pictures (from the game's layouts). Made by tools/mcm2rml.py. */
+#d-pctrans { decorator: image(/dat/PCTRANS/ProCircuitScreens/PCTransition/PCTransitionG.tga); }
+#pctrans-ButDecline { decorator: image(/dat/PCTRANS/ProCircuitScreens/PCTransition/AcceptUp.tga); }
+#pctrans-ButDecline:active { decorator: image(/dat/PCTRANS/ProCircuitScreens/PCTransition/AcceptDown.tga); }
+#pctrans-ButDecline.disabled { decorator: image(/dat/PCTRANS/ProCircuitScreens/PCTransition/AcceptUp.tga); }
+#pctrans-ButAccept { decorator: image(/dat/PCTRANS/ProCircuitScreens/PCTransition/DeclineUp.tga); }
+#pctrans-ButAccept:active { decorator: image(/dat/PCTRANS/ProCircuitScreens/PCTransition/DeclineDown.tga); }
+#pctrans-ButAccept.disabled { decorator: image(/dat/PCTRANS/ProCircuitScreens/PCTransition/DeclineUp.tga); }

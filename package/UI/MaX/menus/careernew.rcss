@@ -1,0 +1,18 @@
+/* careernew.rml: each control's own pictures (from the game's layouts). Made by tools/mcm2rml.py. */
+#d-pcnew { decorator: image(/dat/PCNEW/ProCircuitScreens/PCNewPopUp/PCNewPopBG.tga); }
+#pcnew-OKButton { decorator: image(/dat/PCNEW/ProCircuitScreens/PCNewPopUp/PC01Bttn01Up.tga); }
+#pcnew-OKButton:active { decorator: image(/dat/PCNEW/ProCircuitScreens/PCNewPopUp/PC01Bttn01Down.tga); }
+#pcnew-OKButton.disabled { decorator: image(/dat/PCNEW/ProCircuitScreens/PCNewPopUp/PC01Bttn01Up.tga); }
+#pcnew-CancelButton { decorator: image(/dat/PCNEW/ProCircuitScreens/PCNewPopUp/PCBttn02Up.tga); }
+#pcnew-CancelButton:active { decorator: image(/dat/PCNEW/ProCircuitScreens/PCNewPopUp/PCBttn02Down.tga); }
+#pcnew-CancelButton.disabled { decorator: image(/dat/PCNEW/ProCircuitScreens/PCNewPopUp/PCBttn02Up.tga); }
+#pcnew-OpponentsLeftArrow { decorator: image(/dat/GLOBAL/Resources/LeftArrowUp.tga); }
+#pcnew-OpponentsLeftArrow:hover, #pcnew-OpponentsLeftArrow:focus-visible { decorator: image(/dat/GLOBAL/Resources/LeftArrowLit.tga); }
+#pcnew-OpponentsLeftArrow:active { decorator: image(/dat/GLOBAL/Resources/LeftArrowDown.tga); }
+#pcnew-OpponentsLeftArrow.disabled { decorator: image(/dat/GLOBAL/Resources/LeftArrowGrey.tga); }
+#pcnew-OpponentsListBox { decorator: image(/dat/PCNEW/ProCircuitScreens/PCNewPopUp/PCNewSmalledit.tga); }
+#pcnew-OpponentsListBox .row.on { color: #c0c000; }
+#pcnew-OpponentsRightArrow { decorator: image(/dat/GLOBAL/Resources/RightArrowUp.tga); }
+#pcnew-OpponentsRightArrow:hover, #pcnew-OpponentsRightArrow:focus-visible { decorator: image(/dat/GLOBAL/Resources/RightArrowLit.tga); }
+#pcnew-OpponentsRightArrow:active { decorator: image(/dat/GLOBAL/Resources/RightArrowDown.tga); }
+#pcnew-OpponentsRightArrow.disabled { decorator: image(/dat/GLOBAL/Resources/RightArrowGrey.tga); }

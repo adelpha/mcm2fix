@@ -32,6 +32,8 @@
 #include <cstdio>
 #include <cstring>
 
+#include "menugame.h"
+#include "menunav.h"
 #include "config.h"
 #include "display.h"
 #include "patch.h"
@@ -416,6 +418,8 @@ constexpr uintptr_t kCursorVtableSlot = 0x558F88 + 15 * 4;
 constexpr uintptr_t kCursorUpdate = 0x486100;
 volatile LONG g_cursor_x = -1, g_cursor_y = -1;
 void __fastcall CursorUpdateHook(uintptr_t self, void* edx) {
+  MenuNavFrame(self);  // keyboard / controller navigation may move it first
+  mg::Frame();         // MenuMaX changes when no tick comes
   reinterpret_cast<CursorUpdateFn>(kCursorUpdate)(self, edx);
   g_cursor_x = *reinterpret_cast<const int*>(self + 0x54);
   g_cursor_y = *reinterpret_cast<const int*>(self + 0x58);

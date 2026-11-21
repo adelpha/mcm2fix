@@ -5369,3 +5369,4 @@ mcm2/UI/WAIT.TGA
 mcm2/UILANG.DLL
 mcm2/UNINSTAL.EXE
 build/
+__pycache__/

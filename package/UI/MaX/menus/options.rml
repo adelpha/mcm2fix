@@ -1,0 +1,254 @@
+<rml>
+<head>
+  <title>options</title>
+  <link type="text/rcss" href="menus.rcss"/>
+  <link type="text/rcss" href="options.rcss"/>
+</head>
+<!--
+  A copy of the game's own options (MaXMenus=1), drawn over it while the game
+  shows it. Made by tools/mcm2rml.py from the game's layouts, then edited by
+  hand. 1dp = one pixel of the game's 640x480 menus. See ..\README.txt.
+
+  game-dialogs     the game dialogs (layouts) this screen copies
+  game-opaque      it covers the whole menu (nothing under it is drawn)
+  game-dialog="x"  the part that copies the game's dialog x: shown while the
+                   game shows x, where the game put it
+  game="Name"      tied to the game's control of that name on that dialog
+  game-back        the control Esc / B / the right mouse button clicks
+-->
+<body game-dialogs="optbase optgame optgraph optsound optcont optmess optgar" game-opaque game-back="Back">
+<div id="screen">
+
+
+  <!-- OPTBASE.DAT -->
+  <div id="d-optbase" class="dialog" game-dialog="optbase" style="left: 0dp; top: 0dp; width: 640dp; height: 480dp;">
+    <div id="optbase-GameSettings" game="GameSettings" title="Miscellaneous Game Settings" class="tab" style="left: 12dp; top: 0dp; width: 108dp; height: 33dp; padding-top: 14dp; text-align: center;">GameSettings</div>
+    <div id="optbase-Graphics" game="Graphics" title="Graphics/Advanced Graphics Options" class="tab" style="left: 120dp; top: 0dp; width: 100dp; height: 33dp; padding-top: 14dp; text-align: center;">Graphics</div>
+    <div id="optbase-Sound" game="Sound" title="Sound Options" class="tab" style="left: 220dp; top: 0dp; width: 101dp; height: 33dp; padding-top: 14dp; text-align: center;">Sound</div>
+    <div id="optbase-Controls" game="Controls" title="Controller Options" class="tab" style="left: 321dp; top: 0dp; width: 99dp; height: 33dp; padding-top: 14dp; text-align: center;">Controls</div>
+    <div id="optbase-Messages" game="Messages" title="Hot Key Message Setup" class="tab" style="left: 420dp; top: 0dp; width: 100dp; height: 33dp; padding-top: 14dp; text-align: center;">Messages</div>
+    <div id="optbase-Garage" game="Garage" title="Bike Settings" class="tab" style="left: 520dp; top: 0dp; width: 108dp; height: 33dp; padding-top: 14dp; text-align: center;">Garage</div>
+    <div id="optbase-Back" game="Back" title="Go back to previous screen" class="button" style="left: 17dp; top: 404dp; width: 79dp; height: 76dp;"></div>
+    <div id="optbase-Help" game="Help" title="Help" class="button" style="left: 147dp; top: 404dp; width: 56dp; height: 76dp;"></div>
+    <div id="optbase-Advanced" game="Advanced" title="Advanced Options, including troubleshooting" class="button" style="left: 328dp; top: 416dp; width: 117dp; height: 33dp; color: #7ab9fe; padding-top: 9dp; text-align: center;">Advanced...</div>
+    <div id="optbase-Restore" game="Restore" title="Restore to Factory Default Settings" class="button" style="left: 472dp; top: 416dp; width: 117dp; height: 33dp; color: #7ab9fe; padding-top: 9dp; text-align: center;">Restore...</div>
+  </div>
+
+  <!-- OPTGAME.DAT -->
+  <!-- not copied: MultiPlayerText (the game draws a box over it) -->
+  <div id="d-optgame" class="dialog" game-dialog="optgame" style="left: 20dp; top: 35dp; width: 600dp; height: 360dp;">
+    <div id="optgame-OverlaysBox" game="OverlaysBox" class="plate" game-text="off" style="left: 73dp; top: 71dp; width: 226dp; height: 170dp;">
+      <div id="optgame-OverlaysText" game="OverlaysText" class="text" style="left: 6dp; top: 4dp; width: 211dp; height: 19dp; font-size: 14dp;">Overlays</div>
+      <div id="optgame-RaceStatsCheckBox" game="RaceStatsCheckBox" title="Displays position, current lap, &amp; other info in the upper left corner of screen" class="check" style="left: 6dp; top: 27dp; width: 211dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Race Statistics</span></div>
+      <div id="optgame-rbwLabel2" game="rbwLabel2" title="Specifies when Chat box appears during multiplayer sessions" class="text" style="left: 7dp; top: 49dp; width: 106dp; height: 21dp; padding-top: 3dp;">Chat Box Mode</div>
+      <div id="optgame-rbwFrame1" game="rbwFrame1" class="plate" game-text="off" style="left: 118dp; top: 50dp; width: 99dp; height: 21dp;"/>
+      <div id="optgame-MultChatMode" game="MultChatMode" title="Specifies when Chat box appears during multiplayer sessions" class="cycle" style="left: 121dp; top: 52dp; width: 92dp; height: 16dp; color: #7ab9fe; text-align: center;"></div>
+      <div id="optgame-GuagesCheckBox" game="GuagesCheckBox" title="Displays speedometer in lower right corner of screen" class="check" style="left: 6dp; top: 74dp; width: 211dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Gauges</span></div>
+      <div id="optgame-OverviewCheckBox" game="OverviewCheckBox" title="Displays map in upper right corner of screen" class="check" style="left: 6dp; top: 98dp; width: 211dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Overview Map/Radar</span></div>
+      <div id="optgame-RiderNamesCheckBox" game="RiderNamesCheckBox" title="Displays rider name above each bike &amp; rider" class="check" style="left: 6dp; top: 122dp; width: 211dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Rider Names</span></div>
+      <div id="optgame-RiderPositionCheckBox" game="RiderPositionCheckBox" title="Displays current position above each bike &amp; rider" class="check" style="left: 6dp; top: 146dp; width: 211dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Rider Position</span></div>
+    </div>
+    <div id="optgame-MiscSettingsBox" game="MiscSettingsBox" class="plate" game-text="off" style="left: 304dp; top: 71dp; width: 226dp; height: 170dp;">
+      <div id="optgame-MiscText" game="MiscText" class="text" style="left: 6dp; top: 5dp; width: 211dp; height: 18dp; font-size: 14dp;">Miscellaneous Settings</div>
+      <div id="optgame-ChkPodiums" game="ChkPodiums" title="Plays animated podium sequences after each event" class="check" style="left: 6dp; top: 26dp; width: 211dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">End of Race Animations</span></div>
+      <div id="optgame-ChkUIAnims" game="ChkUIAnims" title="Animated displays and controls appear on game screens" class="check" style="left: 6dp; top: 50dp; width: 211dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">UI Animations</span></div>
+      <div id="optgame-ChkIntroMovie" game="ChkIntroMovie" class="check" style="left: 6dp; top: 74dp; width: 209dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Show Intro Movie</span></div>
+      <div id="optgame-ChkPlayerIndicator" game="ChkPlayerIndicator" title="Displays small red ""It's me!"" triangle above your rider's head" class="check" style="left: 6dp; top: 98dp; width: 209dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Player Indicator</span></div>
+      <div id="optgame-ChkToolTips" game="ChkToolTips" title="Displays explanatory text when the mouse pointer is moved over buttons and other controls" class="check" style="left: 6dp; top: 122dp; width: 209dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Show Tool Tips</span></div>
+      <div id="optgame-ChkWreckResetOnTrack" game="ChkWreckResetOnTrack" class="check" style="left: 6dp; top: 146dp; width: 209dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Practice: Reset on Track</span></div>
+    </div>
+    <div id="optgame-TxtPID" game="TxtPID" class="text" style="left: 73dp; top: 248dp; width: 457dp; height: 20dp; padding-top: 2dp;"></div>
+  </div>
+
+  <!-- OPTGRAPH.DAT -->
+  <div id="d-optgraph" class="dialog" game-dialog="optgraph" style="left: 20dp; top: 35dp; width: 600dp; height: 360dp;">
+    <div id="optgraph-DisplayResolutionBox" game="DisplayResolutionBox" class="plate" game-text="off" style="left: 8dp; top: 7dp; width: 228dp; height: 76dp;">
+      <div id="optgraph-DisplayResolutionText" game="DisplayResolutionText" class="text" style="left: 9dp; top: 7dp; width: 211dp; height: 18dp;">Display Resolution</div>
+      <div id="optgraph-Mcm2fixBorderless" game="Mcm2fixBorderless" class="radio" style="left: 8dp; top: 28dp; width: 105dp; height: 17dp; padding-top: 1dp; padding-left: 17dp;"><div class="box"/><span class="t">Borderless</span></div>
+      <div id="optgraph-Mcm2fixExclusive" game="Mcm2fixExclusive" class="radio" style="left: 118dp; top: 28dp; width: 101dp; height: 17dp; padding-top: 1dp; padding-left: 17dp;"><div class="box"/><span class="t">Exclusive</span></div>
+      <select id="optgraph-DisplayResolutionDropDown" game="DisplayResolutionDropDown" title="Choose higher settings for better quality graphics; try lower settings for a faster-running game" class="dropdown" style="left: 25dp; top: 50dp; width: 178dp; height: 21dp; color: #7ab9fe;"></select>
+    </div>
+    <div id="optgraph-TerrainQualityBox" game="TerrainQualityBox" class="plate" game-text="off" style="left: 245dp; top: 7dp; width: 228dp; height: 76dp;">
+      <div id="optgraph-TerrainQualityText" game="TerrainQualityText" class="text" style="left: 7dp; top: 6dp; width: 211dp; height: 18dp;">Overall Graphics Quality</div>
+      <input type="range" id="optgraph-TerrainQualitySliderBar" game="TerrainQualitySliderBar" title="Drag left for a faster running game, drag right for better quality graphics" class="slider" style="left: 11dp; top: 28dp; width: 204dp; height: 16dp;"/>
+      <div id="optgraph-rbwLabel6" game="rbwLabel6" class="text" style="left: 11dp; top: 45dp; width: 15dp; height: 17dp;">-</div>
+      <div id="optgraph-rbwLabel7" game="rbwLabel7" class="text" style="left: 197dp; top: 45dp; width: 18dp; height: 17dp; text-align: right;">+</div>
+    </div>
+    <div id="optgraph-GraphicFeaturesBox" game="GraphicFeaturesBox" class="plate" game-text="off" style="left: 8dp; top: 92dp; width: 228dp; height: 98dp;">
+      <div id="optgraph-GraphicFeaturesText" game="GraphicFeaturesText" class="text" style="left: 8dp; top: 6dp; width: 211dp; height: 18dp;">Graphic Features</div>
+      <div id="optgraph-ShadowsCheckBox" game="ShadowsCheckBox" title="Objects in the environment cast realistic shadows. Turn off to make the game run faster" class="check" style="left: 8dp; top: 27dp; width: 211dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Shadows</span></div>
+      <div id="optgraph-ParticlesCheckBox" game="ParticlesCheckBox" title="Riders kick up realistic dust, dirt, and smoke. Turn off to make the game run faster" class="check" style="left: 8dp; top: 49dp; width: 211dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Particle Systems</span></div>
+      <div id="optgraph-SkyCheckBox" game="SkyCheckBox" title="Changing sky has clouds, reflects time-of-day. Turn off to make game run faster" class="check" style="left: 8dp; top: 71dp; width: 211dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Sky</span></div>
+    </div>
+    <div id="optgraph-Mcm2fixBox" game="Mcm2fixBox" class="plate" game-text="off" style="left: 245dp; top: 92dp; width: 228dp; height: 269dp;">
+      <div id="optgraph-Mcm2fixBoxText" game="Mcm2fixBoxText" class="text" style="left: 8dp; top: 6dp; width: 211dp; height: 18dp;">Enhancements</div>
+      <div id="optgraph-Mcm2fixAnisoText" game="Mcm2fixAnisoText" class="text" style="left: 8dp; top: 27dp; width: 140dp; height: 18dp;">Anisotropy</div>
+      <input type="range" id="optgraph-Mcm2fixAniso" game="Mcm2fixAniso" class="slider" style="left: 148dp; top: 29dp; width: 70dp; height: 16dp;"/>
+      <div id="optgraph-Mcm2fixMsaaText" game="Mcm2fixMsaaText" class="text" style="left: 8dp; top: 49dp; width: 140dp; height: 18dp;">Antialiasing</div>
+      <input type="range" id="optgraph-Mcm2fixMsaa" game="Mcm2fixMsaa" class="slider" style="left: 148dp; top: 51dp; width: 70dp; height: 16dp;"/>
+      <div id="optgraph-Mcm2fixViewText" game="Mcm2fixViewText" class="text" style="left: 8dp; top: 71dp; width: 140dp; height: 18dp;">View Distance</div>
+      <input type="range" id="optgraph-Mcm2fixView" game="Mcm2fixView" class="slider" style="left: 148dp; top: 73dp; width: 70dp; height: 16dp;"/>
+      <div id="optgraph-Mcm2fixVSync" game="Mcm2fixVSync" class="check" style="left: 8dp; top: 93dp; width: 211dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">VSync</span></div>
+      <div id="optgraph-Mcm2fixWideView" game="Mcm2fixWideView" class="check" style="left: 8dp; top: 115dp; width: 211dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Widescreen View *</span></div>
+      <div id="optgraph-Mcm2fixMotionBlur" game="Mcm2fixMotionBlur" class="check" style="left: 8dp; top: 137dp; width: 211dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Motion Blur</span></div>
+      <div id="optgraph-Mcm2fixSmoothEdges" game="Mcm2fixSmoothEdges" class="check" style="left: 8dp; top: 159dp; width: 211dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Smooth Tree Edges</span></div>
+      <div id="optgraph-Mcm2fixShadows" game="Mcm2fixShadows" class="check" style="left: 8dp; top: 181dp; width: 211dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Soft Rider Shadows *</span></div>
+      <div id="optgraph-Mcm2fixReflections" game="Mcm2fixReflections" class="check" style="left: 8dp; top: 203dp; width: 211dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Bike Reflections *</span></div>
+      <div id="optgraph-Mcm2fixTextures" game="Mcm2fixTextures" class="check" style="left: 8dp; top: 225dp; width: 211dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Replacement Textures *</span></div>
+      <div id="optgraph-Mcm2fixFootnote" game="Mcm2fixFootnote" class="text" style="left: 8dp; top: 247dp; width: 211dp; height: 16dp;">* after restarting the game</div>
+    </div>
+    <div id="optgraph-Mcm2fixMaX" game="Mcm2fixMaX" class="button" style="left: 63dp; top: 211dp; width: 117dp; height: 33dp; padding-top: 9dp; text-align: center;">More Settings</div>
+  </div>
+
+  <!-- OPTSOUND.DAT -->
+  <div id="d-optsound" class="dialog" game-dialog="optsound" style="left: 20dp; top: 35dp; width: 600dp; height: 360dp;">
+    <div id="optsound-SoundSettingsBox" game="SoundSettingsBox" class="plate" game-text="off" style="left: 35dp; top: 69dp; width: 256dp; height: 185dp;">
+      <div id="optsound-SoundSettingsText" game="SoundSettingsText" class="text" style="left: 8dp; top: 13dp; width: 240dp; height: 20dp; font-size: 14dp;">Sound Options</div>
+      <div id="optsound-UserInterfaceSoundsCheckBox" game="UserInterfaceSoundsCheckBox" title="Check to hear sound effects when you're navigating the game screens" class="check" style="left: 8dp; top: 38dp; width: 240dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">User Interface sounds</span></div>
+      <div id="optsound-InGameSoundEffectsCheck" game="InGameSoundEffectsCheck" title="Check to hear sound effects while you're riding" class="check" style="left: 8dp; top: 64dp; width: 240dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">In-game Sound Effects</span></div>
+      <div id="optsound-SoundHardwareCheckBox" game="SoundHardwareCheckBox" title="Check to use advanced hardware to create game sounds. Turn off if you encounter audio problems." class="check" style="left: 8dp; top: 88dp; width: 239dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Use 3-D Sound Hardware</span></div>
+      <div id="optsound-ChkEax" game="ChkEax" title="Check to turn on Environmental Audio Extensions, incl. reverberation, occlusion, and obstruction" class="check" style="left: 8dp; top: 112dp; width: 239dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Use EAX Extensions</span></div>
+      <div id="optsound-ChkWaypointChime" game="ChkWaypointChime" title="Check to hear an audio indication when you have successfully cleared a waypoint" class="check" style="left: 8dp; top: 136dp; width: 239dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Waypoint Confirmation</span></div>
+    </div>
+    <div id="optsound-VolumeSettingsBox" game="VolumeSettingsBox" class="plate" game-text="off" style="left: 310dp; top: 69dp; width: 256dp; height: 185dp;">
+      <div id="optsound-VolumeSettingsText" game="VolumeSettingsText" class="text" style="left: 9dp; top: 13dp; width: 233dp; height: 20dp; font-size: 14dp;">Sound Settings</div>
+      <div id="optsound-UserInterfaceVolumeText" game="UserInterfaceVolumeText" title="Drag left to decrease volume of sound effects on game screens, drag right to turn it up" class="text" style="left: 12dp; top: 36dp; width: 231dp; height: 17dp; text-align: center;">User Interface Volume</div>
+      <input type="range" id="optsound-UserInterfaceVolumeSlider" game="UserInterfaceVolumeSlider" title="Drag left to decrease volume of sound effects on game screens, drag right to turn it up" class="slider" style="left: 24dp; top: 53dp; width: 204dp; height: 16dp;"/>
+      <div id="optsound-InGameVolumeText" game="InGameVolumeText" title="Drag left to decrease volume of engine noise &amp; environmental sounds, drag right to turn it up" class="text" style="left: 12dp; top: 71dp; width: 231dp; height: 17dp; text-align: center;">In-game Volume</div>
+      <input type="range" id="optsound-InGameVolumeSlider" game="InGameVolumeSlider" title="Drag left to decrease volume of engine noise &amp; environmental sounds, drag right to turn it up" class="slider" style="left: 24dp; top: 88dp; width: 204dp; height: 16dp;"/>
+      <div id="optsound-rbwLabel1" game="rbwLabel1" class="text" style="left: 8dp; top: 116dp; width: 89dp; height: 17dp; text-align: center;">Quality</div>
+      <div id="optsound-Rad8Bit" game="Rad8Bit" title="Specifies lower overall sound quality but a faster-running game" class="radio" style="left: 32dp; top: 136dp; width: 193dp; height: 17dp; padding-top: 1dp; padding-left: 17dp;"><div class="box"/><span class="t">8-bit</span></div>
+      <div id="optsound-Rad16Bit" game="Rad16Bit" title="Specifies better overall sound quality but a slower-running game" class="radio" style="left: 32dp; top: 152dp; width: 193dp; height: 17dp; padding-top: 1dp; padding-left: 17dp;"><div class="box"/><span class="t">16-bit</span></div>
+    </div>
+  </div>
+
+  <!-- OPTCONT.DAT -->
+  <div id="d-optcont" class="dialog" game-dialog="optcont" style="left: 20dp; top: 35dp; width: 600dp; height: 360dp;">
+    <div id="optcont-InputDeviceText" game="InputDeviceText" class="text" style="left: 4dp; top: 7dp; width: 110dp; height: 15dp; text-align: right;">Presets:</div>
+    <select id="optcont-InputDeviceDDL" game="InputDeviceDDL" title="Click arrow to display all available controller types" class="dropdown" style="left: 119dp; top: 4dp; width: 287dp; height: 21dp; color: #7ab9fe; text-align: center;"></select>
+    <div id="optcont-ChkAnalogAxes" game="ChkAnalogAxes" class="check" style="left: 416dp; top: 8dp; width: 177dp; height: 17dp; padding-top: 1dp; padding-left: 17dp;"><div class="box"/><span class="t">Analog Axes</span></div>
+    <div id="optcont-ClickBelowText" game="ClickBelowText" class="text" style="left: 84dp; top: 30dp; width: 209dp; height: 18dp; text-align: center;">Controls - Click below to remap</div>
+    <div id="optcont-CurrentAssignmentText" game="CurrentAssignmentText" class="text" style="left: 291dp; top: 30dp; width: 228dp; height: 18dp; text-align: center;">Current Assignment</div>
+    <div id="optcont-AssignmentsBox" game="AssignmentsBox" class="plate" game-text="off" style="left: 83dp; top: 48dp; width: 435dp; height: 126dp;"/>
+    <div id="optcont-ActionListBox" game="ActionListBox" class="list" style="left: 89dp; top: 55dp; width: 197dp; height: 112dp; color: #7ab9fe; text-align: right; font-effect: none;"></div>
+    <div id="optcont-MapKeyListBox" game="MapKeyListBox" class="list" style="left: 295dp; top: 55dp; width: 197dp; height: 112dp; color: #7ab9fe; font-effect: none;"></div>
+    <input type="range" orientation="vertical" id="optcont-ListboxScroll" game="ListboxScroll" class="slider vslider" style="left: 498dp; top: 58dp; width: 12dp; height: 106dp;"/>
+    <div id="optcont-ControlSensitivityBox" game="ControlSensitivityBox" class="plate" game-text="off" style="left: 23dp; top: 179dp; width: 551dp; height: 178dp;"/>
+    <div id="optcont-ControlSensitivityText" game="ControlSensitivityText" class="text" style="left: 92dp; top: 185dp; width: 205dp; height: 16dp; text-align: center;">Control Sensitivity</div>
+    <div id="optcont-PressText" game="PressText" class="text" style="left: 363dp; top: 185dp; width: 205dp; height: 16dp; text-align: center;">Press Sensitivity</div>
+    <div id="optcont-SteeringText" game="SteeringText" class="text" style="left: 28dp; top: 203dp; width: 64dp; height: 16dp; text-align: right;">Steering</div>
+    <input type="range" id="optcont-SteeringSlider" game="SteeringSlider" title="Controls how far your handlebars turn and how fast your bike turns side-to-side" class="slider" style="left: 93dp; top: 204dp; width: 204dp; height: 16dp;"/>
+    <div id="optcont-PressThrottleText" game="PressThrottleText" class="text" style="left: 299dp; top: 204dp; width: 64dp; height: 15dp; text-align: right;">Throttle</div>
+    <input type="range" id="optcont-PressThrottleSlider" game="PressThrottleSlider" title="Controls how fast maximum acceleration is reached after throttle control is pressed" class="slider" style="left: 365dp; top: 204dp; width: 204dp; height: 16dp;"/>
+    <div id="optcont-CrossUpText" game="CrossUpText" class="text" style="left: 28dp; top: 225dp; width: 64dp; height: 16dp; text-align: right;">Cross-up</div>
+    <input type="range" id="optcont-CrossupSlider" game="CrossupSlider" title="Controls how fast your bike rolls side-to-side during a jump" class="slider" style="left: 93dp; top: 227dp; width: 204dp; height: 16dp;"/>
+    <div id="optcont-PressBrakesText" game="PressBrakesText" class="text" style="left: 299dp; top: 227dp; width: 64dp; height: 15dp; text-align: right;">Brakes</div>
+    <input type="range" id="optcont-PressBrakesSlider" game="PressBrakesSlider" title="Controls how fast maximum braking is reached after brake control is pressed" class="slider" style="left: 365dp; top: 227dp; width: 204dp; height: 16dp;"/>
+    <div id="optcont-PitchText" game="PitchText" class="text" style="left: 27dp; top: 250dp; width: 64dp; height: 15dp; text-align: right;">Pitch</div>
+    <input type="range" id="optcont-PitchSlider" game="PitchSlider" title="Controls how fast your bike pitches forward and backward during a jump" class="slider" style="left: 93dp; top: 250dp; width: 204dp; height: 16dp;"/>
+    <div id="optcont-ReleaseSensitivityText" game="ReleaseSensitivityText" class="text" style="left: 362dp; top: 253dp; width: 205dp; height: 18dp; text-align: center;">Release Sensitivity</div>
+    <div id="optcont-LessText" game="LessText" class="text" style="left: 91dp; top: 269dp; width: 91dp; height: 15dp;">Less</div>
+    <div id="optcont-MoreText" game="MoreText" class="text" style="left: 207dp; top: 269dp; width: 88dp; height: 15dp; text-align: right;">More</div>
+    <div id="optcont-ReleaseThrottleText" game="ReleaseThrottleText" class="text" style="left: 299dp; top: 274dp; width: 64dp; height: 15dp; text-align: right;">Throttle</div>
+    <input type="range" id="optcont-ReleaseThrottleSlider" game="ReleaseThrottleSlider" title="Controls how fast the bike responds when the throttle control is released" class="slider" style="left: 365dp; top: 274dp; width: 204dp; height: 16dp;"/>
+    <div id="optcont-ForceFeedCheck" game="ForceFeedCheck" class="check" style="left: 35dp; top: 298dp; width: 188dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Enable Force Feedback</span></div>
+    <div id="optcont-releaseBrakesText" game="releaseBrakesText" class="text" style="left: 299dp; top: 297dp; width: 64dp; height: 15dp; text-align: right;">Brakes</div>
+    <input type="range" id="optcont-ReleaseBrakesSlider" game="ReleaseBrakesSlider" title="Controls how fast the bike responds when the brake control is released" class="slider" style="left: 365dp; top: 297dp; width: 204dp; height: 16dp;"/>
+    <div id="optcont-ReleaseSlowText" game="ReleaseSlowText" class="text" style="left: 363dp; top: 316dp; width: 83dp; height: 15dp;">Slow</div>
+    <div id="optcont-ReleaseFastText" game="ReleaseFastText" class="text" style="left: 487dp; top: 316dp; width: 80dp; height: 15dp; text-align: right;">Fast</div>
+    <input type="range" id="optcont-FeedbackSlider" game="FeedbackSlider" class="slider" style="left: 37dp; top: 320dp; width: 204dp; height: 16dp;"/>
+    <div id="optcont-WeakerText" game="WeakerText" class="text" style="left: 35dp; top: 338dp; width: 91dp; height: 15dp;">Weaker</div>
+    <div id="optcont-StrongerText" game="StrongerText" class="text" style="left: 143dp; top: 338dp; width: 96dp; height: 15dp; text-align: right;">Stronger</div>
+    <div id="optcont-ChkGasGyro" game="ChkGasGyro" title="When rider gases bike in the air, rear wheel spins, pushing back of the bike down" class="check" style="left: 264dp; top: 336dp; width: 148dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Gas Gyro Effect</span></div>
+    <div id="optcont-ChkBrakeGyro" game="ChkBrakeGyro" title="When rider brakes in the air, rear wheel stops spinning, pitching the bike forward" class="check" style="left: 416dp; top: 336dp; width: 151dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Brake Gyro Effect</span></div>
+  </div>
+
+  <!-- OPTMESS.DAT -->
+  <div id="d-optmess" class="dialog" game-dialog="optmess" style="left: 20dp; top: 35dp; width: 600dp; height: 360dp;">
+    <div id="optmess-EditBelowText" game="EditBelowText" title="Use the key combinations listed on the left to send message to multiplayer opponents" class="text" style="left: 8dp; top: 9dp; width: 581dp; height: 20dp; font-size: 14dp; text-align: center;">Edit each of the presets below to modify your messages.</div>
+    <input type="text" id="optmess-Message1" game="Message1" title="Use the key combinations listed on the left to send message to multiplayer opponents" class="edit" maxlength="127" style="left: 94dp; top: 37dp; width: 497dp; height: 21dp; color: #7ab9fe; padding-left: 4dp;"/>
+    <div id="optmess-Shift1Text" game="Shift1Text" title="Use the key combinations listed on the left to send message to multiplayer opponents" class="text" style="left: 9dp; top: 40dp; width: 88dp; height: 13dp;">Control + 1:</div>
+    <input type="text" id="optmess-Message2" game="Message2" title="Use the key combinations listed on the left to send message to multiplayer opponents" class="edit" maxlength="127" style="left: 94dp; top: 69dp; width: 497dp; height: 21dp; color: #7ab9fe; padding-left: 4dp;"/>
+    <div id="optmess-Shift2Text" game="Shift2Text" title="Use the key combinations listed on the left to send message to multiplayer opponents" class="text" style="left: 9dp; top: 72dp; width: 88dp; height: 13dp;">Control + 2:</div>
+    <input type="text" id="optmess-Message3" game="Message3" title="Use the key combinations listed on the left to send message to multiplayer opponents" class="edit" maxlength="127" style="left: 94dp; top: 101dp; width: 497dp; height: 21dp; color: #7ab9fe; padding-left: 4dp;"/>
+    <div id="optmess-Shift3Text" game="Shift3Text" title="Use the key combinations listed on the left to send message to multiplayer opponents" class="text" style="left: 9dp; top: 104dp; width: 88dp; height: 13dp;">Control + 3:</div>
+    <input type="text" id="optmess-Message4" game="Message4" title="Use the key combinations listed on the left to send message to multiplayer opponents" class="edit" maxlength="127" style="left: 94dp; top: 133dp; width: 497dp; height: 21dp; color: #7ab9fe; padding-left: 4dp;"/>
+    <div id="optmess-Shift4Text" game="Shift4Text" title="Use the key combinations listed on the left to send message to multiplayer opponents" class="text" style="left: 9dp; top: 136dp; width: 88dp; height: 13dp;">Control + 4:</div>
+    <input type="text" id="optmess-Message5" game="Message5" title="Use the key combinations listed on the left to send message to multiplayer opponents" class="edit" maxlength="127" style="left: 94dp; top: 165dp; width: 497dp; height: 21dp; color: #7ab9fe; padding-left: 4dp;"/>
+    <div id="optmess-Shift5Text" game="Shift5Text" title="Use the key combinations listed on the left to send message to multiplayer opponents" class="text" style="left: 9dp; top: 168dp; width: 88dp; height: 13dp;">Control + 5:</div>
+    <input type="text" id="optmess-Message6" game="Message6" title="Use the key combinations listed on the left to send message to multiplayer opponents" class="edit" maxlength="127" style="left: 94dp; top: 197dp; width: 497dp; height: 21dp; color: #7ab9fe; padding-left: 4dp;"/>
+    <div id="optmess-Shift6Text" game="Shift6Text" title="Use the key combinations listed on the left to send message to multiplayer opponents" class="text" style="left: 9dp; top: 200dp; width: 88dp; height: 13dp;">Control + 6:</div>
+    <input type="text" id="optmess-Message7" game="Message7" title="Use the key combinations listed on the left to send message to multiplayer opponents" class="edit" maxlength="127" style="left: 94dp; top: 229dp; width: 497dp; height: 21dp; color: #7ab9fe; padding-left: 4dp;"/>
+    <div id="optmess-Shift7Text" game="Shift7Text" title="Use the key combinations listed on the left to send message to multiplayer opponents" class="text" style="left: 9dp; top: 232dp; width: 88dp; height: 13dp;">Control + 7:</div>
+    <input type="text" id="optmess-Message8" game="Message8" title="Use the key combinations listed on the left to send message to multiplayer opponents" class="edit" maxlength="127" style="left: 94dp; top: 261dp; width: 497dp; height: 21dp; color: #7ab9fe; padding-left: 4dp;"/>
+    <div id="optmess-Shift8Text" game="Shift8Text" title="Use the key combinations listed on the left to send message to multiplayer opponents" class="text" style="left: 9dp; top: 264dp; width: 88dp; height: 13dp;">Control + 8:</div>
+    <div id="optmess-Shift9Text" game="Shift9Text" title="Use the key combinations listed on the left to send message to multiplayer opponents" class="text" style="left: 9dp; top: 295dp; width: 88dp; height: 13dp;">Control + 9:</div>
+    <input type="text" id="optmess-Message9" game="Message9" title="Use the key combinations listed on the left to send message to multiplayer opponents" class="edit" maxlength="127" style="left: 94dp; top: 293dp; width: 497dp; height: 21dp; color: #7ab9fe; padding-left: 4dp;"/>
+    <input type="text" id="optmess-Message0" game="Message0" title="Use the key combinations listed on the left to send message to multiplayer opponents" class="edit" maxlength="127" style="left: 94dp; top: 325dp; width: 497dp; height: 21dp; color: #7ab9fe; padding-left: 4dp;"/>
+    <div id="optmess-Shift0Text" game="Shift0Text" title="Use the key combinations listed on the left to send message to multiplayer opponents" class="text" style="left: 9dp; top: 328dp; width: 88dp; height: 13dp;">Control + 0:</div>
+  </div>
+
+  <!-- OPTGAR.DAT -->
+  <div id="d-optgar" class="dialog" game-dialog="optgar" style="left: 20dp; top: 35dp; width: 600dp; height: 360dp;">
+    <div id="optgar-CurveLeft" game="CurveLeft" class="button" style="left: 72dp; top: 8dp; width: 21dp; height: 21dp;"></div>
+    <select id="optgar-DDLCurves" game="DDLCurves" title="Lists available stock and custom power curve settings for each engine cc size" class="dropdown" style="left: 94dp; top: 8dp; width: 412dp; height: 21dp; color: #7ab9fe; text-align: center;"></select>
+    <div id="optgar-CurveRight" game="CurveRight" class="button" style="left: 507dp; top: 8dp; width: 21dp; height: 21dp;"></div>
+    <div id="optgar-rbwLabel6" game="rbwLabel6" class="text" style="left: 16dp; top: 36dp; width: 57dp; height: 17dp; padding-top: 1dp; text-align: right;">HP</div>
+    <div id="optgar-HP1" game="HP1" title="Displays horsepower generated at specific RPM levels to create a power curve" class="text" style="left: 84dp; top: 34dp; width: 33dp; height: 21dp; color: #7ab9fe; padding-top: 3dp; text-align: center;"></div>
+    <div id="optgar-HP2" game="HP2" title="Displays horsepower generated at specific RPM levels to create a power curve" class="text" style="left: 124dp; top: 34dp; width: 33dp; height: 21dp; color: #7ab9fe; padding-top: 3dp; text-align: center;"></div>
+    <div id="optgar-HP3" game="HP3" title="Displays horsepower generated at specific RPM levels to create a power curve" class="text" style="left: 164dp; top: 34dp; width: 33dp; height: 21dp; color: #7ab9fe; padding-top: 3dp; text-align: center;"></div>
+    <div id="optgar-HP4" game="HP4" title="Displays horsepower generated at specific RPM levels to create a power curve" class="text" style="left: 204dp; top: 34dp; width: 33dp; height: 21dp; color: #7ab9fe; padding-top: 3dp; text-align: center;"></div>
+    <div id="optgar-HP5" game="HP5" title="Displays horsepower generated at specific RPM levels to create a power curve" class="text" style="left: 244dp; top: 34dp; width: 33dp; height: 21dp; color: #7ab9fe; padding-top: 3dp; text-align: center;"></div>
+    <div id="optgar-HP6" game="HP6" title="Displays horsepower generated at specific RPM levels to create a power curve" class="text" style="left: 284dp; top: 34dp; width: 33dp; height: 21dp; color: #7ab9fe; padding-top: 3dp; text-align: center;"></div>
+    <div id="optgar-HP7" game="HP7" title="Displays horsepower generated at specific RPM levels to create a power curve" class="text" style="left: 324dp; top: 34dp; width: 33dp; height: 21dp; color: #7ab9fe; padding-top: 3dp; text-align: center;"></div>
+    <div id="optgar-HP8" game="HP8" title="Displays horsepower generated at specific RPM levels to create a power curve" class="text" style="left: 364dp; top: 34dp; width: 33dp; height: 21dp; color: #7ab9fe; padding-top: 3dp; text-align: center;"></div>
+    <div id="optgar-HP9" game="HP9" title="Displays horsepower generated at specific RPM levels to create a power curve" class="text" style="left: 404dp; top: 34dp; width: 33dp; height: 21dp; color: #7ab9fe; padding-top: 3dp; text-align: center;"></div>
+    <div id="optgar-HP10" game="HP10" title="Displays horsepower generated at specific RPM levels to create a power curve" class="text" style="left: 444dp; top: 34dp; width: 33dp; height: 21dp; color: #7ab9fe; padding-top: 3dp; text-align: center;"></div>
+    <div id="optgar-HP11" game="HP11" title="Displays horsepower generated at specific RPM levels to create a power curve" class="text" style="left: 484dp; top: 34dp; width: 33dp; height: 21dp; color: #7ab9fe; padding-top: 3dp; text-align: center;"></div>
+    <input type="range" orientation="vertical" id="optgar-SldEQ1" game="SldEQ1" title="Displays horsepower generated at specific RPM levels to create a power curve" class="slider vslider" style="left: 92dp; top: 56dp; width: 17dp; height: 137dp;"/>
+    <input type="range" orientation="vertical" id="optgar-SldEQ2" game="SldEQ2" title="Displays horsepower generated at specific RPM levels to create a power curve" class="slider vslider" style="left: 132dp; top: 56dp; width: 17dp; height: 137dp;"/>
+    <input type="range" orientation="vertical" id="optgar-SldEQ3" game="SldEQ3" title="Displays horsepower generated at specific RPM levels to create a power curve" class="slider vslider" style="left: 172dp; top: 56dp; width: 17dp; height: 137dp;"/>
+    <input type="range" orientation="vertical" id="optgar-SldEQ4" game="SldEQ4" title="Displays horsepower generated at specific RPM levels to create a power curve" class="slider vslider" style="left: 212dp; top: 56dp; width: 17dp; height: 137dp;"/>
+    <input type="range" orientation="vertical" id="optgar-SldEQ5" game="SldEQ5" title="Displays horsepower generated at specific RPM levels to create a power curve" class="slider vslider" style="left: 252dp; top: 56dp; width: 17dp; height: 137dp;"/>
+    <input type="range" orientation="vertical" id="optgar-SldEQ6" game="SldEQ6" title="Displays horsepower generated at specific RPM levels to create a power curve" class="slider vslider" style="left: 292dp; top: 56dp; width: 17dp; height: 137dp;"/>
+    <input type="range" orientation="vertical" id="optgar-SldEQ7" game="SldEQ7" title="Displays horsepower generated at specific RPM levels to create a power curve" class="slider vslider" style="left: 332dp; top: 56dp; width: 17dp; height: 137dp;"/>
+    <input type="range" orientation="vertical" id="optgar-SldEQ8" game="SldEQ8" title="Displays horsepower generated at specific RPM levels to create a power curve" class="slider vslider" style="left: 372dp; top: 56dp; width: 17dp; height: 137dp;"/>
+    <input type="range" orientation="vertical" id="optgar-SldEQ9" game="SldEQ9" title="Displays horsepower generated at specific RPM levels to create a power curve" class="slider vslider" style="left: 412dp; top: 56dp; width: 17dp; height: 137dp;"/>
+    <input type="range" orientation="vertical" id="optgar-SldEQ10" game="SldEQ10" title="Displays horsepower generated at specific RPM levels to create a power curve" class="slider vslider" style="left: 452dp; top: 56dp; width: 17dp; height: 137dp;"/>
+    <input type="range" orientation="vertical" id="optgar-SldEQ11" game="SldEQ11" title="Displays horsepower generated at specific RPM levels to create a power curve" class="slider vslider" style="left: 492dp; top: 56dp; width: 17dp; height: 137dp;"/>
+    <div id="optgar-TxtUnused" game="TxtUnused" title="Displays horsepower generated at specific RPM levels to create a power curve" class="text" style="left: 528dp; top: 70dp; width: 65dp; height: 33dp; text-align: center;">Unused Power</div>
+    <div id="optgar-HPUnused" game="HPUnused" title="Displays horsepower available to be distributed across RPM levels to create a custom power curve" class="text" style="left: 544dp; top: 104dp; width: 33dp; height: 21dp; color: #7ab9fe; padding-top: 3dp; text-align: center;"></div>
+    <div id="optgar-rbwLabel13" game="rbwLabel13" class="text" style="left: 16dp; top: 196dp; width: 57dp; height: 17dp; padding-top: 1dp; text-align: right;">RPM</div>
+    <div id="optgar-Txt1" game="Txt1" title="Displays horsepower generated at specific RPM levels to create a power curve" class="text" style="left: 84dp; top: 196dp; width: 33dp; height: 17dp; padding-top: 1dp; text-align: center;"></div>
+    <div id="optgar-Txt2" game="Txt2" title="Displays horsepower generated at specific RPM levels to create a power curve" class="text" style="left: 124dp; top: 196dp; width: 33dp; height: 17dp; padding-top: 1dp; text-align: center;"></div>
+    <div id="optgar-Txt3" game="Txt3" title="Displays horsepower generated at specific RPM levels to create a power curve" class="text" style="left: 164dp; top: 196dp; width: 33dp; height: 17dp; padding-top: 1dp; text-align: center;"></div>
+    <div id="optgar-Txt4" game="Txt4" title="Displays horsepower generated at specific RPM levels to create a power curve" class="text" style="left: 204dp; top: 196dp; width: 33dp; height: 17dp; padding-top: 1dp; text-align: center;"></div>
+    <div id="optgar-Txt5" game="Txt5" title="Displays horsepower generated at specific RPM levels to create a power curve" class="text" style="left: 244dp; top: 196dp; width: 33dp; height: 17dp; padding-top: 1dp; text-align: center;"></div>
+    <div id="optgar-Txt6" game="Txt6" title="Displays horsepower generated at specific RPM levels to create a power curve" class="text" style="left: 284dp; top: 196dp; width: 33dp; height: 17dp; padding-top: 1dp; text-align: center;"></div>
+    <div id="optgar-Txt7" game="Txt7" title="Displays horsepower generated at specific RPM levels to create a power curve" class="text" style="left: 324dp; top: 196dp; width: 33dp; height: 17dp; padding-top: 1dp; text-align: center;"></div>
+    <div id="optgar-Txt8" game="Txt8" title="Displays horsepower generated at specific RPM levels to create a power curve" class="text" style="left: 364dp; top: 196dp; width: 33dp; height: 17dp; padding-top: 1dp; text-align: center;"></div>
+    <div id="optgar-Txt9" game="Txt9" title="Displays horsepower generated at specific RPM levels to create a power curve" class="text" style="left: 404dp; top: 196dp; width: 33dp; height: 17dp; padding-top: 1dp; text-align: center;"></div>
+    <div id="optgar-Txt10" game="Txt10" title="Displays horsepower generated at specific RPM levels to create a power curve" class="text" style="left: 444dp; top: 196dp; width: 33dp; height: 17dp; padding-top: 1dp; text-align: center;"></div>
+    <div id="optgar-Txt11" game="Txt11" title="Displays horsepower generated at specific RPM levels to create a power curve" class="text" style="left: 484dp; top: 196dp; width: 33dp; height: 17dp; padding-top: 1dp; text-align: center;"></div>
+    <div id="optgar-rbwLabel1" game="rbwLabel1" class="text" style="left: 96dp; top: 224dp; width: 201dp; height: 25dp; padding-top: 5dp; text-align: center;">Front Suspension</div>
+    <div id="optgar-rbwLabel2" game="rbwLabel2" class="text" style="left: 392dp; top: 224dp; width: 201dp; height: 25dp; padding-top: 5dp; text-align: center;">Rear Suspension</div>
+    <div id="optgar-rbwLabel12" game="rbwLabel12" class="text" style="left: 4dp; top: 256dp; width: 137dp; height: 17dp; padding-top: 1dp; text-align: right;">Damping</div>
+    <input type="range" id="optgar-SldFrontDamp" game="SldFrontDamp" title="Affects how much your front suspension bounces when landing. Stronger settings mean less bounce" class="slider" style="left: 144dp; top: 256dp; width: 154dp; height: 16dp;"/>
+    <div id="optgar-rbwLabel11" game="rbwLabel11" class="text" style="left: 308dp; top: 256dp; width: 129dp; height: 17dp; padding-top: 1dp; text-align: right;">Damping</div>
+    <input type="range" id="optgar-SldRearDamp" game="SldRearDamp" title="Affects how much your rear suspension bounces when landing. Stronger settings mean less bounce" class="slider" style="left: 440dp; top: 256dp; width: 154dp; height: 16dp;"/>
+    <div id="optgar-rbwLabel3" game="rbwLabel3" class="text" style="left: 4dp; top: 280dp; width: 137dp; height: 17dp; padding-top: 1dp; text-align: right;">Fully Compressed</div>
+    <input type="range" id="optgar-SldFrontComp" game="SldFrontComp" title="Affects the strength of your front suspension when fully compressed. Stronger settings mean less bounce." class="slider" style="left: 144dp; top: 280dp; width: 154dp; height: 16dp;"/>
+    <div id="optgar-rbwLabel7" game="rbwLabel7" class="text" style="left: 308dp; top: 280dp; width: 129dp; height: 17dp; padding-top: 1dp; text-align: right;">Fully Compressed</div>
+    <input type="range" id="optgar-SldRearComp" game="SldRearComp" title="Affects the strength of your rear suspension when fully compressed. Stronger settings mean less bounce." class="slider" style="left: 440dp; top: 280dp; width: 154dp; height: 16dp;"/>
+    <div id="optgar-rbwLabel4" game="rbwLabel4" class="text" style="left: 4dp; top: 304dp; width: 137dp; height: 17dp; padding-top: 1dp; text-align: right;">Decompressed</div>
+    <input type="range" id="optgar-SldFrontDecomp" game="SldFrontDecomp" title="Affects the strength of your front suspension when decompressed. Stronger settings mean less bounce" class="slider" style="left: 144dp; top: 304dp; width: 154dp; height: 16dp;"/>
+    <div id="optgar-rbwLabel8" game="rbwLabel8" class="text" style="left: 308dp; top: 304dp; width: 129dp; height: 17dp; padding-top: 1dp; text-align: right;">Decompressed</div>
+    <input type="range" id="optgar-SldRearDecomp" game="SldRearDecomp" title="Affects the strength of your rear suspension when decompressed. Stronger settings mean less bounce." class="slider" style="left: 440dp; top: 304dp; width: 154dp; height: 16dp;"/>
+    <div id="optgar-rbwLabelxx" game="rbwLabelxx" class="text" style="left: 144dp; top: 323dp; width: 73dp; height: 17dp; padding-top: 1dp;">Weaker</div>
+    <div id="optgar-rbwLabel5" game="rbwLabel5" class="text" style="left: 217dp; top: 323dp; width: 81dp; height: 17dp; padding-top: 1dp; text-align: right;">Stronger</div>
+    <div id="optgar-rbwLabel10" game="rbwLabel10" class="text" style="left: 440dp; top: 323dp; width: 73dp; height: 17dp; padding-top: 1dp;">Weaker</div>
+    <div id="optgar-rbwLabel9" game="rbwLabel9" class="text" style="left: 514dp; top: 323dp; width: 81dp; height: 17dp; padding-top: 1dp; text-align: right;">Stronger</div>
+  </div>
+</div>
+</body>
+</rml>

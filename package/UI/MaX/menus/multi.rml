@@ -1,0 +1,145 @@
+<rml>
+<head>
+  <title>multi</title>
+  <link type="text/rcss" href="menus.rcss"/>
+  <link type="text/rcss" href="multi.rcss"/>
+</head>
+<!--
+  A copy of the game's own multi (MaXMenus=1), drawn over it while the game
+  shows it. Made by tools/mcm2rml.py from the game's layouts, then edited by
+  hand. 1dp = one pixel of the game's 640x480 menus. See ..\README.txt.
+
+  game-dialogs     the game dialogs (layouts) this screen copies
+  game-opaque      it covers the whole menu (nothing under it is drawn)
+  game-dialog="x"  the part that copies the game's dialog x: shown while the
+                   game shows x, where the game put it
+  game="Name"      tied to the game's control of that name on that dialog
+  game-back        the control Esc / B / the right mouse button clicks
+-->
+<body game-dialogs="mpbase mpevent mprinfo mpbiker mpopt" game-opaque game-back="Back">
+<div id="screen">
+
+
+  <!-- MPBASE.DAT -->
+  <div id="d-mpbase" class="dialog" game-dialog="mpbase" style="left: 0dp; top: 0dp; width: 640dp; height: 480dp;">
+    <div id="mpbase-EventTab" game="EventTab" title="Specify the details of your next race event, including event type and # of laps" class="pick" style="left: 12dp; top: 0dp; width: 108dp; height: 33dp; padding-top: 9dp; text-align: center;"></div>
+    <div id="mpbase-BikeRiderTab" game="BikeRiderTab" title="Choose your riding gear and bike" class="pick" style="left: 120dp; top: 0dp; width: 100dp; height: 33dp; padding-top: 9dp; text-align: center;"></div>
+    <div id="mpbase-RaceInfoTab" game="RaceInfoTab" title="Displays results for all riders in the most recent race event" class="pick" style="left: 220dp; top: 0dp; width: 101dp; height: 33dp; padding-top: 9dp; text-align: center;"></div>
+    <div id="mpbase-OptionsTab" game="OptionsTab" class="pick" style="left: 321dp; top: 0dp; width: 99dp; height: 33dp; padding-top: 9dp; text-align: center;"></div>
+    <div id="mpbase-ButRdyUser" game="ButRdyUser" title="Click this to indicate that you are ready to race. Click the flag to start if you are the host!" class="button" style="left: 433dp; top: 29dp; width: 66dp; height: 25dp;"></div>
+    <div id="mpbase-UserName" game="UserName" class="text" style="left: 504dp; top: 32dp; width: 110dp; height: 21dp; color: #7ab9fe; padding-top: 3dp; text-align: center;"></div>
+    <div id="mpbase-ButRdyPlayer2" game="ButRdyPlayer2" title="Click this to remove the associated player from the current game session if you are the host." class="button" style="left: 433dp; top: 68dp; width: 66dp; height: 25dp;"></div>
+    <div id="mpbase-NamePlayer2" game="NamePlayer2" class="text" style="left: 504dp; top: 70dp; width: 110dp; height: 21dp; color: #7ab9fe; padding-top: 3dp; text-align: center;"></div>
+    <div id="mpbase-ButRdyPlayer3" game="ButRdyPlayer3" title="Click this to remove the associated player from the current game session if you are the host." class="button" style="left: 433dp; top: 97dp; width: 66dp; height: 25dp;"></div>
+    <div id="mpbase-NamePlayer3" game="NamePlayer3" class="text" style="left: 504dp; top: 99dp; width: 110dp; height: 21dp; color: #7ab9fe; padding-top: 3dp; text-align: center;"></div>
+    <div id="mpbase-ButRdyPlayer4" game="ButRdyPlayer4" title="Click this to remove the associated player from the current game session if you are the host." class="button" style="left: 433dp; top: 126dp; width: 66dp; height: 25dp;"></div>
+    <div id="mpbase-NamePlayer4" game="NamePlayer4" class="text" style="left: 504dp; top: 128dp; width: 110dp; height: 21dp; color: #7ab9fe; padding-top: 3dp; text-align: center;"></div>
+    <div id="mpbase-ButRdyPlayer5" game="ButRdyPlayer5" title="Click this to remove the associated player from the current game session if you are the host." class="button" style="left: 433dp; top: 155dp; width: 66dp; height: 25dp;"></div>
+    <div id="mpbase-NamePlayer5" game="NamePlayer5" class="text" style="left: 504dp; top: 157dp; width: 110dp; height: 21dp; color: #7ab9fe; padding-top: 3dp; text-align: center;"></div>
+    <div id="mpbase-ButRdyPlayer6" game="ButRdyPlayer6" title="Click this to remove the associated player from the current game session if you are the host." class="button" style="left: 433dp; top: 184dp; width: 66dp; height: 25dp;"></div>
+    <div id="mpbase-NamePlayer6" game="NamePlayer6" class="text" style="left: 504dp; top: 186dp; width: 110dp; height: 21dp; color: #7ab9fe; padding-top: 3dp; text-align: center;"></div>
+    <div id="mpbase-ButRdyPlayer7" game="ButRdyPlayer7" title="Click this to remove the associated player from the current game session if you are the host." class="button" style="left: 433dp; top: 213dp; width: 66dp; height: 25dp;"></div>
+    <div id="mpbase-NamePlayer7" game="NamePlayer7" class="text" style="left: 504dp; top: 215dp; width: 110dp; height: 21dp; color: #7ab9fe; padding-top: 3dp; text-align: center;"></div>
+    <div id="mpbase-ButRdyPlayer8" game="ButRdyPlayer8" title="Click this to remove the associated player from the current game session if you are the host." class="button" style="left: 433dp; top: 242dp; width: 66dp; height: 25dp;"></div>
+    <div id="mpbase-NamePlayer8" game="NamePlayer8" class="text" style="left: 504dp; top: 244dp; width: 110dp; height: 21dp; color: #7ab9fe; padding-top: 3dp; text-align: center;"></div>
+    <div id="mpbase-ListChat" game="ListChat" class="list" style="left: 26dp; top: 275dp; width: 566dp; height: 96dp; color: #7ab9fe;"></div>
+    <input type="range" orientation="vertical" id="mpbase-ScrollChat" game="ScrollChat" class="slider vslider" style="left: 593dp; top: 275dp; width: 21dp; height: 96dp;"/>
+    <input type="text" id="mpbase-EditChat" game="EditChat" class="edit" style="left: 26dp; top: 372dp; width: 516dp; height: 21dp; color: #7ab9fe; padding-left: 4dp;"/>
+    <div id="mpbase-ButChatSend" game="ButChatSend" class="button" style="left: 548dp; top: 372dp; width: 66dp; height: 21dp; padding-top: 3dp; text-align: center;">Send</div>
+    <div id="mpbase-Back" game="Back" title="Go back to previous screen" class="button" style="left: 17dp; top: 404dp; width: 79dp; height: 76dp;"></div>
+    <div id="mpbase-Help" game="Help" title="Help" class="button" style="left: 153dp; top: 404dp; width: 56dp; height: 76dp;"></div>
+    <div id="mpbase-Joystick" game="Joystick" title="Change or fine-tune your controller options" class="button" style="left: 276dp; top: 404dp; width: 58dp; height: 76dp;"></div>
+    <div id="mpbase-Options" game="Options" title="Options" class="button" style="left: 391dp; top: 404dp; width: 87dp; height: 76dp;"></div>
+    <div id="mpbase-Start" game="Start" title="Start race!" class="button" style="left: 546dp; top: 404dp; width: 64dp; height: 76dp;"></div>
+  </div>
+
+  <!-- MPEVENT.DAT -->
+  <div id="d-mpevent" class="dialog" game-dialog="mpevent" style="left: 20dp; top: 35dp; width: 409dp; height: 238dp;">
+    <div id="mpevent-EventTypeText" game="EventTypeText" class="text" style="left: 1dp; top: 2dp; width: 187dp; height: 14dp; text-align: center;">Event Type</div>
+    <div id="mpevent-RaceModeText" game="RaceModeText" class="text" style="left: 207dp; top: 2dp; width: 187dp; height: 14dp; text-align: center;">Race Mode</div>
+    <select id="mpevent-EventTypeDropDown" game="EventTypeDropDown" title="Click arrow to display all available event types" class="dropdown" style="left: 4dp; top: 19dp; width: 178dp; height: 21dp; color: #7ab9fe;"></select>
+    <select id="mpevent-RaceModeDropDown" game="RaceModeDropDown" title="Click arrow to display all available race modes" class="dropdown" style="left: 212dp; top: 19dp; width: 178dp; height: 21dp; color: #7ab9fe;"></select>
+    <div id="mpevent-PictureBox" game="PictureBox" game-window class="list" style="left: 4dp; top: 46dp; width: 289dp; height: 143dp; color: #ffffff; text-align: right;"></div>
+    <div id="mpevent-CornerUL" game="CornerUL" class="plate" game-text="off" style="left: 4dp; top: 46dp; width: 4dp; height: 4dp;"/>
+    <div id="mpevent-CornerUR" game="CornerUR" class="plate" game-text="off" style="left: 289dp; top: 46dp; width: 4dp; height: 4dp;"/>
+    <div id="mpevent-OpponentsControlBox" game="OpponentsControlBox" class="plate" game-text="off" style="left: 305dp; top: 45dp; width: 99dp; height: 51dp;">
+      <div id="mpevent-OpponentsLabel" game="OpponentsLabel" class="text" style="left: 2dp; top: 5dp; width: 95dp; height: 15dp; text-align: center;">Computer Riders</div>
+      <div id="mpevent-OpponentsLeftArrow" game="OpponentsLeftArrow" class="button" style="left: 11dp; top: 23dp; width: 21dp; height: 21dp;"></div>
+      <div id="mpevent-OpponentsListBox" game="OpponentsListBox" title="Specifies # of computer-controlled opponents in race." class="list" style="left: 33dp; top: 23dp; width: 33dp; height: 21dp; color: #7ab9fe; text-align: center;"></div>
+      <div id="mpevent-OpponentsRightArrow" game="OpponentsRightArrow" class="button" style="left: 68dp; top: 23dp; width: 21dp; height: 21dp;"></div>
+    </div>
+    <div id="mpevent-ChkTagBall" game="ChkTagBall" title="Earn points as long as you possess the ball. Earn extra points by doing stunts while IT. Tag your opponents to get it!" class="check" style="left: 305dp; top: 52dp; width: 102dp; height: 23dp; padding-top: 4dp; padding-left: 17dp;"><div class="box"/><span class="t">Tag Ball</span></div>
+    <div id="mpevent-ChkStuntMode" game="ChkStuntMode" title="Earn points for ball possesssion and for executing stunts" class="check" style="left: 305dp; top: 75dp; width: 102dp; height: 23dp; padding-top: 4dp; padding-left: 17dp;"><div class="box"/><span class="t">Stunt Mode</span></div>
+    <div id="mpevent-LapsControlBox" game="LapsControlBox" class="plate" game-text="off" style="left: 305dp; top: 102dp; width: 99dp; height: 51dp;">
+      <div id="mpevent-LapsLabel" game="LapsLabel" class="text" style="left: 2dp; top: 5dp; width: 95dp; height: 15dp; text-align: center;">Laps</div>
+      <div id="mpevent-LapsLeftArrow" game="LapsLeftArrow" class="button" style="left: 11dp; top: 23dp; width: 21dp; height: 21dp;"></div>
+      <div id="mpevent-LapsListBox" game="LapsListBox" title="Specifies the number of laps or minutes, depending on the event type." class="list" style="left: 33dp; top: 23dp; width: 33dp; height: 21dp; color: #7ab9fe; text-align: center;"></div>
+      <div id="mpevent-LapRightArrow" game="LapRightArrow" class="button" style="left: 68dp; top: 23dp; width: 21dp; height: 21dp;"></div>
+    </div>
+    <div id="mpevent-RacesControlBox" game="RacesControlBox" class="plate" game-text="off" style="left: 305dp; top: 159dp; width: 99dp; height: 51dp;">
+      <div id="mpevent-RacesLabel" game="RacesLabel" class="text" style="left: 2dp; top: 5dp; width: 95dp; height: 15dp; text-align: center;">Races</div>
+      <div id="mpevent-RacesLeftArrow" game="RacesLeftArrow" class="button" style="left: 11dp; top: 23dp; width: 21dp; height: 21dp;"></div>
+      <div id="mpevent-RacesListBox" game="RacesListBox" title="Specifies the number of race events to be included in tournament" class="list" style="left: 33dp; top: 23dp; width: 33dp; height: 21dp; color: #7ab9fe; text-align: center;"></div>
+      <div id="mpevent-RacesRightArrow" game="RacesRightArrow" class="button" style="left: 68dp; top: 23dp; width: 21dp; height: 21dp;"></div>
+    </div>
+    <div id="mpevent-TrackLeft" game="TrackLeft" class="button" style="left: 4dp; top: 189dp; width: 21dp; height: 21dp;"></div>
+    <div id="mpevent-CornerLL" game="CornerLL" class="plate" game-text="off" style="left: 4dp; top: 185dp; width: 4dp; height: 4dp;"/>
+    <select id="mpevent-DDLTextBox" game="DDLTextBox" class="dropdown" style="left: 26dp; top: 189dp; width: 245dp; height: 21dp; color: #7ab9fe; text-align: center;"></select>
+    <div id="mpevent-TrackRight" game="TrackRight" class="button" style="left: 272dp; top: 189dp; width: 21dp; height: 21dp;"></div>
+    <div id="mpevent-CornerLR" game="CornerLR" class="plate" game-text="off" style="left: 289dp; top: 185dp; width: 4dp; height: 4dp;"/>
+  </div>
+
+  <!-- MPRINFO.DAT -->
+  <div id="d-mprinfo" class="dialog" game-dialog="mprinfo" style="left: 20dp; top: 35dp; width: 409dp; height: 238dp;">
+    <div id="mprinfo-TitleText" game="TitleText" class="text" style="left: 8dp; top: 8dp; width: 393dp; height: 25dp; font-size: 14dp; padding-top: 5dp; text-align: center;">Last Race Information</div>
+    <div id="mprinfo-rbwFrame1" game="rbwFrame1" class="plate" game-text="off" style="left: 7dp; top: 35dp; width: 394dp; height: 176dp;">
+      <div id="mprinfo-ButStats1" game="ButStats1" title="Displays results, including Best Lap Time &amp; Total Running Time, for all riders in the most recent race event" class="button" style="left: 5dp; top: 4dp; width: 108dp; height: 14dp;"></div>
+      <div id="mprinfo-ButStats2" game="ButStats2" title="Displays results, including Best Lap Time &amp; Total Running Time, for all riders in the most recent race event" class="button" style="left: 115dp; top: 4dp; width: 46dp; height: 14dp;"></div>
+      <div id="mprinfo-ButStats3" game="ButStats3" title="Displays results, including Best Lap Time &amp; Total Running Time, for all riders in the most recent race event" class="button" style="left: 162dp; top: 4dp; width: 138dp; height: 14dp;"></div>
+      <div id="mprinfo-ButStats4" game="ButStats4" title="Displays results, including Best Lap Time &amp; Total Running Time, for all riders in the most recent race event" class="button" style="left: 301dp; top: 4dp; width: 87dp; height: 14dp;"></div>
+      <div id="mprinfo-LstStats1" game="LstStats1" title="Displays results, including Best Lap Time &amp; Total Running Time, for all riders in the most recent race event" class="list" style="left: 8dp; top: 25dp; width: 105dp; height: 146dp; color: #7ab9fe;"></div>
+      <div id="mprinfo-LstStats2" game="LstStats2" title="Displays results, including Best Lap Time &amp; Total Running Time, for all riders in the most recent race event" class="list" style="left: 126dp; top: 25dp; width: 28dp; height: 146dp; color: #7ab9fe; text-align: center;"></div>
+      <div id="mprinfo-LstStats3" game="LstStats3" title="Displays results, including Best Lap Time &amp; Total Running Time, for all riders in the most recent race event" class="list" style="left: 159dp; top: 24dp; width: 145dp; height: 147dp; color: #7ab9fe; text-align: center;"></div>
+      <div id="mprinfo-LstStats4" game="LstStats4" title="Displays results, including Best Lap Time &amp; Total Running Time, for all riders in the most recent race event" class="list" style="left: 312dp; top: 25dp; width: 68dp; height: 146dp; color: #7ab9fe; text-align: center;"></div>
+    </div>
+  </div>
+
+  <!-- MPBIKER.DAT -->
+  <div id="d-mpbiker" class="dialog" game-dialog="mpbiker" style="left: 20dp; top: 35dp; width: 409dp; height: 238dp;">
+    <div id="mpbiker-EventTypeText" game="EventTypeText" class="text" style="left: 8dp; top: 5dp; width: 179dp; height: 14dp;">Largest Engine Allowed</div>
+    <div id="mpbiker-TxtEngineSize" game="TxtEngineSize" class="text" style="left: 192dp; top: 5dp; width: 179dp; height: 14dp;">Custom Engine Size</div>
+    <select id="mpbiker-LargestOpponentDropDown" game="LargestOpponentDropDown" class="dropdown" style="left: 8dp; top: 20dp; width: 178dp; height: 21dp; color: #7ab9fe;"></select>
+    <select id="mpbiker-DDLEngineSize" game="DDLEngineSize" class="dropdown" style="left: 192dp; top: 20dp; width: 178dp; height: 21dp; color: #7ab9fe;"></select>
+    <div id="mpbiker-RiderLeft" game="RiderLeft" title="Click arrow to change clothing colors" class="button" style="left: 8dp; top: 47dp; width: 21dp; height: 21dp;"></div>
+    <select id="mpbiker-DDLRiders" game="DDLRiders" title="Click arrow to change clothing colors" class="dropdown" style="left: 30dp; top: 47dp; width: 245dp; height: 21dp; color: #7ab9fe; text-align: center;"></select>
+    <div id="mpbiker-RiderRight" game="RiderRight" title="Click arrow to change clothing colors" class="button" style="left: 276dp; top: 47dp; width: 21dp; height: 21dp;"></div>
+    <div id="mpbiker-CornerUL" game="CornerUL" class="plate" game-text="off" style="left: 8dp; top: 68dp; width: 4dp; height: 4dp;"/>
+    <div id="mpbiker-CornerUR" game="CornerUR" class="plate" game-text="off" style="left: 293dp; top: 68dp; width: 4dp; height: 4dp;"/>
+    <div id="mpbiker-rbwLabel1" game="rbwLabel1" class="text" style="left: 299dp; top: 105dp; width: 106dp; height: 17dp; padding-top: 1dp; text-align: center;">Bike Plate #</div>
+    <input type="text" id="mpbiker-EditPlateNumber" game="EditPlateNumber" title="Click and then type a bike plate number between 101-999 (1-100 are reserved for the Top 100 online players on the MSN Gaming Zone)" class="edit" maxlength="3" style="left: 335dp; top: 129dp; width: 33dp; height: 21dp; color: #7ab9fe;"/>
+    <div id="mpbiker-ButWrench" game="ButWrench" title="Click to display Garage screen, where you can tweak your bike's engine &amp; suspension" class="button" style="left: 305dp; top: 171dp; width: 99dp; height: 37dp;"></div>
+    <div id="mpbiker-CornerLL" game="CornerLL" class="plate" game-text="off" style="left: 8dp; top: 209dp; width: 4dp; height: 4dp;"/>
+    <div id="mpbiker-BikeLeft" game="BikeLeft" title="Click arrow to change bikes" class="button" style="left: 8dp; top: 213dp; width: 21dp; height: 21dp;"></div>
+    <select id="mpbiker-DDLBikes" game="DDLBikes" title="Click arrow to change bikes" class="dropdown" style="left: 30dp; top: 213dp; width: 245dp; height: 21dp; color: #7ab9fe; text-align: center;"></select>
+    <div id="mpbiker-BikeRight" game="BikeRight" title="Click arrow to change bikes" class="button" style="left: 276dp; top: 213dp; width: 21dp; height: 21dp;"></div>
+    <div id="mpbiker-CornerLR" game="CornerLR" class="plate" game-text="off" style="left: 293dp; top: 209dp; width: 4dp; height: 4dp;"/>
+  </div>
+
+  <!-- MPOPT.DAT -->
+  <div id="d-mpopt" class="dialog" game-dialog="mpopt" style="left: 20dp; top: 35dp; width: 409dp; height: 238dp;">
+    <div id="mpopt-rbwLabel2" game="rbwLabel2" class="text" style="left: 11dp; top: 8dp; width: 377dp; height: 25dp; padding-top: 5dp;">Host side settings:</div>
+    <div id="mpopt-ChkTreeCollision" game="ChkTreeCollision" title="Check to allow riders to collide with trees, plants, &amp; shrubs" class="check" style="left: 11dp; top: 36dp; width: 186dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Vegetation collision</span></div>
+    <div id="mpopt-rbwLabel4" game="rbwLabel4" title="Specifies how tough your opponents will be" class="text" style="left: 200dp; top: 36dp; width: 197dp; height: 17dp; padding-top: 1dp;">Difficulty Level:</div>
+    <div id="mpopt-RadLODEasy" game="RadLODEasy" title="Specifies how tough your opponents will be" class="radio" style="left: 201dp; top: 55dp; width: 89dp; height: 17dp; padding-top: 1dp; padding-left: 17dp;"><div class="box"/><span class="t">Easy</span></div>
+    <div id="mpopt-FastFinishesCheckBox" game="FastFinishesCheckBox" title="When checked, the race event ends automatically 30 seconds after the first place finisher crosses the finish line. " class="check" style="left: 11dp; top: 57dp; width: 179dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Fast Finishes</span></div>
+    <div id="mpopt-ChkRiderCollision" game="ChkRiderCollision" title="When checked, it is possible for riders to collide with each other, potentially causing wrecks." class="check" style="left: 11dp; top: 78dp; width: 179dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Player collision</span></div>
+    <div id="mpopt-RadLODMedium" game="RadLODMedium" title="Specifies how tough your opponents will be" class="radio" style="left: 201dp; top: 72dp; width: 89dp; height: 17dp; padding-top: 1dp; padding-left: 17dp;"><div class="box"/><span class="t">Normal</span></div>
+    <div id="mpopt-RadLODHard" game="RadLODHard" title="Specifies how tough your opponents will be" class="radio" style="left: 201dp; top: 89dp; width: 81dp; height: 17dp; padding-top: 1dp; padding-left: 17dp;"><div class="box"/><span class="t">Hard</span></div>
+    <div id="mpopt-rbwLabel3" game="rbwLabel3" class="text" style="left: 11dp; top: 144dp; width: 377dp; height: 25dp; padding-top: 5dp;">This computer settings:</div>
+    <div id="mpopt-ChkRecordRace" game="ChkRecordRace" title="Check to record race as an Instant Replay file" class="check" style="left: 11dp; top: 173dp; width: 377dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Record race</span></div>
+    <input type="text" id="mpopt-EditMaxAIBikes" game="EditMaxAIBikes" title="Specifies the max # of AI bikes your computer controls in multiplayer sessions" class="edit" maxlength="2" style="left: 11dp; top: 196dp; width: 33dp; height: 21dp; color: #7ab9fe;"/>
+    <div id="mpopt-rbwLabel1" game="rbwLabel1" title="Specifies the max # of AI bikes your computer controls in multiplayer sessions" class="text" style="left: 47dp; top: 197dp; width: 337dp; height: 20dp; padding-top: 2dp;">Max AI Bikes to control</div>
+  </div>
+</div>
+</body>
+</rml>

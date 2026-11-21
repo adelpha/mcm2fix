@@ -1,0 +1,42 @@
+/* hiscores.rml: each control's own pictures (from the game's layouts). Made by tools/mcm2rml.py. */
+#d-hiscores { decorator: image(/dat/HISCORES/HighScores/HighScoresBG.tga); }
+#hiscores-TabLeft { decorator: image(/dat/HISCORES/HighScores/HSTab01Down.tga); }
+#hiscores-TabLeft.on { decorator: image(/dat/HISCORES/HighScores/HSTab01Up.tga); }
+#hiscores-TabLeft.disabled { decorator: image(/dat/GLOBAL/Resources/RadioButtonOffGrey.tga); }
+#hiscores-TabMiddle { decorator: image(/dat/HISCORES/HighScores/HSTab02Down.tga); }
+#hiscores-TabMiddle.on { decorator: image(/dat/HISCORES/HighScores/HSTab02Up.tga); }
+#hiscores-TabMiddle.disabled { decorator: image(/dat/GLOBAL/Resources/RadioButtonOffGrey.tga); }
+#hiscores-TabRight { decorator: image(/dat/HISCORES/HighScores/HSTab03Down.tga); }
+#hiscores-TabRight.on { decorator: image(/dat/HISCORES/HighScores/HSTab03Up.tga); }
+#hiscores-TabRight.disabled { decorator: image(/dat/GLOBAL/Resources/RadioButtonOffGrey.tga); }
+#hiscores-BoxLeft { decorator: image(/dat/HISCORES/HighScores/Dialog01.tga); }
+#hiscores-LstTrack .row.on { color: #ffffff; }
+#hiscores-BoxRight { decorator: image(/dat/HISCORES/HighScores/Dialog02.tga); }
+#hiscores-LstStats1 .row.on { color: #ffffff; }
+#hiscores-LstStats2 .row.on { color: #ffffff; }
+#hiscores-BoxScrollBackLeft { decorator: image(/dat/HISCORES/HighScores/HSVertScroll.tga); }
+#hiscores-TrackScroll sliderbar { width: 11dp; height: 11dp; margin-left: 2dp; decorator: image(/dat/HISCORES/HighScores/LrgThumb.tga); }
+#hiscores-TabQuarry { decorator: image(/dat/HISCORES/HighScores/HSBttn01Up.tga); }
+#hiscores-TabQuarry.on { decorator: image(/dat/HISCORES/HighScores/HSBttn01Down.tga); }
+#hiscores-TabQuarry.disabled { decorator: image(/dat/HISCORES/HighScores/HSBttn01Up.tga); }
+#hiscores-TabTag { decorator: image(/dat/HISCORES/HighScores/HSBttn02Up.tga); }
+#hiscores-TabTag.on { decorator: image(/dat/HISCORES/HighScores/HSBttn02Down.tga); }
+#hiscores-TabTag.disabled { decorator: image(/dat/HISCORES/HighScores/HSBttn02Up.tga); }
+#hiscores-TabSupercross { decorator: image(/dat/HISCORES/HighScores/HSBttn03Up.tga); }
+#hiscores-TabSupercross.on { decorator: image(/dat/HISCORES/HighScores/HSBttn03Down.tga); }
+#hiscores-TabSupercross.disabled { decorator: image(/dat/HISCORES/HighScores/HSBttn03Up.tga); }
+#hiscores-TabNationals { decorator: image(/dat/HISCORES/HighScores/HSBttn04Up.tga); }
+#hiscores-TabNationals.on { decorator: image(/dat/HISCORES/HighScores/HSBttn04Down.tga); }
+#hiscores-TabNationals.disabled { decorator: image(/dat/HISCORES/HighScores/HSBttn04Up.tga); }
+#hiscores-TabBaja { decorator: image(/dat/HISCORES/HighScores/HSBttn05Up.tga); }
+#hiscores-TabBaja.on { decorator: image(/dat/HISCORES/HighScores/HSBttn05Down.tga); }
+#hiscores-TabBaja.disabled { decorator: image(/dat/HISCORES/HighScores/HSBttn05Up.tga); }
+#hiscores-TabEnduro { decorator: image(/dat/HISCORES/HighScores/HSBttn06Up.tga); }
+#hiscores-TabEnduro.on { decorator: image(/dat/HISCORES/HighScores/HSBttn06Down.tga); }
+#hiscores-TabEnduro.disabled { decorator: image(/dat/HISCORES/HighScores/HSBttn06Up.tga); }
+#hiscores-Back { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackUp.tga); }
+#hiscores-Back:hover, #hiscores-Back:focus-visible { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackLit.tga); }
+#hiscores-Back:active { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackDown.tga); }
+#hiscores-Help { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2HelpUp.tga); }
+#hiscores-Help:hover, #hiscores-Help:focus-visible { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2HelpLit.tga); }
+#hiscores-Help:active { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2HelpDown.tga); }

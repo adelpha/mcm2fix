@@ -1,0 +1,139 @@
+/* options.rml: each control's own pictures (from the game's layouts). Made by tools/mcm2rml.py. */
+#d-optbase { decorator: image(/dat/OPTBASE/Options/OptionsBackGround.tga); }
+#optbase-GameSettings { decorator: image(/dat/OPTBASE/Options/OptTabDown01.tga?black); }
+#optbase-GameSettings.on { decorator: image(/dat/OPTBASE/Options/OptTab01.tga?black); }
+#optbase-Graphics { decorator: image(/dat/OPTBASE/Options/OptTabDown02.tga?black); }
+#optbase-Graphics.on { decorator: image(/dat/OPTBASE/Options/OptTab02.tga?black); }
+#optbase-Sound { decorator: image(/dat/OPTBASE/Options/OptTabDown03.tga?black); }
+#optbase-Sound.on { decorator: image(/dat/OPTBASE/Options/OptTab03.tga?black); }
+#optbase-Controls { decorator: image(/dat/OPTBASE/Options/OptTabDown04.tga?black); }
+#optbase-Controls.on { decorator: image(/dat/OPTBASE/Options/OptTab04.tga?black); }
+#optbase-Messages { decorator: image(/dat/OPTBASE/Options/OptTabDown05.tga?black); }
+#optbase-Messages.on { decorator: image(/dat/OPTBASE/Options/OptTab05.tga?black); }
+#optbase-Garage { decorator: image(/dat/OPTBASE/Options/OptTabDown06.tga?black); }
+#optbase-Garage.on { decorator: image(/dat/OPTBASE/Options/OptTab06.tga?black); }
+#optbase-Back { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackUp.tga); }
+#optbase-Back:hover, #optbase-Back:focus-visible { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackLit.tga); }
+#optbase-Back:active { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackDown.tga); }
+#optbase-Help { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2HelpUp.tga); }
+#optbase-Help:hover, #optbase-Help:focus-visible { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2HelpLit.tga); }
+#optbase-Help:active { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2HelpDown.tga); }
+#optbase-Advanced { decorator: image(/dat/OPTBASE/Options/AdvancedButtonUp.tga); }
+#optbase-Advanced:active { decorator: image(/dat/OPTBASE/Options/AdvancedButtonDown.tga); }
+#optbase-Advanced.disabled { decorator: image(/dat/OPTBASE/Options/AdvancedButtonUp.tga); }
+#optbase-Restore { decorator: image(/dat/OPTBASE/Options/DefaultButtonUp.tga); }
+#optbase-Restore:active { decorator: image(/dat/OPTBASE/Options/DefaultButtonDown.tga); }
+#optbase-Restore.disabled { decorator: image(/dat/OPTBASE/Options/DefaultButtonUp.tga); }
+#optgame-OverlaysBox { decorator: image(/dat/OPTGAME/Options/GameSettings/GSPlate02.tga); }
+#optgame-rbwFrame1 { decorator: image(/dat/OPTGAME/Options/GameSettings/GSEntrybox.tga); }
+#optgame-MiscSettingsBox { decorator: image(/dat/OPTGAME/Options/GameSettings/GSPlate01.tga); }
+#optgraph-DisplayResolutionBox { decorator: ninepatch(plate-outer, plate-inner, 1); }
+#optgraph-DisplayResolutionDropDown selectbox { decorator: image(/dat/OPTGRAPH/Options/Graphics/DropDownBG05.tga); }
+#optgraph-TerrainQualityBox { decorator: ninepatch(plate-outer, plate-inner, 1); }
+#optgraph-TerrainQualitySliderBar slidertrack { decorator: image(/dat/OPTGRAPH/Options/Graphics/GHorizontalSlider01.tga); }
+#optgraph-TerrainQualitySliderBar sliderbar { width: 8dp; height: 15dp; margin-top: 0dp; decorator: image(/dat/OPTGRAPH/Options/Graphics/GSmallHSliderUp.tga); }
+#optgraph-GraphicFeaturesBox { decorator: ninepatch(plate-outer, plate-inner, 1); }
+#optgraph-Mcm2fixBox { decorator: ninepatch(plate-outer, plate-inner, 1); }
+#optgraph-Mcm2fixAniso slidertrack { decorator: image(/dat/OPTGRAPH/Options/Graphics/GHorizontalSlider01.tga?bar); }
+#optgraph-Mcm2fixAniso sliderbar { width: 8dp; height: 15dp; margin-top: 0dp; decorator: image(/dat/OPTGRAPH/Options/Graphics/GSmallHSliderUp.tga); }
+#optgraph-Mcm2fixMsaa slidertrack { decorator: image(/dat/OPTGRAPH/Options/Graphics/GHorizontalSlider01.tga?bar); }
+#optgraph-Mcm2fixMsaa sliderbar { width: 8dp; height: 15dp; margin-top: 0dp; decorator: image(/dat/OPTGRAPH/Options/Graphics/GSmallHSliderUp.tga); }
+#optgraph-Mcm2fixView slidertrack { decorator: image(/dat/OPTGRAPH/Options/Graphics/GHorizontalSlider01.tga?bar); }
+#optgraph-Mcm2fixView sliderbar { width: 8dp; height: 15dp; margin-top: 0dp; decorator: image(/dat/OPTGRAPH/Options/Graphics/GSmallHSliderUp.tga); }
+#optgraph-Mcm2fixMaX { decorator: image(/dat/OPTGRAPH/Options/Graphics/AdvancedBttnUp.tga); }
+#optgraph-Mcm2fixMaX:active { decorator: image(/dat/OPTGRAPH/Options/Graphics/AdvancedBttnDown.tga); }
+#optsound-SoundSettingsBox { decorator: image(/dat/OPTSOUND/Options/Sound/SPlate01.tga); }
+#optsound-VolumeSettingsBox { decorator: image(/dat/OPTSOUND/Options/Sound/SPlate02.tga); }
+#optsound-UserInterfaceVolumeSlider slidertrack { decorator: image(/dat/OPTSOUND/Options/Sound/SHorizontalSlider01.tga); }
+#optsound-UserInterfaceVolumeSlider sliderbar { width: 8dp; height: 15dp; margin-top: 0dp; decorator: image(/dat/OPTSOUND/Options/Sound/SSmallHSliderUp.tga); }
+#optsound-InGameVolumeSlider slidertrack { decorator: image(/dat/OPTSOUND/Options/Sound/SHorizontalSlider01.tga); }
+#optsound-InGameVolumeSlider sliderbar { width: 8dp; height: 15dp; margin-top: 0dp; decorator: image(/dat/OPTSOUND/Options/Sound/SSmallHSliderUp.tga); }
+#optcont-InputDeviceDDL selectvalue { decorator: image(/dat/OPTCONT/Options/Controls/CDropDown01.tga); }
+#optcont-InputDeviceDDL selectbox { decorator: image(/dat/OPTCONT/Options/Controls/CDropDownBG01.tga); }
+#optcont-AssignmentsBox { decorator: image(/dat/OPTCONT/Options/Controls/CScreen01.tga); }
+#optcont-ActionListBox .row.on { color: #ffffff; }
+#optcont-MapKeyListBox .row.on { color: #ffffff; }
+#optcont-ListboxScroll sliderbar { width: 8dp; height: 7dp; margin-left: 2dp; decorator: image(/dat/OPTCONT/Options/Controls/ScreenThumb.tga); }
+#optcont-ControlSensitivityBox { decorator: image(/dat/OPTCONT/Options/Controls/CPlate01.tga); }
+#optcont-SteeringSlider slidertrack { decorator: image(/dat/OPTCONT/Options/Controls/CHorizontalSlider01.tga); }
+#optcont-SteeringSlider sliderbar { width: 8dp; height: 15dp; margin-top: 0dp; decorator: image(/dat/OPTCONT/Options/Controls/CSmallHSliderUp.tga); }
+#optcont-PressThrottleSlider slidertrack { decorator: image(/dat/OPTCONT/Options/Controls/CHorizontalSlider01.tga); }
+#optcont-PressThrottleSlider sliderbar { width: 8dp; height: 15dp; margin-top: 0dp; decorator: image(/dat/OPTCONT/Options/Controls/CSmallHSliderUp.tga); }
+#optcont-CrossupSlider slidertrack { decorator: image(/dat/OPTCONT/Options/Controls/CHorizontalSlider01.tga); }
+#optcont-CrossupSlider sliderbar { width: 8dp; height: 15dp; margin-top: 0dp; decorator: image(/dat/OPTCONT/Options/Controls/CSmallHSliderUp.tga); }
+#optcont-PressBrakesSlider slidertrack { decorator: image(/dat/OPTCONT/Options/Controls/CHorizontalSlider01.tga); }
+#optcont-PressBrakesSlider sliderbar { width: 8dp; height: 15dp; margin-top: 0dp; decorator: image(/dat/OPTCONT/Options/Controls/CSmallHSliderUp.tga); }
+#optcont-PitchSlider slidertrack { decorator: image(/dat/OPTCONT/Options/Controls/CHorizontalSlider01.tga); }
+#optcont-PitchSlider sliderbar { width: 8dp; height: 15dp; margin-top: 0dp; decorator: image(/dat/OPTCONT/Options/Controls/CSmallHSliderUp.tga); }
+#optcont-ReleaseThrottleSlider slidertrack { decorator: image(/dat/OPTCONT/Options/Controls/CHorizontalSlider01.tga); }
+#optcont-ReleaseThrottleSlider sliderbar { width: 8dp; height: 15dp; margin-top: 0dp; decorator: image(/dat/OPTCONT/Options/Controls/CSmallHSliderUp.tga); }
+#optcont-ReleaseBrakesSlider slidertrack { decorator: image(/dat/OPTCONT/Options/Controls/CHorizontalSlider01.tga); }
+#optcont-ReleaseBrakesSlider sliderbar { width: 8dp; height: 15dp; margin-top: 0dp; decorator: image(/dat/OPTCONT/Options/Controls/CSmallHSliderUp.tga); }
+#optcont-FeedbackSlider slidertrack { decorator: image(/dat/OPTCONT/Options/Controls/CHorizontalSlider01.tga); }
+#optcont-FeedbackSlider sliderbar { width: 8dp; height: 15dp; margin-top: 0dp; decorator: image(/dat/OPTCONT/Options/Controls/CSmallHSliderUp.tga); }
+#optmess-Message1 { decorator: image(/dat/OPTMESS/Options/Messages/MessageEditBox.tga); }
+#optmess-Message2 { decorator: image(/dat/OPTMESS/Options/Messages/MessageEditBox.tga); }
+#optmess-Message3 { decorator: image(/dat/OPTMESS/Options/Messages/MessageEditBox.tga); }
+#optmess-Message4 { decorator: image(/dat/OPTMESS/Options/Messages/MessageEditBox.tga); }
+#optmess-Message5 { decorator: image(/dat/OPTMESS/Options/Messages/MessageEditBox.tga); }
+#optmess-Message6 { decorator: image(/dat/OPTMESS/Options/Messages/MessageEditBox.tga); }
+#optmess-Message7 { decorator: image(/dat/OPTMESS/Options/Messages/MessageEditBox.tga); }
+#optmess-Message8 { decorator: image(/dat/OPTMESS/Options/Messages/MessageEditBox.tga); }
+#optmess-Message9 { decorator: image(/dat/OPTMESS/Options/Messages/MessageEditBox.tga); }
+#optmess-Message0 { decorator: image(/dat/OPTMESS/Options/Messages/MessageEditBox.tga); }
+#optgar-CurveLeft { decorator: image(/dat/GLOBAL/Resources/LeftArrowUp.tga); }
+#optgar-CurveLeft:hover, #optgar-CurveLeft:focus-visible { decorator: image(/dat/GLOBAL/Resources/LeftArrowLit.tga); }
+#optgar-CurveLeft:active { decorator: image(/dat/GLOBAL/Resources/LeftArrowDown.tga); }
+#optgar-CurveLeft.disabled { decorator: image(/dat/GLOBAL/Resources/LeftArrowGrey.tga); }
+#optgar-DDLCurves selectvalue { decorator: image(/dat/OPTGAR/Options/Garage/GADropDown04.tga); }
+#optgar-DDLCurves selectbox { decorator: image(/dat/OPTGAR/Options/Garage/GADropDownBG04.tga); }
+#optgar-CurveRight { decorator: image(/dat/GLOBAL/Resources/RightArrowUp.tga); }
+#optgar-CurveRight:hover, #optgar-CurveRight:focus-visible { decorator: image(/dat/GLOBAL/Resources/RightArrowLit.tga); }
+#optgar-CurveRight:active { decorator: image(/dat/GLOBAL/Resources/RightArrowDown.tga); }
+#optgar-CurveRight.disabled { decorator: image(/dat/GLOBAL/Resources/RightArrowGrey.tga); }
+#optgar-HP1 { decorator: image(/dat/OPTGAR/Options/Garage/GASmalleditBox.tga); }
+#optgar-HP2 { decorator: image(/dat/OPTGAR/Options/Garage/GASmalleditBox.tga); }
+#optgar-HP3 { decorator: image(/dat/OPTGAR/Options/Garage/GASmalleditBox.tga); }
+#optgar-HP4 { decorator: image(/dat/OPTGAR/Options/Garage/GASmalleditBox.tga); }
+#optgar-HP5 { decorator: image(/dat/OPTGAR/Options/Garage/GASmalleditBox.tga); }
+#optgar-HP6 { decorator: image(/dat/OPTGAR/Options/Garage/GASmalleditBox.tga); }
+#optgar-HP7 { decorator: image(/dat/OPTGAR/Options/Garage/GASmalleditBox.tga); }
+#optgar-HP8 { decorator: image(/dat/OPTGAR/Options/Garage/GASmalleditBox.tga); }
+#optgar-HP9 { decorator: image(/dat/OPTGAR/Options/Garage/GASmalleditBox.tga); }
+#optgar-HP10 { decorator: image(/dat/OPTGAR/Options/Garage/GASmalleditBox.tga); }
+#optgar-HP11 { decorator: image(/dat/OPTGAR/Options/Garage/GASmalleditBox.tga); }
+#optgar-SldEQ1 slidertrack { decorator: image(/dat/OPTGAR/Options/Garage/GAVertSlider.tga); }
+#optgar-SldEQ1 sliderbar { width: 17dp; height: 5dp; margin-left: 0dp; decorator: image(/dat/OPTGAR/Options/Garage/EQSliderDown.tga); }
+#optgar-SldEQ2 slidertrack { decorator: image(/dat/OPTGAR/Options/Garage/GAVertSlider.tga); }
+#optgar-SldEQ2 sliderbar { width: 17dp; height: 5dp; margin-left: 0dp; decorator: image(/dat/OPTGAR/Options/Garage/EQSliderDown.tga); }
+#optgar-SldEQ3 slidertrack { decorator: image(/dat/OPTGAR/Options/Garage/GAVertSlider.tga); }
+#optgar-SldEQ3 sliderbar { width: 17dp; height: 5dp; margin-left: 0dp; decorator: image(/dat/OPTGAR/Options/Garage/EQSliderDown.tga); }
+#optgar-SldEQ4 slidertrack { decorator: image(/dat/OPTGAR/Options/Garage/GAVertSlider.tga); }
+#optgar-SldEQ4 sliderbar { width: 17dp; height: 5dp; margin-left: 0dp; decorator: image(/dat/OPTGAR/Options/Garage/EQSliderDown.tga); }
+#optgar-SldEQ5 slidertrack { decorator: image(/dat/OPTGAR/Options/Garage/GAVertSlider.tga); }
+#optgar-SldEQ5 sliderbar { width: 17dp; height: 5dp; margin-left: 0dp; decorator: image(/dat/OPTGAR/Options/Garage/EQSliderDown.tga); }
+#optgar-SldEQ6 slidertrack { decorator: image(/dat/OPTGAR/Options/Garage/GAVertSlider.tga); }
+#optgar-SldEQ6 sliderbar { width: 17dp; height: 5dp; margin-left: 0dp; decorator: image(/dat/OPTGAR/Options/Garage/EQSliderDown.tga); }
+#optgar-SldEQ7 slidertrack { decorator: image(/dat/OPTGAR/Options/Garage/GAVertSlider.tga); }
+#optgar-SldEQ7 sliderbar { width: 17dp; height: 5dp; margin-left: 0dp; decorator: image(/dat/OPTGAR/Options/Garage/EQSliderDown.tga); }
+#optgar-SldEQ8 slidertrack { decorator: image(/dat/OPTGAR/Options/Garage/GAVertSlider.tga); }
+#optgar-SldEQ8 sliderbar { width: 17dp; height: 5dp; margin-left: 0dp; decorator: image(/dat/OPTGAR/Options/Garage/EQSliderDown.tga); }
+#optgar-SldEQ9 slidertrack { decorator: image(/dat/OPTGAR/Options/Garage/GAVertSlider.tga); }
+#optgar-SldEQ9 sliderbar { width: 17dp; height: 5dp; margin-left: 0dp; decorator: image(/dat/OPTGAR/Options/Garage/EQSliderDown.tga); }
+#optgar-SldEQ10 slidertrack { decorator: image(/dat/OPTGAR/Options/Garage/GAVertSlider.tga); }
+#optgar-SldEQ10 sliderbar { width: 17dp; height: 5dp; margin-left: 0dp; decorator: image(/dat/OPTGAR/Options/Garage/EQSliderDown.tga); }
+#optgar-SldEQ11 slidertrack { decorator: image(/dat/OPTGAR/Options/Garage/GAVertSlider.tga); }
+#optgar-SldEQ11 sliderbar { width: 17dp; height: 5dp; margin-left: 0dp; decorator: image(/dat/OPTGAR/Options/Garage/EQSliderDown.tga); }
+#optgar-HPUnused { decorator: image(/dat/OPTGAR/Options/Garage/GASmalleditBox.tga); }
+#optgar-SldFrontDamp slidertrack { decorator: image(/dat/OPTGAR/Options/Garage/GAHorizontalSlider01.tga); }
+#optgar-SldFrontDamp sliderbar { width: 8dp; height: 15dp; margin-top: 0dp; decorator: image(/dat/OPTGAR/Options/Garage/GASmallHSliderUp.tga); }
+#optgar-SldRearDamp slidertrack { decorator: image(/dat/OPTGAR/Options/Garage/GAHorizontalSlider01.tga); }
+#optgar-SldRearDamp sliderbar { width: 8dp; height: 15dp; margin-top: 0dp; decorator: image(/dat/OPTGAR/Options/Garage/GASmallHSliderUp.tga); }
+#optgar-SldFrontComp slidertrack { decorator: image(/dat/OPTGAR/Options/Garage/GAHorizontalSlider01.tga); }
+#optgar-SldFrontComp sliderbar { width: 8dp; height: 15dp; margin-top: 0dp; decorator: image(/dat/OPTGAR/Options/Garage/GASmallHSliderUp.tga); }
+#optgar-SldRearComp slidertrack { decorator: image(/dat/OPTGAR/Options/Garage/GAHorizontalSlider01.tga); }
+#optgar-SldRearComp sliderbar { width: 8dp; height: 15dp; margin-top: 0dp; decorator: image(/dat/OPTGAR/Options/Garage/GASmallHSliderUp.tga); }
+#optgar-SldFrontDecomp slidertrack { decorator: image(/dat/OPTGAR/Options/Garage/GAHorizontalSlider01.tga); }
+#optgar-SldFrontDecomp sliderbar { width: 8dp; height: 15dp; margin-top: 0dp; decorator: image(/dat/OPTGAR/Options/Garage/GASmallHSliderUp.tga); }
+#optgar-SldRearDecomp slidertrack { decorator: image(/dat/OPTGAR/Options/Garage/GAHorizontalSlider01.tga); }
+#optgar-SldRearDecomp sliderbar { width: 8dp; height: 15dp; margin-top: 0dp; decorator: image(/dat/OPTGAR/Options/Garage/GASmallHSliderUp.tga); }

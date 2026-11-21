@@ -1,0 +1,36 @@
+<rml>
+<head>
+  <title>hostjoin</title>
+  <link type="text/rcss" href="menus.rcss"/>
+  <link type="text/rcss" href="hostjoin.rcss"/>
+</head>
+<!--
+  A copy of the game's own hostjoin (MaXMenus=1), drawn over it while the game
+  shows it. Made by tools/mcm2rml.py from the game's layouts, then edited by
+  hand. 1dp = one pixel of the game's 640x480 menus. See ..\README.txt.
+
+  game-dialogs     the game dialogs (layouts) this screen copies
+  game-opaque      it covers the whole menu (nothing under it is drawn)
+  game-dialog="x"  the part that copies the game's dialog x: shown while the
+                   game shows x, where the game put it
+  game="Name"      tied to the game's control of that name on that dialog
+  game-back        the control Esc / B / the right mouse button clicks
+-->
+<body game-dialogs="hostjoin">
+<div id="screen">
+
+
+  <!-- HOSTJOIN.DAT -->
+  <div id="d-hostjoin" class="dialog" game-dialog="hostjoin" style="left: 170dp; top: 120dp; width: 300dp; height: 240dp;">
+    <div id="hostjoin-TitleText" game="TitleText" class="text" style="left: 9dp; top: 8dp; width: 281dp; height: 26dp; padding-top: 5dp; text-align: center;">Host or Join a Game</div>
+    <div id="hostjoin-ButHost" game="ButHost" title="The host chooses participants, race events, &amp; modes. The person with the fastest computer should be host." class="button" style="left: 16dp; top: 40dp; width: 66dp; height: 25dp; padding-top: 5dp; text-align: center;">Host</div>
+    <div id="hostjoin-SessionUp" game="SessionUp" class="button" style="left: 259dp; top: 46dp; width: 20dp; height: 18dp;"></div>
+    <div id="hostjoin-LstSessions" game="LstSessions" title="Lists the currently available multiplayer game sessions." class="list" style="left: 108dp; top: 50dp; width: 146dp; height: 165dp; color: #ffffff;"></div>
+    <div id="hostjoin-ButJoin" game="ButJoin" title="Establish a connection with an existing game session, and then wait for the host to start the race." class="button" style="left: 16dp; top: 70dp; width: 66dp; height: 25dp; padding-top: 5dp; text-align: center;">Join</div>
+    <input type="range" orientation="vertical" id="hostjoin-ScrollSessions" game="ScrollSessions" class="slider vslider" style="left: 263dp; top: 66dp; width: 12dp; height: 132dp;"/>
+    <div id="hostjoin-ButCancel" game="ButCancel" class="button" style="left: 16dp; top: 200dp; width: 66dp; height: 25dp; padding-top: 5dp; text-align: center;">Cancel</div>
+    <div id="hostjoin-SessionDown" game="SessionDown" class="button" style="left: 259dp; top: 200dp; width: 20dp; height: 18dp;"></div>
+  </div>
+</div>
+</body>
+</rml>

@@ -1,0 +1,12 @@
+/* careerdeal.rml: each control's own pictures (from the game's layouts). Made by tools/mcm2rml.py. */
+#d-pcdeal { decorator: image(/dat/PCDEAL/ProCircuitScreens/BailOut_Deal_Fail/Bail_Deal_FailBG.tga); }
+#pcdeal-TxtDescription { decorator: image(/dat/PCDEAL/ProCircuitScreens/BailOut_Deal_Fail/DAScreen.tga); }
+#pcdeal-Back { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackUp.tga); }
+#pcdeal-Back:hover, #pcdeal-Back:focus-visible { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackLit.tga); }
+#pcdeal-Back:active { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackDown.tga); }
+#pcdeal-ButDecline { decorator: image(/dat/PCDEAL/ProCircuitScreens/BailOut_Deal_Fail/DeclineUp.tga); }
+#pcdeal-ButDecline:active { decorator: image(/dat/PCDEAL/ProCircuitScreens/BailOut_Deal_Fail/DeclineDown.tga); }
+#pcdeal-ButDecline.disabled { decorator: image(/dat/PCDEAL/ProCircuitScreens/BailOut_Deal_Fail/DeclineUp.tga); }
+#pcdeal-ButAccept { decorator: image(/dat/PCDEAL/ProCircuitScreens/BailOut_Deal_Fail/AcceptUp.tga); }
+#pcdeal-ButAccept:active { decorator: image(/dat/PCDEAL/ProCircuitScreens/BailOut_Deal_Fail/AcceptDown.tga); }
+#pcdeal-ButAccept.disabled { decorator: image(/dat/PCDEAL/ProCircuitScreens/BailOut_Deal_Fail/AcceptUp.tga); }

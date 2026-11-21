@@ -1,0 +1,6 @@
+/* careerfinish.rml: each control's own pictures (from the game's layouts). Made by tools/mcm2rml.py. */
+#d-pcfinish { decorator: image(/dat/PCFINISH/ProCircuitScreens/PCFinished/PCFBG.tga); }
+#pcfinish-rbwFrame1 { decorator: image(/dat/PCFINISH/ProCircuitScreens/PCFinished/PCFStndngsScreen.tga); }
+#pcfinish-Back { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackUp.tga); }
+#pcfinish-Back:hover, #pcfinish-Back:focus-visible { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackLit.tga); }
+#pcfinish-Back:active { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackDown.tga); }

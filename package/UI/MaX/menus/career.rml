@@ -1,0 +1,107 @@
+<rml>
+<head>
+  <title>career</title>
+  <link type="text/rcss" href="menus.rcss"/>
+  <link type="text/rcss" href="career.rcss"/>
+</head>
+<!--
+  A copy of the game's own career (MaXMenus=1), drawn over it while the game
+  shows it. Made by tools/mcm2rml.py from the game's layouts, then edited by
+  hand. 1dp = one pixel of the game's 640x480 menus. See ..\README.txt.
+
+  game-dialogs     the game dialogs (layouts) this screen copies
+  game-opaque      it covers the whole menu (nothing under it is drawn)
+  game-dialog="x"  the part that copies the game's dialog x: shown while the
+                   game shows x, where the game put it
+  game="Name"      tied to the game's control of that name on that dialog
+  game-back        the control Esc / B / the right mouse button clicks
+-->
+<body game-dialogs="pcc pccbiker pccnext pccstand" game-opaque game-back="Back">
+<div id="screen">
+
+
+  <!-- PCC.DAT -->
+  <div id="d-pcc" class="dialog" game-dialog="pcc" style="left: 0dp; top: 0dp; width: 640dp; height: 480dp;">
+    <div id="pcc-TabNext" game="TabNext" title="Specify the details of your next race event, including event type and # of laps" class="pick" style="left: 0dp; top: 0dp; width: 220dp; height: 33dp; padding-top: 14dp; text-align: center;">Single Stunt</div>
+    <div id="pcc-TabBikeRider" game="TabBikeRider" title="Choose your riding gear and bike" class="pick" style="left: 220dp; top: 0dp; width: 200dp; height: 33dp; padding-top: 14dp; text-align: center;">Single Stunt</div>
+    <div id="pcc-TabStandings" game="TabStandings" title="Displays results for all riders in the most recent race event" class="pick" style="left: 420dp; top: 0dp; width: 220dp; height: 33dp; padding-top: 14dp; text-align: center;">Single Stunt</div>
+    <div id="pcc-Back" game="Back" title="Go back to previous screen" class="button" style="left: 17dp; top: 404dp; width: 79dp; height: 76dp;"></div>
+    <div id="pcc-Help" game="Help" title="Help" class="button" style="left: 131dp; top: 404dp; width: 56dp; height: 76dp;"></div>
+    <div id="pcc-Controls" game="Controls" title="Change or fine-tune your controller options" class="button" style="left: 221dp; top: 404dp; width: 58dp; height: 76dp;"></div>
+    <div id="pcc-Options" game="Options" title="Options" class="button" style="left: 323dp; top: 404dp; width: 87dp; height: 76dp;"></div>
+    <div id="pcc-Practice" game="Practice" title="Start a solo practice session" class="button" style="left: 446dp; top: 404dp; width: 49dp; height: 76dp;"></div>
+    <div id="pcc-Start" game="Start" title="Start race!" class="button" style="left: 547dp; top: 404dp; width: 64dp; height: 76dp;"></div>
+  </div>
+
+  <!-- PCCBIKER.DAT -->
+  <div id="d-pccbiker" class="dialog" game-dialog="pccbiker" style="left: 20dp; top: 35dp; width: 610dp; height: 355dp;">
+    <div id="pccbiker-TxtEngineSize" game="TxtEngineSize" class="text" style="left: 198dp; top: 8dp; width: 179dp; height: 14dp;">Custom Engine Size</div>
+    <select id="pccbiker-DDLEngineSize" game="DDLEngineSize" class="dropdown" style="left: 197dp; top: 23dp; width: 178dp; height: 21dp; color: #7ab9fe;"></select>
+    <div id="pccbiker-RiderLeft" game="RiderLeft" title="Click arrow to change clothing colors" class="button" style="left: 64dp; top: 51dp; width: 21dp; height: 21dp;"></div>
+    <select id="pccbiker-DDLRiders" game="DDLRiders" title="Click arrow to change clothing colors" class="dropdown" style="left: 86dp; top: 51dp; width: 412dp; height: 21dp; color: #7ab9fe; text-align: center;"></select>
+    <div id="pccbiker-RiderRight" game="RiderRight" title="Click arrow to change clothing colors" class="button" style="left: 499dp; top: 51dp; width: 21dp; height: 21dp;"></div>
+    <div id="pccbiker-CornerUL" game="CornerUL" class="plate" game-text="off" style="left: 64dp; top: 73dp; width: 4dp; height: 4dp;"/>
+    <div id="pccbiker-CornerUR" game="CornerUR" class="plate" game-text="off" style="left: 516dp; top: 73dp; width: 4dp; height: 4dp;"/>
+    <div id="pccbiker-CornerLL" game="CornerLL" class="plate" game-text="off" style="left: 64dp; top: 293dp; width: 4dp; height: 4dp;"/>
+    <div id="pccbiker-CornerLR" game="CornerLR" class="plate" game-text="off" style="left: 516dp; top: 293dp; width: 4dp; height: 4dp;"/>
+    <div id="pccbiker-BikeLeft" game="BikeLeft" title="Click arrow to change bikes" class="button" style="left: 64dp; top: 297dp; width: 21dp; height: 21dp;"></div>
+    <select id="pccbiker-DDLBikes" game="DDLBikes" title="Click arrow to change bikes" class="dropdown" style="left: 86dp; top: 297dp; width: 412dp; height: 21dp; color: #7ab9fe; text-align: center;"></select>
+    <div id="pccbiker-BikeRight" game="BikeRight" title="Click arrow to change bikes" class="button" style="left: 499dp; top: 297dp; width: 21dp; height: 21dp;"></div>
+    <div id="pccbiker-ButWrench" game="ButWrench" title="Click to display Garage screen, where you can tweak your bike's engine &amp; suspension" class="button" style="left: 287dp; top: 318dp; width: 99dp; height: 37dp;"></div>
+    <div id="pccbiker-rbwLabel1" game="rbwLabel1" class="text" style="left: 80dp; top: 328dp; width: 145dp; height: 17dp; padding-top: 1dp; text-align: right;">Bike Plate #</div>
+    <input type="text" id="pccbiker-EditPlateNumber" game="EditPlateNumber" title="Click and then type a bike plate number between 101-999 (1-100 are reserved for the Top 100 online players on the MSN Gaming Zone)" class="edit" maxlength="3" style="left: 232dp; top: 328dp; width: 33dp; height: 21dp; color: #7ab9fe;"/>
+    <div id="pccbiker-ChkAutoRotate" game="ChkAutoRotate" title="Check to make bike &amp; rider spin" class="check" style="left: 408dp; top: 328dp; width: 129dp; height: 21dp; padding-top: 3dp; padding-left: 18dp;"><div class="box"/><span class="t">Auto Rotate</span></div>
+  </div>
+
+  <!-- PCCNEXT.DAT -->
+  <div id="d-pccnext" class="dialog" game-dialog="pccnext" style="left: 20dp; top: 35dp; width: 610dp; height: 355dp;">
+    <div id="pccnext-rbwLabel1" game="rbwLabel1" class="text" style="left: 16dp; top: 24dp; width: 265dp; height: 17dp; padding-top: 1dp;">Race Information:</div>
+    <div id="pccnext-rbwLabel18" game="rbwLabel18" class="text" style="left: 312dp; top: 24dp; width: 265dp; height: 17dp; padding-top: 1dp;">Financial Status:</div>
+    <div id="pccnext-rbwLabel2" game="rbwLabel2" class="text" style="left: 16dp; top: 56dp; width: 113dp; height: 17dp; padding-top: 1dp;">Entry Fee:</div>
+    <div id="pccnext-TxtNextFee" game="TxtNextFee" class="text" style="left: 136dp; top: 56dp; width: 145dp; height: 17dp; color: #ffffc0; padding-top: 1dp; text-align: right;"></div>
+    <div id="pccnext-rbwLabel12" game="rbwLabel12" class="text" style="left: 312dp; top: 56dp; width: 113dp; height: 17dp; padding-top: 1dp;">Cash:</div>
+    <div id="pccnext-TxtCash" game="TxtCash" class="text" style="left: 432dp; top: 56dp; width: 145dp; height: 17dp; color: #c0ffc0; padding-top: 1dp; text-align: right;"></div>
+    <div id="pccnext-rbwLabel3" game="rbwLabel3" class="text" style="left: 16dp; top: 80dp; width: 113dp; height: 17dp; padding-top: 1dp;">Purse:</div>
+    <div id="pccnext-TxtNextPurse" game="TxtNextPurse" class="text" style="left: 136dp; top: 80dp; width: 145dp; height: 17dp; color: #ffffc0; padding-top: 1dp; text-align: right;"></div>
+    <div id="pccnext-rbwLabel13" game="rbwLabel13" class="text" style="left: 312dp; top: 80dp; width: 265dp; height: 17dp; padding-top: 1dp; text-align: center;">Expenses to-date:</div>
+    <div id="pccnext-rbwLabel4" game="rbwLabel4" class="text" style="left: 16dp; top: 104dp; width: 89dp; height: 17dp; padding-top: 1dp;">Track Name:</div>
+    <div id="pccnext-TxtNextTrack" game="TxtNextTrack" class="text" style="left: 112dp; top: 104dp; width: 169dp; height: 17dp; color: #ffffc0; padding-top: 1dp; text-align: right;"></div>
+    <div id="pccnext-rbwLabel14" game="rbwLabel14" class="text" style="left: 312dp; top: 104dp; width: 113dp; height: 17dp; padding-top: 1dp;">Fees:</div>
+    <div id="pccnext-TxtFees" game="TxtFees" class="text" style="left: 432dp; top: 104dp; width: 145dp; height: 17dp; color: #c0ffc0; padding-top: 1dp; text-align: right;"></div>
+    <div id="pccnext-rbwLabel5" game="rbwLabel5" class="text" style="left: 16dp; top: 128dp; width: 113dp; height: 17dp; padding-top: 1dp;">Event Type:</div>
+    <div id="pccnext-TxtNextType" game="TxtNextType" class="text" style="left: 136dp; top: 128dp; width: 145dp; height: 17dp; color: #ffffc0; padding-top: 1dp; text-align: right;"></div>
+    <div id="pccnext-rbwLabel15" game="rbwLabel15" class="text" style="left: 312dp; top: 128dp; width: 113dp; height: 17dp; padding-top: 1dp;">Repairs:</div>
+    <div id="pccnext-TxtRepairs" game="TxtRepairs" class="text" style="left: 432dp; top: 128dp; width: 145dp; height: 17dp; color: #c0ffc0; padding-top: 1dp; text-align: right;"></div>
+    <div id="pccnext-rbwLabel6" game="rbwLabel6" class="text" style="left: 16dp; top: 152dp; width: 113dp; height: 17dp; padding-top: 1dp;">Event Race:</div>
+    <div id="pccnext-TxtNextRace" game="TxtNextRace" class="text" style="left: 136dp; top: 152dp; width: 145dp; height: 17dp; color: #ffffc0; padding-top: 1dp; text-align: right;"></div>
+    <div id="pccnext-rbwLabel16" game="rbwLabel16" class="text" style="left: 312dp; top: 152dp; width: 113dp; height: 17dp; padding-top: 1dp;">Medical:</div>
+    <div id="pccnext-TxtMedical" game="TxtMedical" class="text" style="left: 432dp; top: 152dp; width: 145dp; height: 17dp; color: #c0ffc0; padding-top: 1dp; text-align: right;"></div>
+    <div id="pccnext-rbwFrame3" game="rbwFrame3" class="plate" game-text="off" style="left: 8dp; top: 206dp; width: 4dp; height: 4dp;"/>
+    <div id="pccnext-rbwFrame6" game="rbwFrame6" class="plate" game-text="off" style="left: 293dp; top: 206dp; width: 4dp; height: 4dp;"/>
+    <div id="pccnext-NextTrackPic" game="NextTrackPic" class="plate" game-text="off" style="left: 10dp; top: 208dp; width: 285dp; height: 139dp;"/>
+    <div id="pccnext-rbwLabel22" game="rbwLabel22" class="text" style="left: 311dp; top: 209dp; width: 271dp; height: 17dp; padding-top: 1dp;">Announcements:</div>
+    <div id="pccnext-TxtAnnouncement" game="TxtAnnouncement" class="text" style="left: 311dp; top: 228dp; width: 271dp; height: 119dp; color: #ffe0c0; white-space: normal;"></div>
+    <div id="pccnext-rbwFrame4" game="rbwFrame4" class="plate" game-text="off" style="left: 8dp; top: 345dp; width: 4dp; height: 4dp;"/>
+    <div id="pccnext-rbwFrame5" game="rbwFrame5" class="plate" game-text="off" style="left: 293dp; top: 345dp; width: 4dp; height: 4dp;"/>
+  </div>
+
+  <!-- PCCSTAND.DAT -->
+  <div id="d-pccstand" class="dialog" game-dialog="pccstand" style="left: 20dp; top: 35dp; width: 610dp; height: 355dp;">
+    <div id="pccstand-ButRank" game="ButRank" class="button" style="left: 22dp; top: 14dp; width: 41dp; height: 17dp; color: #7ab9fe; padding-top: 1dp;">Rank</div>
+    <div id="pccstand-ButName" game="ButName" class="button" style="left: 67dp; top: 14dp; width: 113dp; height: 17dp; color: #7ab9fe; padding-top: 1dp;">Name</div>
+    <div id="pccstand-ButPoints" game="ButPoints" class="button" style="left: 183dp; top: 14dp; width: 57dp; height: 17dp; color: #7ab9fe; padding-top: 1dp;">Points</div>
+    <div id="pccstand-ButBike" game="ButBike" class="button" style="left: 243dp; top: 15dp; width: 84dp; height: 17dp; color: #7ab9fe; padding-top: 1dp;">Bike</div>
+    <div id="pccstand-ButCash" game="ButCash" class="button" style="left: 331dp; top: 14dp; width: 81dp; height: 17dp; color: #7ab9fe; padding-top: 1dp;">Cash</div>
+    <div id="pccstand-ButWinnings" game="ButWinnings" class="button" style="left: 415dp; top: 14dp; width: 81dp; height: 17dp; color: #7ab9fe; padding-top: 1dp;">Winnings</div>
+    <div id="pccstand-ButExpenses" game="ButExpenses" class="button" style="left: 499dp; top: 14dp; width: 81dp; height: 17dp; color: #7ab9fe; padding-top: 1dp;">Expenses</div>
+    <div id="pccstand-LstRank" game="LstRank" class="list" style="left: 22dp; top: 36dp; width: 41dp; height: 305dp; color: #7ab9fe; text-align: center;"></div>
+    <div id="pccstand-LstName" game="LstName" class="list" style="left: 66dp; top: 36dp; width: 113dp; height: 305dp; color: #7ab9fe;"></div>
+    <div id="pccstand-LstPoints" game="LstPoints" class="list" style="left: 182dp; top: 36dp; width: 57dp; height: 305dp; color: #7ab9fe; text-align: center;"></div>
+    <div id="pccstand-LstBike" game="LstBike" class="list" style="left: 242dp; top: 37dp; width: 85dp; height: 305dp; color: #7ab9fe; text-align: center;"></div>
+    <div id="pccstand-LstCash" game="LstCash" class="list" style="left: 330dp; top: 36dp; width: 81dp; height: 305dp; color: #7ab9fe; text-align: right;"></div>
+    <div id="pccstand-LstWinnings" game="LstWinnings" class="list" style="left: 414dp; top: 36dp; width: 81dp; height: 305dp; color: #7ab9fe; text-align: right;"></div>
+    <div id="pccstand-LstExpenses" game="LstExpenses" class="list" style="left: 499dp; top: 36dp; width: 81dp; height: 305dp; color: #7ab9fe; text-align: right;"></div>
+  </div>
+</div>
+</body>
+</rml>

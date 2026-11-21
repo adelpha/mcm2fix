@@ -42,6 +42,20 @@ void Pump();
 // connected. packet changes whenever the state or the driving pad does.
 bool Read(PadState* out, DWORD* packet);
 
+// Every enabled gamepad's last state (not the keyboard), for menus that
+// read all pads at once (MenuMaX screens). False when the hub is not running.
+bool ReadAll(std::vector<PadState>* out);
+
+// Joysticks SDL has no gamepad layout for (wheels, flight sticks): the game
+// keeps reading them through DirectInput; these are read alongside for the
+// menu screens only. dir: 0 up, 1 right, 2 down, 3 left, -1 none (hat, or
+// the first two axes when they rest centred); buttons: bit per button.
+struct StickState {
+  int dir;
+  DWORD buttons;
+};
+bool ReadSticks(std::vector<StickState>* out);
+
 // Motor speeds 0..65535 for the driving pad (sent by the next Pump).
 void Rumble(WORD low, WORD high);
 

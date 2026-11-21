@@ -1,0 +1,123 @@
+<rml>
+<head>
+  <title>single</title>
+  <link type="text/rcss" href="menus.rcss"/>
+  <link type="text/rcss" href="single.rcss"/>
+</head>
+<!--
+  A copy of the game's own single (MaXMenus=1), drawn over it while the game
+  shows it. Made by tools/mcm2rml.py from the game's layouts, then edited by
+  hand. 1dp = one pixel of the game's 640x480 menus. See ..\README.txt.
+
+  game-dialogs     the game dialogs (layouts) this screen copies
+  game-opaque      it covers the whole menu (nothing under it is drawn)
+  game-dialog="x"  the part that copies the game's dialog x: shown while the
+                   game shows x, where the game put it
+  game="Name"      tied to the game's control of that name on that dialog
+  game-back        the control Esc / B / the right mouse button clicks
+-->
+<body game-dialogs="spbase spevent sprinfo spbiker" game-opaque game-back="Back">
+<div id="screen">
+
+
+  <!-- SPBASE.DAT -->
+  <div id="d-spbase" class="dialog" game-dialog="spbase" style="left: 0dp; top: 0dp; width: 640dp; height: 480dp;">
+    <div id="spbase-EventTab" game="EventTab" title="Specify the details of your next race event, including event type and # of laps" class="pick" style="left: 120dp; top: 0dp; width: 100dp; height: 33dp; padding-top: 9dp; text-align: center;"></div>
+    <div id="spbase-BikeRiderTab" game="BikeRiderTab" title="Choose your riding gear and bike" class="pick" style="left: 220dp; top: 0dp; width: 101dp; height: 33dp; padding-top: 9dp; text-align: center;"></div>
+    <div id="spbase-RaceInfoTab" game="RaceInfoTab" title="Displays results for all riders in the most recent race event" class="pick" style="left: 321dp; top: 0dp; width: 99dp; height: 33dp; padding-top: 9dp; text-align: center;"></div>
+    <div id="spbase-Back" game="Back" title="Go back to previous screen" class="button" style="left: 17dp; top: 404dp; width: 79dp; height: 76dp;"></div>
+    <div id="spbase-Help" game="Help" title="Help" class="button" style="left: 153dp; top: 404dp; width: 56dp; height: 76dp;"></div>
+    <div id="spbase-Joystick" game="Joystick" title="Change or fine-tune your controller options" class="button" style="left: 276dp; top: 404dp; width: 58dp; height: 76dp;"></div>
+    <div id="spbase-Options" game="Options" title="Options" class="button" style="left: 391dp; top: 404dp; width: 87dp; height: 76dp;"></div>
+    <div id="spbase-Start" game="Start" title="Start race!" class="button" style="left: 546dp; top: 404dp; width: 64dp; height: 76dp;"></div>
+  </div>
+
+  <!-- SPEVENT.DAT -->
+  <div id="d-spevent" class="dialog" game-dialog="spevent" style="left: 20dp; top: 35dp; width: 610dp; height: 355dp;">
+    <div id="spevent-EventTypeText" game="EventTypeText" class="text" style="left: 470dp; top: 5dp; width: 129dp; height: 20dp; padding-top: 5dp; text-align: center;">Event Type</div>
+    <div id="spevent-PictureBox" game="PictureBox" game-window class="list" style="left: 5dp; top: 18dp; width: 456dp; height: 224dp; color: #ffffff; text-align: right; font-effect: none;"></div>
+    <div id="spevent-CornerUL" game="CornerUL" class="plate" game-text="off" style="left: 5dp; top: 18dp; width: 4dp; height: 4dp;"/>
+    <div id="spevent-CornerUR" game="CornerUR" class="plate" game-text="off" style="left: 457dp; top: 18dp; width: 4dp; height: 4dp;"/>
+    <select id="spevent-EventTypeDropDown" game="EventTypeDropDown" title="Click arrow to display all available event types" class="dropdown" style="left: 470dp; top: 27dp; width: 129dp; height: 21dp; color: #7ab9fe;"></select>
+    <div id="spevent-RaceModeText" game="RaceModeText" class="text" style="left: 470dp; top: 55dp; width: 129dp; height: 20dp; padding-top: 5dp; text-align: center;">Race Mode</div>
+    <select id="spevent-RaceModeDropDown" game="RaceModeDropDown" title="Click arrow to display all available race modes" class="dropdown" style="left: 470dp; top: 77dp; width: 129dp; height: 21dp; color: #7ab9fe;"></select>
+    <div id="spevent-OpponentsControlBox" game="OpponentsControlBox" class="plate" game-text="off" style="left: 470dp; top: 108dp; width: 130dp; height: 57dp;">
+      <div id="spevent-OpponentsLabel" game="OpponentsLabel" class="text" style="left: 3dp; top: 6dp; width: 121dp; height: 18dp; padding-top: 1dp; text-align: center;">Opponents</div>
+      <div id="spevent-OpponentsLeftarrow" game="OpponentsLeftarrow" class="button" style="left: 26dp; top: 29dp; width: 21dp; height: 21dp;"></div>
+      <div id="spevent-OpponentsListBox" game="OpponentsListBox" title="Specifies the number of opponents you're racing against (10 max.)" class="list" style="left: 48dp; top: 29dp; width: 33dp; height: 21dp; color: #ffffff; text-align: center;"></div>
+      <div id="spevent-OpponentsrightArrow" game="OpponentsrightArrow" class="button" style="left: 83dp; top: 29dp; width: 21dp; height: 21dp;"></div>
+    </div>
+    <div id="spevent-LapsControlBox" game="LapsControlBox" class="plate" game-text="off" style="left: 470dp; top: 176dp; width: 130dp; height: 57dp;">
+      <div id="spevent-LapsLabel" game="LapsLabel" class="text" style="left: 3dp; top: 5dp; width: 121dp; height: 18dp; padding-top: 1dp; text-align: center;">Laps</div>
+      <div id="spevent-LapsLeftArrow" game="LapsLeftArrow" class="button" style="left: 26dp; top: 29dp; width: 21dp; height: 21dp;"></div>
+      <div id="spevent-LapsListBox" game="LapsListBox" title="Specifies the number of laps or minutes, depending on the event type." class="list" style="left: 48dp; top: 29dp; width: 33dp; height: 21dp; color: #ffffff; text-align: center;"></div>
+      <div id="spevent-LapsrightArrow" game="LapsrightArrow" class="button" style="left: 83dp; top: 29dp; width: 21dp; height: 21dp;"></div>
+    </div>
+    <div id="spevent-CornerLL" game="CornerLL" class="plate" game-text="off" style="left: 5dp; top: 238dp; width: 4dp; height: 4dp;"/>
+    <div id="spevent-CornerLR" game="CornerLR" class="plate" game-text="off" style="left: 457dp; top: 238dp; width: 4dp; height: 4dp;"/>
+    <div id="spevent-TrackLeft" game="TrackLeft" class="button" style="left: 5dp; top: 244dp; width: 21dp; height: 21dp;"></div>
+    <select id="spevent-DDLTextBox" game="DDLTextBox" class="dropdown" style="left: 27dp; top: 244dp; width: 411dp; height: 21dp; color: #7ab9fe; text-align: center;"></select>
+    <div id="spevent-TrackRight" game="TrackRight" class="button" style="left: 440dp; top: 244dp; width: 21dp; height: 21dp;"></div>
+    <div id="spevent-racesControlBox" game="racesControlBox" class="plate" game-text="off" style="left: 470dp; top: 244dp; width: 130dp; height: 57dp;">
+      <div id="spevent-RacesLabel" game="RacesLabel" class="text" style="left: 3dp; top: 6dp; width: 121dp; height: 18dp; padding-top: 1dp; text-align: center;">Races</div>
+      <div id="spevent-RacesLeftArrow" game="RacesLeftArrow" class="button" style="left: 26dp; top: 29dp; width: 21dp; height: 21dp;"></div>
+      <div id="spevent-RacesListBox" game="RacesListBox" title="Specifies the number of race events to be included in tournament" class="list" style="left: 48dp; top: 29dp; width: 33dp; height: 21dp; color: #ffffff; text-align: center;"></div>
+      <div id="spevent-RacesRightArrow" game="RacesRightArrow" class="button" style="left: 83dp; top: 29dp; width: 21dp; height: 21dp;"></div>
+    </div>
+    <div id="spevent-GhostBox" game="GhostBox" class="plate" game-text="off" style="left: 25dp; top: 265dp; width: 415dp; height: 28dp;">
+      <div id="spevent-GhostLeft" game="GhostLeft" class="button" style="left: 20dp; top: 7dp; width: 21dp; height: 21dp;"></div>
+      <select id="spevent-DDLGhostRaces" game="DDLGhostRaces" class="dropdown" style="left: 42dp; top: 7dp; width: 332dp; height: 21dp; color: #7ab9fe; text-align: center;"></select>
+      <div id="spevent-GhostRight" game="GhostRight" class="button" style="left: 374dp; top: 7dp; width: 21dp; height: 21dp;"></div>
+    </div>
+    <div id="spevent-rbwLabel2" game="rbwLabel2" class="text" style="left: 40dp; top: 272dp; width: 145dp; height: 18dp; padding-top: 1dp; padding-left: 3dp; text-align: center;">Difficulty Level:</div>
+    <div id="spevent-RadLODEasy" game="RadLODEasy" title="Specifies how tough your opponents will be" class="radio" style="left: 192dp; top: 272dp; width: 89dp; height: 17dp; padding-top: 1dp; padding-left: 17dp;"><div class="box"/><span class="t">Easy</span></div>
+    <div id="spevent-RadLODMedium" game="RadLODMedium" title="Specifies how tough your opponents will be" class="radio" style="left: 280dp; top: 272dp; width: 89dp; height: 17dp; padding-top: 1dp; padding-left: 17dp;"><div class="box"/><span class="t">Normal</span></div>
+    <div id="spevent-RadLODHard" game="RadLODHard" title="Specifies how tough your opponents will be" class="radio" style="left: 368dp; top: 272dp; width: 89dp; height: 17dp; padding-top: 1dp; padding-left: 17dp;"><div class="box"/><span class="t">Hard</span></div>
+    <div id="spevent-WaypointBox" game="WaypointBox" class="plate" game-text="off" style="left: 72dp; top: 296dp; width: 315dp; height: 52dp;">
+      <div id="spevent-ChkRandomGates" game="ChkRandomGates" title="Check to place checkpoint gates randomly in the race" class="check" style="left: 35dp; top: 3dp; width: 129dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Random Gate #</span></div>
+      <div id="spevent-rbwLabel1" game="rbwLabel1" class="text" style="left: 168dp; top: 5dp; width: 97dp; height: 17dp; padding-top: 1dp; text-align: center;"># of Gates</div>
+      <div id="spevent-SeedLeft" game="SeedLeft" class="button" style="left: 57dp; top: 24dp; width: 21dp; height: 21dp;"></div>
+      <input type="text" id="spevent-EditSeed" game="EditSeed" title="Associates a # with the currently configured race. To race the same configuration again, type the race # here" class="edit" maxlength="3" style="left: 79dp; top: 24dp; width: 33dp; height: 21dp; color: #7ab9fe;"/>
+      <div id="spevent-SeedRight" game="SeedRight" class="button" style="left: 113dp; top: 24dp; width: 21dp; height: 21dp;"></div>
+      <div id="spevent-RandomGatesLeftArrow" game="RandomGatesLeftArrow" class="button" style="left: 178dp; top: 24dp; width: 21dp; height: 21dp;"></div>
+      <div id="spevent-LstNumGates" game="LstNumGates" title="Specifies the number of random gates (between 10 and 30)" class="list" style="left: 200dp; top: 24dp; width: 33dp; height: 21dp; color: #7ab9fe; text-align: center; font-effect: none;"></div>
+      <div id="spevent-RandomGatesRightArrow" game="RandomGatesRightArrow" class="button" style="left: 234dp; top: 24dp; width: 21dp; height: 21dp;"></div>
+    </div>
+    <div id="spevent-ChkTreeCollision" game="ChkTreeCollision" title="Check to allow riders to collide with trees, plants, &amp; shrubs" class="check" style="left: 432dp; top: 304dp; width: 169dp; height: 23dp; padding-top: 4dp; padding-left: 17dp;"><div class="box"/><span class="t">Vegetation Collision</span></div>
+    <div id="spevent-ChkRecordRace" game="ChkRecordRace" title="Check to record race as an Instant Replay file" class="check" style="left: 432dp; top: 328dp; width: 169dp; height: 23dp; padding-top: 4dp; padding-left: 17dp;"><div class="box"/><span class="t">Record race</span></div>
+  </div>
+
+  <!-- SPRINFO.DAT -->
+  <div id="d-sprinfo" class="dialog" game-dialog="sprinfo" style="left: 20dp; top: 35dp; width: 610dp; height: 355dp;">
+    <div id="sprinfo-TitleText" game="TitleText" class="text" style="left: 88dp; top: 35dp; width: 457dp; height: 25dp; font-size: 14dp; padding-top: 5dp; text-align: center;">Last Race Information</div>
+    <div id="sprinfo-rbwFrame1" game="rbwFrame1" class="plate" game-text="off" style="left: 88dp; top: 64dp; width: 456dp; height: 224dp;">
+      <div id="sprinfo-ButStats1" game="ButStats1" title="Displays results, including Best Lap Time &amp; Total Running Time, for all riders in the most recent race event" class="button" style="left: 8dp; top: 4dp; width: 136dp; height: 14dp;"></div>
+      <div id="sprinfo-ButStats2" game="ButStats2" title="Displays results, including Best Lap Time &amp; Total Running Time, for all riders in the most recent race event" class="button" style="left: 148dp; top: 4dp; width: 54dp; height: 14dp;"></div>
+      <div id="sprinfo-ButStats3" game="ButStats3" title="Displays results, including Best Lap Time &amp; Total Running Time, for all riders in the most recent race event" class="button" style="left: 203dp; top: 4dp; width: 136dp; height: 14dp;"></div>
+      <div id="sprinfo-ButStats4" game="ButStats4" title="Displays results, including Best Lap Time &amp; Total Running Time, for all riders in the most recent race event" class="button" style="left: 340dp; top: 4dp; width: 111dp; height: 14dp;"></div>
+      <div id="sprinfo-LstStats1" game="LstStats1" title="Displays results, including Best Lap Time &amp; Total Running Time, for all riders in the most recent race event" class="list" style="left: 8dp; top: 24dp; width: 137dp; height: 193dp; color: #7ab9fe;"></div>
+      <div id="sprinfo-LstStats2" game="LstStats2" title="Displays results, including Best Lap Time &amp; Total Running Time, for all riders in the most recent race event" class="list" style="left: 149dp; top: 24dp; width: 52dp; height: 193dp; color: #7ab9fe; text-align: center;"></div>
+      <div id="sprinfo-LstStats3" game="LstStats3" title="Displays results, including Best Lap Time &amp; Total Running Time, for all riders in the most recent race event" class="list" style="left: 205dp; top: 24dp; width: 129dp; height: 193dp; color: #7ab9fe; text-align: center;"></div>
+      <div id="sprinfo-LstStats4" game="LstStats4" title="Displays results, including Best Lap Time &amp; Total Running Time, for all riders in the most recent race event" class="list" style="left: 341dp; top: 24dp; width: 108dp; height: 193dp; color: #7ab9fe; text-align: center;"></div>
+    </div>
+    <div id="sprinfo-ButViewReplay" game="ButViewReplay" class="button" style="left: 424dp; top: 304dp; width: 117dp; height: 33dp; color: #7ab9fe; padding-top: 9dp; text-align: center;">View Replay</div>
+  </div>
+
+  <!-- SPBIKER.DAT -->
+  <div id="d-spbiker" class="dialog" game-dialog="spbiker" style="left: 20dp; top: 35dp; width: 610dp; height: 355dp;">
+    <div id="spbiker-TxtEngineSize" game="TxtEngineSize" class="text" style="left: 207dp; top: 1dp; width: 179dp; height: 14dp;">Custom Engine Size</div>
+    <select id="spbiker-DDLEngineSize" game="DDLEngineSize" class="dropdown" style="left: 206dp; top: 16dp; width: 178dp; height: 21dp; color: #7ab9fe;"></select>
+    <div id="spbiker-RiderLeft" game="RiderLeft" title="Click arrow to change clothing colors" class="button" style="left: 73dp; top: 44dp; width: 21dp; height: 21dp;"></div>
+    <select id="spbiker-DDLRiders" game="DDLRiders" title="Click arrow to change clothing colors" class="dropdown" style="left: 95dp; top: 44dp; width: 412dp; height: 21dp; color: #7ab9fe; text-align: center;"></select>
+    <div id="spbiker-RiderRight" game="RiderRight" title="Click arrow to change clothing colors" class="button" style="left: 508dp; top: 44dp; width: 21dp; height: 21dp;"></div>
+    <div id="spbiker-BikeLeft" game="BikeLeft" title="Click arrow to change bikes" class="button" style="left: 73dp; top: 290dp; width: 21dp; height: 21dp;"></div>
+    <select id="spbiker-DDLBikes" game="DDLBikes" title="Click arrow to change bikes" class="dropdown" style="left: 95dp; top: 290dp; width: 412dp; height: 21dp; color: #7ab9fe; text-align: center;"></select>
+    <div id="spbiker-BikeRight" game="BikeRight" title="Click arrow to change bikes" class="button" style="left: 508dp; top: 290dp; width: 21dp; height: 21dp;"></div>
+    <div id="spbiker-ButWrench" game="ButWrench" title="Click to display Garage screen, where you can tweak your bike's engine &amp; suspension" class="button" style="left: 296dp; top: 312dp; width: 99dp; height: 37dp;"></div>
+    <div id="spbiker-rbwLabel1" game="rbwLabel1" class="text" style="left: 88dp; top: 320dp; width: 145dp; height: 17dp; padding-top: 1dp; text-align: right;">Bike Plate #</div>
+    <input type="text" id="spbiker-EditPlateNumber" game="EditPlateNumber" title="Click and then type a bike plate number between 101-999 (1-100 are reserved for the Top 100 online players on the MSN Gaming Zone)" class="edit" maxlength="3" style="left: 240dp; top: 320dp; width: 33dp; height: 21dp; color: #7ab9fe;"/>
+    <div id="spbiker-ChkAutoRotate" game="ChkAutoRotate" title="Check to make bike &amp; rider spin" class="check" style="left: 416dp; top: 320dp; width: 129dp; height: 21dp; padding-top: 3dp; padding-left: 18dp;"><div class="box"/><span class="t">Auto Rotate</span></div>
+  </div>
+</div>
+</body>
+</rml>

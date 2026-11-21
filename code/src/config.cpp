@@ -85,6 +85,30 @@ const char* MenuIniPath() { return g_menu_ini; }
 
 int MenuOverride(const char* key, int value) { return ReadMenuInt(key, value); }
 
+bool ReadSetting(const char* key, std::string* out) {
+  char buf[512] = {};
+  if (g_menu_ini[0]) {
+    GetPrivateProfileStringA(g_menu_section, key, "\x01", buf, sizeof(buf), g_menu_ini);
+    if (std::strcmp(buf, "\x01") != 0) {
+      *out = buf;
+      return true;
+    }
+  }
+  if (g_game_ini[0]) {
+    GetPrivateProfileStringA(g_ini_section, key, "\x01", buf, sizeof(buf), g_game_ini);
+    if (std::strcmp(buf, "\x01") != 0) {
+      std::string v = buf;
+      // Values may carry a trailing ; comment.
+      const size_t c = v.find(';');
+      if (c != std::string::npos) v.erase(c);
+      while (!v.empty() && (v.back() == ' ' || v.back() == '\t')) v.pop_back();
+      *out = v;
+      return true;
+    }
+  }
+  return false;
+}
+
 const char* SetFromMenu(const char* key, int value) {
   if (!std::strcmp(key, "MotionBlur")) g_config.motion_blur = value != 0;
   else if (!std::strcmp(key, "VSync")) g_config.vsync = value != 0;
@@ -170,6 +194,12 @@ void LoadConfig() {
   g_config.alpha_cut = GetPrivateProfileIntA(sec, "AlphaCut", 128, ini);
   g_config.menu_log = GetPrivateProfileIntA(sec, "MenuLog", 0, ini) != 0;
   g_config.menu_flag = GetPrivateProfileIntA(sec, "MenuFlag", 1, ini) != 0;
+  g_config.menu_hires_3d = GetPrivateProfileIntA(sec, "MenuHiRes3D", 1, ini) != 0;
+  g_config.menu_max = GetPrivateProfileIntA(sec, "MenuMaX", 1, ini) != 0;
+  // (MaXOptions: its name in the first test builds.)
+  g_config.max_menus = GetPrivateProfileIntA(sec, "MaXMenus", GetPrivateProfileIntA(sec, "MaXOptions", 1, ini), ini) != 0;
+  g_config.menu_nav = GetPrivateProfileIntA(sec, "MenuNav", 1, ini) != 0;
+  g_config.zone_fix = GetPrivateProfileIntA(sec, "ZoneFix", 1, ini) != 0;
   {
     auto pct = [&](const char* key, int def, int hi) {
       const int v = static_cast<int>(GetPrivateProfileIntA(sec, key, def, ini));

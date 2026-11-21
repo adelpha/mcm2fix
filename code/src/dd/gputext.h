@@ -57,6 +57,12 @@ void GpuTextOccludeSprite(const void* native, const BlitParams& sprite);
 // Blend the overlay of `src` (if any) over r of the destination.
 void GpuTextComposite(const GpuTexture& src, ID3D11RenderTargetView* dst, IDirect3DSurface9* dst9, UINT dst_w,
                       UINT dst_h, const RECT& r);
+// The size an overlay for a bw x bh surface has (the window size it is shown
+// at, see FitSize). False when GPU text is off.
+bool GpuTextOverlaySize(UINT bw, UINT bh, UINT* ow, UINT* oh);
+// MenuHiRes3D: put r (surface pixels) of `src` (a texture of the overlay's
+// size, drawn at overlay resolution) into the overlay of `native`, opaque.
+bool GpuTextPut(const void* native, UINT bw, UINT bh, const GpuTexture& src, const RECT& r);
 // True once after an overlay that held text was remade at a new screen
 // scale (its text is gone until the game draws it again).
 bool GpuTextTakeRescaled();

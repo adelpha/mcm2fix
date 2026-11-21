@@ -1,0 +1,33 @@
+<rml>
+<head>
+  <title>careertrans</title>
+  <link type="text/rcss" href="menus.rcss"/>
+  <link type="text/rcss" href="careertrans.rcss"/>
+</head>
+<!--
+  A copy of the game's own careertrans (MaXMenus=1), drawn over it while the game
+  shows it. Made by tools/mcm2rml.py from the game's layouts, then edited by
+  hand. 1dp = one pixel of the game's 640x480 menus. See ..\README.txt.
+
+  game-dialogs     the game dialogs (layouts) this screen copies
+  game-opaque      it covers the whole menu (nothing under it is drawn)
+  game-dialog="x"  the part that copies the game's dialog x: shown while the
+                   game shows x, where the game put it
+  game="Name"      tied to the game's control of that name on that dialog
+  game-back        the control Esc / B / the right mouse button clicks
+-->
+<body game-dialogs="pctrans" game-opaque>
+<div id="screen">
+
+
+  <!-- PCTRANS.DAT -->
+  <div id="d-pctrans" class="dialog" game-dialog="pctrans" style="left: 0dp; top: 0dp; width: 640dp; height: 480dp;">
+    <div id="pctrans-TxtDescription" game="TxtDescription" class="text" style="left: 389dp; top: 55dp; width: 218dp; height: 304dp; color: #7ab9fe; white-space: normal;"></div>
+    <div id="pctrans-TitleText" game="TitleText" class="text" style="left: 31dp; top: 88dp; width: 329dp; height: 25dp; padding-top: 5dp; text-align: center;"></div>
+    <div id="pctrans-Pic" game="Pic" class="plate" game-text="off" style="left: 27dp; top: 117dp; width: 335dp; height: 246dp;"/>
+    <div id="pctrans-ButDecline" game="ButDecline" class="button" style="left: 184dp; top: 424dp; width: 117dp; height: 33dp; padding-top: 9dp; text-align: center;">Decline</div>
+    <div id="pctrans-ButAccept" game="ButAccept" class="button" style="left: 336dp; top: 424dp; width: 117dp; height: 33dp; padding-top: 9dp; text-align: center;">Accept</div>
+  </div>
+</div>
+</body>
+</rml>

@@ -1,5 +1,7 @@
 // MCM2MaX.dll (shipped as d3drm.dll): loaded by Mcm2.exe in place of d3drm.dll. Applies the
 // compatibility fixes to the game's code before its entry point runs.
+#include "menunav.h"
+#include "menugame.h"
 #include <windows.h>
 #include <cstdint>
 
@@ -7,6 +9,7 @@
 #include "simd.h"
 #include "patch.h"
 #include "music.h"
+#include "ui/ui.h"
 #include "prof.h"
 #include "video/player.h"
 #include "xp_compat.h"
@@ -28,6 +31,7 @@ void ApplyArrowFix();
 void ApplyRestartFixes();
 void ApplyHelpFix();
 void ApplyMenuOptions();
+void ApplyZoneFix();
 void ApplyTextureFixes();
 void ApplyPerfFixes();
 void ApplyGridFix();
@@ -106,6 +110,9 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved) {
       ApplySoundFixes();
       music::Apply();  // after the file fixes: chains their CreateFileA hook
       ApplyMenuOptions();  // chains the same CreateFileA hook
+      ApplyZoneFix();
+      ui::Install();       // MenuMaX screens
+      MenuNavInstall();    // keyboard / controllers on the game's own menus
       ApplyReverbFixes();
       ApplySortFixes();
       ApplyWalkFixes();

@@ -1,0 +1,67 @@
+<rml>
+<head>
+  <title>careerstart</title>
+  <link type="text/rcss" href="menus.rcss"/>
+  <link type="text/rcss" href="careerstart.rcss"/>
+</head>
+<!--
+  A copy of the game's own careerstart (MaXMenus=1), drawn over it while the game
+  shows it. Made by tools/mcm2rml.py from the game's layouts, then edited by
+  hand. 1dp = one pixel of the game's 640x480 menus. See ..\README.txt.
+
+  game-dialogs     the game dialogs (layouts) this screen copies
+  game-opaque      it covers the whole menu (nothing under it is drawn)
+  game-dialog="x"  the part that copies the game's dialog x: shown while the
+                   game shows x, where the game put it
+  game="Name"      tied to the game's control of that name on that dialog
+  game-back        the control Esc / B / the right mouse button clicks
+-->
+<body game-dialogs="pcstart" game-opaque game-back="Back">
+<div id="screen">
+
+
+  <!-- PCSTART.DAT -->
+  <div id="d-pcstart" class="dialog" game-dialog="pcstart" style="left: 0dp; top: 0dp; width: 640dp; height: 480dp;">
+    <div id="pcstart-rbwLabel3" game="rbwLabel3" class="text" style="left: 88dp; top: 16dp; width: 457dp; height: 17dp; padding-top: 1dp; text-align: center;">Pro-Circuit</div>
+    <div id="pcstart-rbwLabel4" game="rbwLabel4" class="text" style="left: 88dp; top: 40dp; width: 457dp; height: 41dp; white-space: normal; text-align: center;">Compete for points and cash as you build a pro riding career!</div>
+    <div id="pcstart-rbwLabel2" game="rbwLabel2" title="Displays summary info about current active Pro-Circuit profiles. To continue your Pro career, click Continue" class="text" style="left: 48dp; top: 85dp; width: 145dp; height: 17dp; padding-top: 1dp;">Active:</div>
+    <div id="pcstart-LstCurrent" game="LstCurrent" class="list" style="left: 48dp; top: 104dp; width: 546dp; height: 105dp; color: #ffffff; text-align: right;"></div>
+    <div id="pcstart-ButName" game="ButName" title="Displays summary info about current active Pro-Circuit profiles. To continue your Pro career, click Continue" class="button" style="left: 53dp; top: 104dp; width: 161dp; height: 17dp; color: #7ab9fe; padding-top: 1dp; text-align: center;">Name</div>
+    <div id="pcstart-ButRank" game="ButRank" title="Displays summary info about current active Pro-Circuit profiles. To continue your Pro career, click Continue" class="button" style="left: 216dp; top: 104dp; width: 41dp; height: 17dp; color: #7ab9fe; padding-top: 1dp; text-align: center;">Rank</div>
+    <div id="pcstart-ButClass" game="ButClass" title="Displays summary info about current active Pro-Circuit profiles. To continue your Pro career, click Continue" class="button" style="left: 264dp; top: 104dp; width: 46dp; height: 17dp; color: #7ab9fe; padding-top: 1dp; text-align: center;">Class</div>
+    <div id="pcstart-ButDiff" game="ButDiff" title="Displays summary info about current active Pro-Circuit profiles. To continue your Pro career, click Continue" class="button" style="left: 312dp; top: 104dp; width: 70dp; height: 17dp; color: #7ab9fe; padding-top: 1dp; text-align: center;">Difficulty</div>
+    <div id="pcstart-ButPoints" game="ButPoints" title="Displays summary info about current active Pro-Circuit profiles. To continue your Pro career, click Continue" class="button" style="left: 384dp; top: 104dp; width: 57dp; height: 17dp; color: #7ab9fe; padding-top: 1dp; text-align: center;">Points</div>
+    <div id="pcstart-ButCash" game="ButCash" title="Displays summary info about current active Pro-Circuit profiles. To continue your Pro career, click Continue" class="button" style="left: 444dp; top: 104dp; width: 73dp; height: 17dp; color: #7ab9fe; padding-top: 1dp; text-align: center;">Cash</div>
+    <div id="pcstart-LstName" game="LstName" title="Displays summary info about current active Pro-Circuit profiles. To continue your Pro career, click Continue" class="list" style="left: 52dp; top: 126dp; width: 163dp; height: 77dp; color: #7ab9fe;"></div>
+    <div id="pcstart-LstRank" game="LstRank" title="Displays summary info about current active Pro-Circuit profiles. To continue your Pro career, click Continue" class="list" style="left: 216dp; top: 126dp; width: 41dp; height: 77dp; color: #7ab9fe; text-align: center;"></div>
+    <div id="pcstart-LstClass" game="LstClass" title="Displays summary info about current active Pro-Circuit profiles. To continue your Pro career, click Continue" class="list" style="left: 264dp; top: 126dp; width: 46dp; height: 77dp; color: #7ab9fe; text-align: center;"></div>
+    <div id="pcstart-LstDiff" game="LstDiff" title="Displays summary info about current active Pro-Circuit profiles. To continue your Pro career, click Continue" class="list" style="left: 312dp; top: 126dp; width: 71dp; height: 77dp; color: #7ab9fe; text-align: center;"></div>
+    <div id="pcstart-LstPoints" game="LstPoints" title="Displays summary info about current active Pro-Circuit profiles. To continue your Pro career, click Continue" class="list" style="left: 384dp; top: 126dp; width: 57dp; height: 77dp; color: #7ab9fe; text-align: center;"></div>
+    <div id="pcstart-LstCash" game="LstCash" title="Displays summary info about current active Pro-Circuit profiles. To continue your Pro career, click Continue" class="list" style="left: 444dp; top: 126dp; width: 73dp; height: 77dp; color: #7ab9fe; text-align: right;"></div>
+    <input type="range" orientation="vertical" id="pcstart-rbwVertSlider2" game="rbwVertSlider2" class="slider vslider" style="left: 576dp; top: 132dp; width: 9dp; height: 67dp;"/>
+    <div id="pcstart-ButContinue" game="ButContinue" title="Click this to prepare for the next race in your Pro Circuit career" class="button" style="left: 352dp; top: 210dp; width: 117dp; height: 33dp; padding-top: 9dp; text-align: center;">Continue</div>
+    <div id="pcstart-ButDelete" game="ButDelete" title="Click this to delete the current active Pro-Circuit profile" class="button" style="left: 477dp; top: 210dp; width: 117dp; height: 33dp; padding-top: 9dp; text-align: center;">Delete</div>
+    <div id="pcstart-rbwLabel1" game="rbwLabel1" title="Lists completed and failed careers" class="text" style="left: 48dp; top: 237dp; width: 145dp; height: 17dp; padding-top: 1dp;">Inactive:</div>
+    <div id="pcstart-LstFinished" game="LstFinished" class="list" style="left: 48dp; top: 256dp; width: 546dp; height: 105dp; color: #ffffff; text-align: right;"></div>
+    <div id="pcstart-ButDoneName" game="ButDoneName" title="Displays summary info about current active Pro-Circuit profiles. To continue your Pro career, click Continue" class="button" style="left: 53dp; top: 256dp; width: 137dp; height: 17dp; color: #7ab9fe; padding-top: 1dp; text-align: center;">Name</div>
+    <div id="pcstart-ButDoneRank" game="ButDoneRank" title="Displays summary info about current active Pro-Circuit profiles. To continue your Pro career, click Continue" class="button" style="left: 194dp; top: 256dp; width: 41dp; height: 17dp; color: #7ab9fe; padding-top: 1dp; text-align: center;">Rank</div>
+    <div id="pcstart-ButDoneClass" game="ButDoneClass" title="Displays summary info about current active Pro-Circuit profiles. To continue your Pro career, click Continue" class="button" style="left: 238dp; top: 256dp; width: 46dp; height: 17dp; color: #7ab9fe; padding-top: 1dp; text-align: center;">Class</div>
+    <div id="pcstart-ButDoneDiff" game="ButDoneDiff" title="Displays summary info about current active Pro-Circuit profiles. To continue your Pro career, click Continue" class="button" style="left: 286dp; top: 256dp; width: 70dp; height: 17dp; color: #7ab9fe; padding-top: 1dp; text-align: center;">Difficulty</div>
+    <div id="pcstart-ButDonePoints" game="ButDonePoints" title="Lists completed and failed careers" class="button" style="left: 361dp; top: 256dp; width: 57dp; height: 17dp; color: #7ab9fe; padding-top: 1dp; text-align: center;">Points</div>
+    <div id="pcstart-ButDoneCash" game="ButDoneCash" title="Lists completed and failed careers" class="button" style="left: 421dp; top: 256dp; width: 73dp; height: 17dp; color: #7ab9fe; padding-top: 1dp; text-align: center;">Cash</div>
+    <div id="pcstart-ButDoneStatus" game="ButDoneStatus" title="Lists completed and failed careers" class="button" style="left: 496dp; top: 256dp; width: 73dp; height: 17dp; color: #7ab9fe; padding-top: 1dp; text-align: center;">Status</div>
+    <div id="pcstart-LstDoneName" game="LstDoneName" title="Displays summary info about current active Pro-Circuit profiles. To continue your Pro career, click Continue" class="list" style="left: 52dp; top: 278dp; width: 139dp; height: 77dp; color: #7ab9fe;"></div>
+    <div id="pcstart-LstDoneRank" game="LstDoneRank" title="Displays summary info about current active Pro-Circuit profiles. To continue your Pro career, click Continue" class="list" style="left: 194dp; top: 278dp; width: 41dp; height: 77dp; color: #7ab9fe; text-align: center;"></div>
+    <div id="pcstart-LstDoneClass" game="LstDoneClass" title="Displays summary info about current active Pro-Circuit profiles. To continue your Pro career, click Continue" class="list" style="left: 238dp; top: 278dp; width: 46dp; height: 77dp; color: #7ab9fe; text-align: center;"></div>
+    <div id="pcstart-LstDoneDiff" game="LstDoneDiff" title="Displays summary info about current active Pro-Circuit profiles. To continue your Pro career, click Continue" class="list" style="left: 286dp; top: 278dp; width: 71dp; height: 77dp; color: #7ab9fe; text-align: center;"></div>
+    <div id="pcstart-LstDonePoints" game="LstDonePoints" title="Lists completed and failed careers" class="list" style="left: 359dp; top: 278dp; width: 57dp; height: 77dp; color: #7ab9fe; text-align: center;"></div>
+    <div id="pcstart-LstDoneCash" game="LstDoneCash" title="Lists completed and failed careers" class="list" style="left: 420dp; top: 278dp; width: 73dp; height: 77dp; color: #7ab9fe; text-align: right;"></div>
+    <div id="pcstart-LstDoneStatus" game="LstDoneStatus" title="Lists completed and failed careers" class="list" style="left: 496dp; top: 278dp; width: 72dp; height: 77dp; color: #7ab9fe;"></div>
+    <input type="range" orientation="vertical" id="pcstart-rbwVertSlider1" game="rbwVertSlider1" class="slider vslider" style="left: 576dp; top: 284dp; width: 9dp; height: 67dp;"/>
+    <div id="pcstart-ButDoneDelete" game="ButDoneDelete" title="Click this to delete the current inactive Pro-Circuit profile" class="button" style="left: 477dp; top: 362dp; width: 117dp; height: 33dp; padding-top: 9dp; text-align: center;">Delete</div>
+    <div id="pcstart-Back" game="Back" title="Return to main menu" class="button" style="left: 17dp; top: 404dp; width: 79dp; height: 76dp;"></div>
+    <div id="pcstart-ButNew" game="ButNew" title="Click this to create a new Pro-Circuit profile" class="button" style="left: 477dp; top: 416dp; width: 117dp; height: 33dp; padding-top: 9dp; text-align: center;">New Circuit...</div>
+  </div>
+</div>
+</body>
+</rml>

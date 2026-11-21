@@ -1,0 +1,19 @@
+/* optadvg.rml: each control's own pictures (from the game's layouts). Made by tools/mcm2rml.py. */
+#d-optadvg { decorator: image(/dat/OPTADVG/Options/AdvancedGraphics/AGBackGround.tga); }
+#optadvg-UnusedGraphicsSlideBox { decorator: image(/dat/OPTADVG/Options/AdvancedGraphics/AGPlate02.tga); }
+#optadvg-SldEcosystem slidertrack { decorator: image(/dat/OPTADVG/Options/AdvancedGraphics/AGHorizontalSlider01.tga); }
+#optadvg-SldEcosystem sliderbar { width: 8dp; height: 15dp; margin-top: 0dp; decorator: image(/dat/OPTADVG/Options/AdvancedGraphics/AGSmallHSliderUp.tga); }
+#optadvg-SldObjects slidertrack { decorator: image(/dat/OPTADVG/Options/AdvancedGraphics/AGHorizontalSlider01.tga); }
+#optadvg-SldObjects sliderbar { width: 8dp; height: 15dp; margin-top: 0dp; decorator: image(/dat/OPTADVG/Options/AdvancedGraphics/AGSmallHSliderUp.tga); }
+#optadvg-SldTerrain slidertrack { decorator: image(/dat/OPTADVG/Options/AdvancedGraphics/AGHorizontalSlider01.tga); }
+#optadvg-SldTerrain sliderbar { width: 8dp; height: 15dp; margin-top: 0dp; decorator: image(/dat/OPTADVG/Options/AdvancedGraphics/AGSmallHSliderUp.tga); }
+#optadvg-SldVisibility slidertrack { decorator: image(/dat/OPTADVG/Options/AdvancedGraphics/AGHorizontalSlider01.tga); }
+#optadvg-SldVisibility sliderbar { width: 8dp; height: 15dp; margin-top: 0dp; decorator: image(/dat/OPTADVG/Options/AdvancedGraphics/AGSmallHSliderUp.tga); }
+#optadvg-CardSelectionBox { decorator: image(/dat/OPTADVG/Options/AdvancedGraphics/AGPlate01.tga); }
+#optadvg-Txt3DCard { decorator: image(/dat/OPTADVG/Options/AdvancedGraphics/AGDropDown01.tga); }
+#optadvg-Back { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackUp.tga); }
+#optadvg-Back:hover, #optadvg-Back:focus-visible { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackLit.tga); }
+#optadvg-Back:active { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackDown.tga); }
+#optadvg-Help { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2HelpUp.tga); }
+#optadvg-Help:hover, #optadvg-Help:focus-visible { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2HelpLit.tga); }
+#optadvg-Help:active { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2HelpDown.tga); }

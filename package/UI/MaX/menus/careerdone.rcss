@@ -1,0 +1,5 @@
+/* careerdone.rml: each control's own pictures (from the game's layouts). Made by tools/mcm2rml.py. */
+#d-pcdone { decorator: image(/dat/PCDONE/ProCircuitScreens/PCFailed/PCFailBG.tga); }
+#pcdone-Back { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackUp.tga); }
+#pcdone-Back:hover, #pcdone-Back:focus-visible { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackLit.tga); }
+#pcdone-Back:active { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackDown.tga); }

@@ -1,0 +1,6 @@
+/* serial.rml: each control's own pictures (from the game's layouts). Made by tools/mcm2rml.py. */
+#d-serpopup { decorator: image(/dat/SERPOPUP/SerialPopUp/SerialPopBG.tga); }
+#serpopup-ButOk { decorator: image(/dat/SERPOPUP/SerialPopUp/SPopButUp.tga); }
+#serpopup-ButOk:active { decorator: image(/dat/SERPOPUP/SerialPopUp/SPopButDown.tga); }
+#serpopup-ButCancel { decorator: image(/dat/SERPOPUP/SerialPopUp/SPopButUp.tga); }
+#serpopup-ButCancel:active { decorator: image(/dat/SERPOPUP/SerialPopUp/SPopButDown.tga); }

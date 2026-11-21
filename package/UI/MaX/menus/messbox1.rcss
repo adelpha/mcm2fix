@@ -1,0 +1,8 @@
+/* messbox1.rml: each control's own pictures (from the game's layouts). Made by tools/mcm2rml.py. */
+#d-messbox1 { decorator: image(/dat/MESSBOX1/MessageBox01/Message01BG.tga); }
+#messbox1-OKButton { decorator: image(/dat/MESSBOX1/MessageBox01/MsgBx01Bttn01Up.tga); }
+#messbox1-OKButton:active { decorator: image(/dat/MESSBOX1/MessageBox01/MsgBx01Bttn01Down.tga); }
+#messbox1-OKButton.disabled { decorator: image(/dat/MESSBOX1/MessageBox01/MsgBx01Bttn01Up.tga); }
+#messbox1-CancelButton { decorator: image(/dat/MESSBOX1/MessageBox01/MBx01Bttn02Up.tga); }
+#messbox1-CancelButton:active { decorator: image(/dat/MESSBOX1/MessageBox01/MBx01Bttn02Down.tga); }
+#messbox1-CancelButton.disabled { decorator: image(/dat/MESSBOX1/MessageBox01/MBx01Bttn02Up.tga); }

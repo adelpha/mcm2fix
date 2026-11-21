@@ -1,0 +1,15 @@
+/* hostjoin.rml: each control's own pictures (from the game's layouts). Made by tools/mcm2rml.py. */
+#d-hostjoin { decorator: image(/dat/HOSTJOIN/HostJoinPopUp/HostJoinBG.tga); }
+#hostjoin-ButHost { decorator: image(/dat/HOSTJOIN/HostJoinPopUp/HostUp.tga); }
+#hostjoin-ButHost:active { decorator: image(/dat/HOSTJOIN/HostJoinPopUp/HostDown.tga); }
+#hostjoin-SessionUp { decorator: image(/dat/HOSTJOIN/HostJoinPopUp/HJUpUp.tga); }
+#hostjoin-SessionUp:hover, #hostjoin-SessionUp:focus-visible { decorator: image(/dat/HOSTJOIN/HostJoinPopUp/HJUpLit.tga); }
+#hostjoin-SessionUp:active { decorator: image(/dat/HOSTJOIN/HostJoinPopUp/HJUpDown.tga); }
+#hostjoin-ButJoin { decorator: image(/dat/HOSTJOIN/HostJoinPopUp/JoinUp.tga); }
+#hostjoin-ButJoin:active { decorator: image(/dat/HOSTJOIN/HostJoinPopUp/JoinDown.tga); }
+#hostjoin-ScrollSessions sliderbar { width: 8dp; height: 7dp; margin-left: 2dp; decorator: image(/dat/HOSTJOIN/HostJoinPopUp/HJThumb.tga); }
+#hostjoin-ButCancel { decorator: image(/dat/HOSTJOIN/HostJoinPopUp/CancelUp.tga); }
+#hostjoin-ButCancel:active { decorator: image(/dat/HOSTJOIN/HostJoinPopUp/CancelDown.tga); }
+#hostjoin-SessionDown { decorator: image(/dat/HOSTJOIN/HostJoinPopUp/HJDownUp.tga); }
+#hostjoin-SessionDown:hover, #hostjoin-SessionDown:focus-visible { decorator: image(/dat/HOSTJOIN/HostJoinPopUp/HJDownLit.tga); }
+#hostjoin-SessionDown:active { decorator: image(/dat/HOSTJOIN/HostJoinPopUp/HJDownDown.tga); }

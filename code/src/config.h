@@ -1,6 +1,7 @@
 // Settings from mcm2max.ini next to the exe (all optional; see README.md).
 #pragma once
 #include <cstdint>
+#include <string>
 
 struct Config {
   bool one_core = false;      // OneCore: pin the game to one CPU core (old stopgap)
@@ -157,6 +158,11 @@ struct Config {
   bool texture_log = false;         // TextureLog: log the format of each texture the game creates
   bool menu_options = true;   // MenuOptions: MCM2MaX settings added to the game's own Options pages (menus.cpp)
   bool menu_log = false;      // MenuLog: log every event on the pages MCM2MaX adds settings to
+  bool menu_max = true;       // MenuMaX: new menu screens drawn with RmlUi from UI/MaX/ (ui/ui.cpp)
+  bool max_menus = true;      // MaXMenus: the game's menus drawn by MenuMaX (UI/MaX/menus/*.rml) over the game's own
+  bool zone_fix = true;       // ZoneFix: Multiplayer's MSN Gaming Zone button greyed out and does nothing (it crashed / quit the game)
+  bool menu_nav = true;       // MenuNav: keyboard / controllers drive the game's own menus (menunav.cpp)
+  bool menu_hires_3d = true;  // MenuHiRes3D: 3D in the menus (garage bike) drawn at window resolution (dd/hires3d.cpp)
   bool menu_flag = true;      // MenuFlag: waving flag behind the main menu, under MenuBackground (dd/menubg.cpp)
   int menu_flag_speed = 100;       // MenuFlagSpeed: % of the default movement speed
   int menu_flag_brightness = 68;   // MenuFlagBrightness: % (100 = preview-5 colours)
@@ -211,3 +217,6 @@ void ResolutionPickNow(uintptr_t dropdown);
 void ResolutionFillDropdown(uintptr_t dropdown);
 // A value read from mcm2max.ini, replaced by the menus' choice if there is one.
 int MenuOverride(const char* key, int value);
+// A setting's text as saved: the menus' file first, then mcm2max.ini (any
+// trailing ; comment cut). False if neither has the key.
+bool ReadSetting(const char* key, std::string* out);

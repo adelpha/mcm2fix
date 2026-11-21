@@ -50,6 +50,9 @@ cp "$ROOT"/package/SOUNDS/*.wav "$STAGE/SOUNDS/"
 # game's own menu art with the backdrop cut out, read from the game folder.
 mkdir -p "$STAGE/UI/MAINMENU/01_MAIN"
 cp "$ROOT/package/UI/MAINMENU/01_MAIN/BackGround_01.png" "$STAGE/UI/MAINMENU/01_MAIN/"
+# MenuMaX screens (RmlUi .rml/.rcss text files, pictures, fonts).
+cp -r "$ROOT/package/UI/MaX" "$STAGE/UI/"
+sed -i 's/$/\r/' "$STAGE/UI/MaX/README.txt"
 
 if [ -n "$HLP" ]; then
   python3 "$ROOT/tools/hlp2html.py" "$HLP" "$STAGE/MCM2HELP.html"

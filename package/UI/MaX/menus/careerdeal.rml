@@ -1,0 +1,43 @@
+<rml>
+<head>
+  <title>careerdeal</title>
+  <link type="text/rcss" href="menus.rcss"/>
+  <link type="text/rcss" href="careerdeal.rcss"/>
+</head>
+<!--
+  A copy of the game's own careerdeal (MaXMenus=1), drawn over it while the game
+  shows it. Made by tools/mcm2rml.py from the game's layouts, then edited by
+  hand. 1dp = one pixel of the game's 640x480 menus. See ..\README.txt.
+
+  game-dialogs     the game dialogs (layouts) this screen copies
+  game-opaque      it covers the whole menu (nothing under it is drawn)
+  game-dialog="x"  the part that copies the game's dialog x: shown while the
+                   game shows x, where the game put it
+  game="Name"      tied to the game's control of that name on that dialog
+  game-back        the control Esc / B / the right mouse button clicks
+-->
+<body game-dialogs="pcdeal" game-opaque game-back="Back">
+<div id="screen">
+
+
+  <!-- PCDEAL.DAT -->
+  <div id="d-pcdeal" class="dialog" game-dialog="pcdeal" style="left: 0dp; top: 0dp; width: 640dp; height: 480dp;">
+    <div id="pcdeal-TitleText" game="TitleText" class="text" style="left: 32dp; top: 21dp; width: 577dp; height: 25dp; padding-top: 5dp; text-align: center;"></div>
+    <div id="pcdeal-TxtDescription" game="TxtDescription" class="text" style="left: 48dp; top: 48dp; width: 550dp; height: 224dp; color: #7ab9fe; white-space: normal; padding-left: 8dp;"></div>
+    <div id="pcdeal-TxtItem1" game="TxtItem1" class="text" style="left: 72dp; top: 278dp; width: 233dp; height: 17dp; padding-top: 1dp; text-align: right;"></div>
+    <div id="pcdeal-Item1" game="Item1" class="text" style="left: 312dp; top: 278dp; width: 113dp; height: 17dp; padding-top: 1dp; text-align: right;"></div>
+    <div id="pcdeal-TxtItem2" game="TxtItem2" class="text" style="left: 72dp; top: 302dp; width: 233dp; height: 17dp; padding-top: 1dp; text-align: right;"></div>
+    <div id="pcdeal-Item2" game="Item2" class="text" style="left: 312dp; top: 302dp; width: 113dp; height: 17dp; padding-top: 1dp; text-align: right;"></div>
+    <div id="pcdeal-TxtItem3" game="TxtItem3" class="text" style="left: 72dp; top: 326dp; width: 233dp; height: 17dp; padding-top: 1dp; text-align: right;"></div>
+    <div id="pcdeal-Item3" game="Item3" class="text" style="left: 312dp; top: 326dp; width: 113dp; height: 17dp; padding-top: 1dp; text-align: right;"></div>
+    <div id="pcdeal-TxtItem4" game="TxtItem4" class="text" style="left: 72dp; top: 350dp; width: 233dp; height: 17dp; padding-top: 1dp; text-align: right;"></div>
+    <div id="pcdeal-Item4" game="Item4" class="text" style="left: 312dp; top: 350dp; width: 113dp; height: 17dp; padding-top: 1dp; text-align: right;"></div>
+    <div id="pcdeal-TxtItem5" game="TxtItem5" class="text" style="left: 72dp; top: 374dp; width: 233dp; height: 17dp; padding-top: 1dp; text-align: right;"></div>
+    <div id="pcdeal-Item5" game="Item5" class="text" style="left: 312dp; top: 374dp; width: 113dp; height: 17dp; padding-top: 1dp; text-align: right;"></div>
+    <div id="pcdeal-Back" game="Back" title="Return To Previous Screen" class="button" style="left: 16dp; top: 404dp; width: 79dp; height: 76dp;"></div>
+    <div id="pcdeal-ButDecline" game="ButDecline" class="button" style="left: 128dp; top: 416dp; width: 117dp; height: 33dp; color: #7ab9fe; padding-top: 9dp; text-align: center;">Decline</div>
+    <div id="pcdeal-ButAccept" game="ButAccept" class="button" style="left: 400dp; top: 416dp; width: 117dp; height: 33dp; color: #7ab9fe; padding-top: 9dp; text-align: center;">Accept</div>
+  </div>
+</div>
+</body>
+</rml>

@@ -110,6 +110,15 @@ stb_image_write by Sean Barrett (public domain).
 Controllers are read with SDL 3 (https://libsdl.org), (c) Sam Lantinga,
 under the zlib licence (see licenses\SDL3-zlib.txt).
 
+The menu screens in UI\MaX (MenuMaX) are drawn with RmlUi
+(https://github.com/mikke89/RmlUi), (c) CodePoint Ltd, Shift Technology
+Ltd, The RmlUi Team and contributors, under the MIT licence (see
+licenses\RmlUi-MIT.txt). Its text uses FreeType: portions of this software
+are copyright (c) 2024 The FreeType Project (https://freetype.org). All
+rights reserved. (FreeType License, see licenses\FreeType-FTL.txt.) The
+Lato fonts in UI\MaX\fonts are (c) Lukasz Dziedzic, under the SIL Open
+Font License 1.1 (see licenses\Lato-OFL.txt).
+
 The HUD fonts in FONTS are Contrail One (c) 2011 Sorkin Type Co and DSEG7
 Classic (c) 2017 keshikan, both under the SIL Open Font License 1.1 (see
 licenses\ContrailOne-OFL.txt and licenses\DSEG-OFL.txt).

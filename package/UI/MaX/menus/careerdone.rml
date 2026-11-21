@@ -1,0 +1,31 @@
+<rml>
+<head>
+  <title>careerdone</title>
+  <link type="text/rcss" href="menus.rcss"/>
+  <link type="text/rcss" href="careerdone.rcss"/>
+</head>
+<!--
+  A copy of the game's own careerdone (MaXMenus=1), drawn over it while the game
+  shows it. Made by tools/mcm2rml.py from the game's layouts, then edited by
+  hand. 1dp = one pixel of the game's 640x480 menus. See ..\README.txt.
+
+  game-dialogs     the game dialogs (layouts) this screen copies
+  game-opaque      it covers the whole menu (nothing under it is drawn)
+  game-dialog="x"  the part that copies the game's dialog x: shown while the
+                   game shows x, where the game put it
+  game="Name"      tied to the game's control of that name on that dialog
+  game-back        the control Esc / B / the right mouse button clicks
+-->
+<body game-dialogs="pcdone" game-opaque game-back="Back">
+<div id="screen">
+
+
+  <!-- PCDONE.DAT -->
+  <div id="d-pcdone" class="dialog" game-dialog="pcdone" style="left: 0dp; top: 0dp; width: 640dp; height: 480dp;">
+    <div id="pcdone-rbwLabel1" game="rbwLabel1" class="text" style="left: 32dp; top: 24dp; width: 577dp; height: 25dp; padding-top: 5dp; text-align: center;"></div>
+    <div id="pcdone-rbwLabel2" game="rbwLabel2" class="text" style="left: 88dp; top: 72dp; width: 449dp; height: 169dp; white-space: normal; text-align: center;"></div>
+    <div id="pcdone-Back" game="Back" title="Return To Previous Screen" class="button" style="left: 16dp; top: 404dp; width: 79dp; height: 76dp;"></div>
+  </div>
+</div>
+</body>
+</rml>

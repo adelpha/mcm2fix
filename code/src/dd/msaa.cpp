@@ -1,5 +1,6 @@
 #include "backend9.h"
 #include "msaa.h"
+#include "hires3d.h"
 
 #include "../config.h"
 
@@ -181,6 +182,7 @@ void MsaaMarkDrawn() {
 }
 
 void MsaaRelease(const void* tex) {
+  Hi3dRelease(tex);  // MenuHiRes3D: its window-sized 3D goes into the overlay first
   if (!tex || tex != g.owner) return;
   if (g.dirty && g.color)
     B().ctx->ResolveSubresource(static_cast<ID3D11Texture2D*>(const_cast<void*>(g.owner)), 0,

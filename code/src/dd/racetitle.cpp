@@ -13,6 +13,7 @@
 #include "../patch.h"
 #include "backend.h"
 #include "gpushadow.h"
+#include "hires3d.h"
 #include "gdihook.h"
 #include "gputext.h"
 #include "hudtext.h"
@@ -269,6 +270,7 @@ void __fastcall CountdownInitHook(uintptr_t race, void* edx) {
   reinterpret_cast<InitFn>(kCountdownInit)(race, edx);
   if (GetConfig().race_title || GetConfig().announcer) Start(race);
   music::RaceStart(race);
+  Hi3dRaceLive(true);
   ::RaceAlive(race);  // MenuFpsCap
 }
 
@@ -294,6 +296,7 @@ void __fastcall RaceDtorHook(uintptr_t race, void* edx) {
   music::RaceEnd(race);
   ::RaceGone(race);  // MenuFpsCap
   ShadowRaceGone(race);
+  Hi3dRaceLive(false);
   reinterpret_cast<InitFn>(kRaceDtor)(race, edx);
 }
 
@@ -550,8 +553,8 @@ void InstallRaceTitleHooks() {
   const Config& c = GetConfig();
   if (!c.race_title && !c.announcer) {
     Log("race title: off (RaceTitle=0, Announcer=0), the game's corner text stays");
-    if (music::Enabled() || c.rider_shadows > 0 || c.menu_fps_cap > 0) {
-      // Music, the GPU rider shadows and MenuFpsCap still need to know when races start and end.
+    if (music::Enabled() || c.rider_shadows > 0 || c.menu_fps_cap > 0 || c.menu_hires_3d) {
+      // Music, the GPU rider shadows, MenuFpsCap and MenuHiRes3D still need to know when races start and end.
       int calls = 0;
       for (uintptr_t site : kCountdownCalls)
         calls += PatchCall(site, kCountdownInit, reinterpret_cast<const void*>(&CountdownInitHook)) ? 1 : 0;

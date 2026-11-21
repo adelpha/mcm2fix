@@ -1,0 +1,72 @@
+/* mainmenu.rml: each control's own pictures (from the game's layouts). Made by tools/mcm2rml.py. */
+#mainmenu-MenuSingle { decorator: image(/dat/MAINMENU/01_Main/SingleUp.tga); }
+#mainmenu-MenuSingle:hover, #mainmenu-MenuSingle:focus-visible { decorator: image(/dat/MAINMENU/01_Main/SingleLit.tga); }
+#mainmenu-MenuSingle:active { decorator: image(/dat/MAINMENU/01_Main/SingleDown.tga); }
+#mainmenu-MenuSingle.disabled { decorator: image(/dat/MAINMENU/01_Main/SingleGrey.tga); }
+#mainmenu-MenuMulti { decorator: image(/dat/MAINMENU/01_Main/MultiUp.tga); }
+#mainmenu-MenuMulti:hover, #mainmenu-MenuMulti:focus-visible { decorator: image(/dat/MAINMENU/01_Main/MultiLit.tga); }
+#mainmenu-MenuMulti:active { decorator: image(/dat/MAINMENU/01_Main/MultiDown.tga); }
+#mainmenu-MenuMulti.disabled { decorator: image(/dat/MAINMENU/01_Main/MultiGrey.tga); }
+#mainmenu-MenuOptions { decorator: image(/dat/MAINMENU/01_Main/MenuOptionsUp.tga); }
+#mainmenu-MenuOptions:hover, #mainmenu-MenuOptions:focus-visible { decorator: image(/dat/MAINMENU/01_Main/MenuOptionsLit.tga); }
+#mainmenu-MenuOptions:active { decorator: image(/dat/MAINMENU/01_Main/MenuOptionsDown.tga); }
+#mainmenu-MenuOptions.disabled { decorator: image(/dat/MAINMENU/01_Main/MenuOptionsGrey.tga); }
+#mainmenu-MenuUserProfile { decorator: image(/dat/MAINMENU/01_Main/ProfileUp.tga); }
+#mainmenu-MenuUserProfile:hover, #mainmenu-MenuUserProfile:focus-visible { decorator: image(/dat/MAINMENU/01_Main/ProfileLit.tga); }
+#mainmenu-MenuUserProfile:active { decorator: image(/dat/MAINMENU/01_Main/ProfileDown.tga); }
+#mainmenu-MenuUserProfile.disabled { decorator: image(/dat/MAINMENU/01_Main/ProfileGrey.tga); }
+#mainmenu-MenuHighScore { decorator: image(/dat/MAINMENU/01_Main/HighScoreUp.tga); }
+#mainmenu-MenuHighScore:hover, #mainmenu-MenuHighScore:focus-visible { decorator: image(/dat/MAINMENU/01_Main/HighScoreLit.tga); }
+#mainmenu-MenuHighScore:active { decorator: image(/dat/MAINMENU/01_Main/HighScoreDown.tga); }
+#mainmenu-MenuHighScore.disabled { decorator: image(/dat/MAINMENU/01_Main/HighScoreGrey.tga); }
+#mainmenu-MenuHelp { decorator: image(/dat/MAINMENU/01_Main/MenuHelpUp.tga); }
+#mainmenu-MenuHelp:hover, #mainmenu-MenuHelp:focus-visible { decorator: image(/dat/MAINMENU/01_Main/MenuHelpLit.tga); }
+#mainmenu-MenuHelp:active { decorator: image(/dat/MAINMENU/01_Main/MenuHelpDown.tga); }
+#mainmenu-MenuHelp.disabled { decorator: image(/dat/MAINMENU/01_Main/MenuHelpGrey.tga); }
+#mainmenu-MenuReplay { decorator: image(/dat/MAINMENU/01_Main/ReplayUp.tga); }
+#mainmenu-MenuReplay:hover, #mainmenu-MenuReplay:focus-visible { decorator: image(/dat/MAINMENU/01_Main/ReplayLit.tga); }
+#mainmenu-MenuReplay:active { decorator: image(/dat/MAINMENU/01_Main/ReplayDown.tga); }
+#mainmenu-MenuReplay.disabled { decorator: image(/dat/MAINMENU/01_Main/ReplayGrey.tga); }
+#mainmenu-MenuCredits { decorator: image(/dat/MAINMENU/01_Main/CreditsUp.tga); }
+#mainmenu-MenuCredits:hover, #mainmenu-MenuCredits:focus-visible { decorator: image(/dat/MAINMENU/01_Main/CreditsLit.tga); }
+#mainmenu-MenuCredits:active { decorator: image(/dat/MAINMENU/01_Main/CreditsDown.tga); }
+#mainmenu-MenuCredits.disabled { decorator: image(/dat/MAINMENU/01_Main/CreditsGrey.tga); }
+#mainmenu-Menuexit { decorator: image(/dat/MAINMENU/01_Main/ExitUp.tga); }
+#mainmenu-Menuexit:hover, #mainmenu-Menuexit:focus-visible { decorator: image(/dat/MAINMENU/01_Main/ExitLit.tga); }
+#mainmenu-Menuexit:active { decorator: image(/dat/MAINMENU/01_Main/ExitDown.tga); }
+#mainmenu-Menuexit.disabled { decorator: image(/dat/MAINMENU/01_Main/ExitGrey.tga); }
+#mainmenu-MenuSingleAnimation { decorator: image(/dat/GLOBAL/01_Main/SinglePullDown0015.tga); }
+#mainmenu-ScreenOverCtl { decorator: image(/dat/MAINMENU/01_Main/screenover.tga); }
+#mainmenu-MenuMultiAnimation { decorator: image(/dat/GLOBAL/01_Main/MultiPullDown0015.tga); }
+#mainmenu-ButTCP { decorator: image(/dat/MAINMENU/01_Main/TCPUp.tga); }
+#mainmenu-ButTCP:hover, #mainmenu-ButTCP:focus-visible { decorator: image(/dat/MAINMENU/01_Main/TCPLit.tga); }
+#mainmenu-ButTCP:active { decorator: image(/dat/MAINMENU/01_Main/TCPDown.tga); }
+#mainmenu-ButIPX { decorator: image(/dat/MAINMENU/01_Main/IPXUp.tga); }
+#mainmenu-ButIPX:hover, #mainmenu-ButIPX:focus-visible { decorator: image(/dat/MAINMENU/01_Main/IPXLit.tga); }
+#mainmenu-ButIPX:active { decorator: image(/dat/MAINMENU/01_Main/IPXDown.tga); }
+#mainmenu-ButZone { decorator: image(/dat/MAINMENU/01_Main/ZoneUp.tga); }
+#mainmenu-ButZone:hover, #mainmenu-ButZone:focus-visible { decorator: image(/dat/MAINMENU/01_Main/ZoneLit.tga); }
+#mainmenu-ButZone:active { decorator: image(/dat/MAINMENU/01_Main/ZoneDown.tga); }
+#mainmenu-ButCable { decorator: image(/dat/MAINMENU/01_Main/CableUp.tga); }
+#mainmenu-ButCable:hover, #mainmenu-ButCable:focus-visible { decorator: image(/dat/MAINMENU/01_Main/CableLit.tga); }
+#mainmenu-ButCable:active { decorator: image(/dat/MAINMENU/01_Main/CableDown.tga); }
+#mainmenu-ButModem { decorator: image(/dat/MAINMENU/01_Main/ModemUp.tga); }
+#mainmenu-ButModem:hover, #mainmenu-ButModem:focus-visible { decorator: image(/dat/MAINMENU/01_Main/ModemLit.tga); }
+#mainmenu-ButModem:active { decorator: image(/dat/MAINMENU/01_Main/ModemDown.tga); }
+#mainmenu-MenuUserAnimation { decorator: image(/dat/GLOBAL/01_Main/UserPullDown0015.tga); }
+#mainmenu-ProfileScrollUp { decorator: image(/dat/MAINMENU/01_Main/UserUpUp.tga); }
+#mainmenu-ProfileScrollUp:hover, #mainmenu-ProfileScrollUp:focus-visible { decorator: image(/dat/MAINMENU/01_Main/UserUpLit.tga); }
+#mainmenu-ProfileScrollUp:active { decorator: image(/dat/MAINMENU/01_Main/UserUpDown.tga); }
+#mainmenu-ButNewProfile { decorator: image(/dat/MAINMENU/01_Main/UserButton01Up.tga); }
+#mainmenu-ButNewProfile:active { decorator: image(/dat/MAINMENU/01_Main/UserButton01Down.tga); }
+#mainmenu-SldProfile slidertrack { decorator: image(/dat/MAINMENU/01_Main/UserScrollBar.tga); }
+#mainmenu-SldProfile sliderbar { width: 8dp; height: 7dp; margin-left: 6dp; decorator: image(/dat/MAINMENU/01_Main/UserThumb.tga); }
+#mainmenu-ButLoadProfile { decorator: image(/dat/MAINMENU/01_Main/UserButton02Up.tga); }
+#mainmenu-ButLoadProfile:active { decorator: image(/dat/MAINMENU/01_Main/UserButton02Down.tga); }
+#mainmenu-ButRemoveProfile { decorator: image(/dat/MAINMENU/01_Main/UserButton03Up.tga); }
+#mainmenu-ButRemoveProfile:active { decorator: image(/dat/MAINMENU/01_Main/UserButton03Down.tga); }
+#mainmenu-ButCancelProfile { decorator: image(/dat/MAINMENU/01_Main/UserButton04Up.tga); }
+#mainmenu-ButCancelProfile:active { decorator: image(/dat/MAINMENU/01_Main/UserButton04Down.tga); }
+#mainmenu-ProfileScrollDown { decorator: image(/dat/MAINMENU/01_Main/UserDownUp.tga); }
+#mainmenu-ProfileScrollDown:hover, #mainmenu-ProfileScrollDown:focus-visible { decorator: image(/dat/MAINMENU/01_Main/UserDownLit.tga); }
+#mainmenu-ProfileScrollDown:active { decorator: image(/dat/MAINMENU/01_Main/UserDownDown.tga); }

@@ -1,0 +1,14 @@
+/* messbox3.rml: each control's own pictures (from the game's layouts). Made by tools/mcm2rml.py. */
+#d-messbox3 { decorator: image(/dat/MESSBOX3/MessageBox03/Message03BG.tga); }
+#messbox3-But1 { decorator: image(/dat/MESSBOX3/MessageBox03/MsgBx03Bttn01Up.tga); }
+#messbox3-But1:active { decorator: image(/dat/MESSBOX3/MessageBox03/MsgBx03Bttn01Down.tga); }
+#messbox3-But1.disabled { decorator: image(/dat/MESSBOX3/MessageBox03/MsgBx03Bttn01Up.tga); }
+#messbox3-But2 { decorator: image(/dat/MESSBOX3/MessageBox03/MsgBx03Bttn01Up.tga); }
+#messbox3-But2:active { decorator: image(/dat/MESSBOX3/MessageBox03/MsgBx03Bttn01Down.tga); }
+#messbox3-But2.disabled { decorator: image(/dat/MESSBOX3/MessageBox03/MsgBx03Bttn01Up.tga); }
+#messbox3-But3 { decorator: image(/dat/MESSBOX3/MessageBox03/MsgBx03Bttn01Up.tga); }
+#messbox3-But3:active { decorator: image(/dat/MESSBOX3/MessageBox03/MsgBx03Bttn01Down.tga); }
+#messbox3-But3.disabled { decorator: image(/dat/MESSBOX3/MessageBox03/MsgBx03Bttn01Up.tga); }
+#messbox3-But4 { decorator: image(/dat/MESSBOX3/MessageBox03/MsgBx03Bttn01Up.tga); }
+#messbox3-But4:active { decorator: image(/dat/MESSBOX3/MessageBox03/MsgBx03Bttn01Down.tga); }
+#messbox3-But4.disabled { decorator: image(/dat/MESSBOX3/MessageBox03/MsgBx03Bttn01Up.tga); }

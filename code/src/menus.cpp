@@ -21,6 +21,7 @@
 #include <windows.h>
 
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -30,6 +31,7 @@
 #include "xp_compat.h"
 #include "dd/gputext.h"
 #include "dd/menubg.h"
+#include "ui/ui.h"
 
 namespace {
 
@@ -115,8 +117,20 @@ constexpr int kFeaturesH = kRowTop + 2 * kRowStep + 20 + 7;
 constexpr int kRows = kNumSliders + kNumChecks;
 constexpr int kBoxH = kRowTop + kRows * kRowStep + 22;
 constexpr int kSliderLabelW = 140, kSliderX = 148, kSliderW = 70;
+// MenuMaX: the button that opens the new settings screen (the size of the
+// AdvancedBttnUp/Down sprites).
+constexpr char kMaxButton[] = "Mcm2fixMaX";
+constexpr char kMaxButtonLabel[] = "More Settings";
+constexpr int kMaxButtonW = 117, kMaxButtonH = 33;
 
 int CurrentValue(const char* key) {
+  // As saved (MenuMaX screens may have changed it since start-up), else the
+  // value in use.
+  std::string saved;
+  if (ReadSetting(key, &saved) && !saved.empty()) {
+    const double v = std::atof(saved.c_str());
+    return static_cast<int>(!std::strcmp(key, "ViewDistance") ? v * 100.0 + 0.5 : v);
+  }
   const Config& c = GetConfig();
   if (!std::strcmp(key, "MotionBlur")) return c.motion_blur ? 1 : 0;
   if (!std::strcmp(key, "AlphaToCoverage")) return c.alpha_to_coverage;
@@ -189,6 +203,20 @@ std::string OptGraphControls() {
                   "AnimOnDisable=\"RadioButtonOnGrey\"\r\nAnimOffDisable=\"RadioButtonOffGrey\"\r\n"
                   "TextColor=16777215\r\nText=\"%s\"\r\nTextLMargin=3\r\nXywh=%d,28,%d,17\r\n\r\n",
                   kFsNames[i], x * 15, 60 + i, w * 15, kFsGroup, kFsLabels[i], x, w);
+    t += buf;
+  }
+  // MenuMaX: a button that opens the new settings screen (ui/ui.h), in the
+  // free space under Graphic Features, on the game's unused Advanced button.
+  if (GetConfig().menu_max) {
+    const int x = kLeftX + (kBoxW - kMaxButtonW) / 2, y = kLowY + kFeaturesH + kGap + 12;
+    std::snprintf(buf, sizeof(buf),
+                  "[%s]\r\nType=BUTTON\r\nHeight=%d\r\nLeft=%d\r\nTabIndex=70\r\nTop=%d\r\nWidth=%d\r\n"
+                  "TextDrop=-1'True\r\nTextColor=16777215\r\nTextAlignV=MIDDLE\r\nTextAlign=CENTER\r\n"
+                  "SoundPush=\"Beep13\"\r\nSoundFocus=\"Beep09\"\r\nShow=-1'True\r\nBroken_Enable=0'False\r\n"
+                  "AnimPush=\"AdvancedBttnDown\"\r\nAnimNorm=\"AdvancedBttnUp\"\r\nAnimFocus=\"AdvancedBttnUp\"\r\n"
+                  "AnimDisable=\"AdvancedBttnUp\"\r\nText=\"%s\"\r\nXywh=%d,%d,%d,%d\r\n\r\n",
+                  kMaxButton, kMaxButtonH * 15, x * 15, y * 15, kMaxButtonW * 15, kMaxButtonLabel, x, y, kMaxButtonW,
+                  kMaxButtonH);
     t += buf;
   }
   std::snprintf(buf, sizeof(buf),
@@ -667,9 +695,6 @@ int PosOf(const MenuSlider& m, int value) {
 }
 
 void InitChecks() {
-  static bool done = false;
-  if (done) return;
-  done = true;
   for (MenuCheck& m : g_checks) {
     const int v = CurrentValue(m.key);
     m.saved = v;
@@ -767,6 +792,11 @@ void __fastcall OptGraphEvent(uintptr_t self, void* edx, uintptr_t event) {
   if (type == 6 || type == 4) {  // page closing (6) or being built again (4)
     if (g_graph_page) patch::Log("menus: Options > Graphics closed (event %d)", type);
     g_graph_page = 0;
+    ui::CloseScreen("settings", "Options > Graphics closed");
+  }
+  if ((type == 1 || type == 3) && std::strcmp(SafeName(event), kMaxButton) == 0) {
+    patch::Log("menus: %s clicked (event %d)", kMaxButton, type);
+    if (!ui::IsOpen("settings")) ui::Open("settings", "Options > Graphics button");
   }
   reinterpret_cast<EventFn>(kOptGraphEvent)(self, edx, event);
   if (type == 5) {
@@ -787,6 +817,7 @@ void __fastcall OptGraphEvent(uintptr_t self, void* edx, uintptr_t event) {
     g_graph_page = self;
     g_graph_vtable = *reinterpret_cast<uintptr_t*>(self);
     SetLabel(self, kFootName, kFootText);
+    if (GetConfig().menu_max) SetLabel(self, kMaxButton, kMaxButtonLabel);
     for (const MenuSlider& m : g_sliders) SliderLabel(self, m, m.pos);
     UpdateGreying(self, g_sliders[kMsaaSlider].pos);
     return;
@@ -813,7 +844,9 @@ void __fastcall OptGraphEvent(uintptr_t self, void* edx, uintptr_t event) {
       }
     }
   }
-  if (type == 3) {
+  // A checkbox click: type 3 from the game's own mouse handling here, type 1
+  // when its click is made the way a KeyBind makes it (MenuNav, MenuMaX).
+  if (type == 3 || type == 1) {
     const char* clicked = SafeName(event);
     // Borderless / Exclusive (the radio group keeps one selected): switch now.
     // (Borderless / Exclusive: see MenusFrame; radio buttons send no event.)
@@ -886,6 +919,60 @@ void MenusFrame() {
   if (want == excl) return;
   patch::Log("menus: %s picked", kFsNames[want ? 1 : 0]);
   ResolutionSetExclusive(want, FindAny(page, "DisplayResolutionDropDown"));
+}
+
+// MenuMaX: a screen over Options > Graphics closed; it may have saved
+// settings the Enhancements box shows, so the box is brought up to date.
+void MenusRefreshFromIni() {
+  const uintptr_t page = g_graph_page;
+  if (!page || !g_bound) return;
+  InitChecks();
+  int changed = 0;
+  for (MenuCheck& m : g_checks) {
+    const int want = m.saved ? 1 : 0;
+    const uintptr_t box = FindCheckbox(page, m.name);
+    if (!box) continue;
+    m.value = want;
+    int* state = reinterpret_cast<int*>(box + kStateOffset);
+    if (*state == want) continue;
+    *state = want;
+    const uintptr_t redraw = *reinterpret_cast<uintptr_t*>(*reinterpret_cast<uintptr_t*>(box) + kRedrawSlot);
+    reinterpret_cast<RedrawFn>(redraw)(box, nullptr);
+    ++changed;
+  }
+  for (MenuSlider& m : g_sliders) {
+    const int pos = PosOf(m, m.saved);
+    if (pos == m.pos) continue;
+    m.pos = pos;
+    if (const uintptr_t c = FindAny(page, m.name)) CallSlot(c, kExchangeSlot, 0);  // bound value -> control
+    SliderLabel(page, m, m.pos);
+    ++changed;
+  }
+  UpdateGreying(page, g_sliders[kMsaaSlider].pos);
+  patch::Log("menus: Enhancements box brought up to date after a MenuMaX screen (%d controls changed)", changed);
+}
+
+// ZoneFix: the main menu's Multiplayer panel has an "MSN Gaming Zone" button
+// (ButZone) whose click launches the long-gone Zone and crashes or quits the
+// game. The panel's set-up enables it with push 1 at 0x44c619 (the other
+// connection buttons get the game's own test): push 0 greys it out like
+// them; and its click branch (0x44d093, after the name compare) jumps
+// straight to the handler's end, so nothing can start it.
+void ApplyZoneFix() {
+  if (!GetConfig().zone_fix) {
+    patch::Log("menus: ZoneFix=0, the MSN Gaming Zone button as it was");
+    return;
+  }
+  const uint8_t enable[] = {0x6A, 0x01, 0x8B, 0xC8, 0xFF, 0x92, 0xC4, 0x00, 0x00, 0x00};  // push 1 / mov ecx,eax / call [edx+0C4h]
+  const uint8_t click[] = {0x8B, 0x0D, 0xAC, 0x43, 0x57, 0x00};                          // mov ecx,[5743ACh]
+  if (!patch::Matches(0x44C619, enable, sizeof(enable)) || !patch::Matches(0x44D093, click, sizeof(click))) {
+    patch::Log("menus: ZoneFix: main menu code differs, not applied");
+    return;
+  }
+  const uint8_t off = 0x00;
+  patch::Write(0x44C61A, &off, 1);
+  patch::Jump(0x44D093, 0x44D6B0, sizeof(click));
+  patch::Log("menus: ZoneFix: the MSN Gaming Zone button is greyed out and does nothing");
 }
 
 void ApplyMenuOptions() {

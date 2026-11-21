@@ -1,0 +1,63 @@
+<rml>
+<head>
+  <title>optadvg</title>
+  <link type="text/rcss" href="menus.rcss"/>
+  <link type="text/rcss" href="optadvg.rcss"/>
+</head>
+<!--
+  A copy of the game's own optadvg (MaXMenus=1), drawn over it while the game
+  shows it. Made by tools/mcm2rml.py from the game's layouts, then edited by
+  hand. 1dp = one pixel of the game's 640x480 menus. See ..\README.txt.
+
+  game-dialogs     the game dialogs (layouts) this screen copies
+  game-opaque      it covers the whole menu (nothing under it is drawn)
+  game-dialog="x"  the part that copies the game's dialog x: shown while the
+                   game shows x, where the game put it
+  game="Name"      tied to the game's control of that name on that dialog
+  game-back        the control Esc / B / the right mouse button clicks
+-->
+<body game-dialogs="optadvg" game-opaque game-back="Back">
+<div id="screen">
+
+
+  <!-- OPTADVG.DAT -->
+  <div id="d-optadvg" class="dialog" game-dialog="optadvg" style="left: 0dp; top: 0dp; width: 640dp; height: 480dp;">
+    <div id="optadvg-AdvancedGraphicsTitle" game="AdvancedGraphicsTitle" class="text" style="left: 32dp; top: 19dp; width: 572dp; height: 28dp; font-size: 14dp; padding-top: 6dp; text-align: center;">Advanced Options</div>
+    <div id="optadvg-UnusedGraphicsSlideBox" game="UnusedGraphicsSlideBox" class="plate" game-text="off" style="left: 358dp; top: 54dp; width: 256dp; height: 209dp;">
+      <div id="optadvg-rbwLabel11" game="rbwLabel11" class="text" style="left: 7dp; top: 5dp; width: 242dp; height: 21dp; font-size: 14dp; padding-top: 3dp; text-align: center;">Graphics Quality</div>
+      <div id="optadvg-rbwLabel8" game="rbwLabel8" class="text" style="left: 23dp; top: 41dp; width: 207dp; height: 17dp; text-align: center;">Ecosystem</div>
+      <div id="optadvg-rbwLabel9" game="rbwLabel9" class="text" style="left: 6dp; top: 53dp; width: 15dp; height: 17dp; text-align: right;">-</div>
+      <div id="optadvg-rbwLabel10" game="rbwLabel10" class="text" style="left: 233dp; top: 53dp; width: 18dp; height: 17dp;">+</div>
+      <input type="range" id="optadvg-SldEcosystem" game="SldEcosystem" title="Determines overall graphic quality of trees, shrubs, plantlife." class="slider" style="left: 25dp; top: 58dp; width: 204dp; height: 16dp;"/>
+      <div id="optadvg-rbwLabel5" game="rbwLabel5" class="text" style="left: 23dp; top: 81dp; width: 207dp; height: 17dp; text-align: center;">Objects</div>
+      <div id="optadvg-rbwLabel6" game="rbwLabel6" class="text" style="left: 6dp; top: 93dp; width: 15dp; height: 17dp; text-align: right;">-</div>
+      <div id="optadvg-rbwLabel7" game="rbwLabel7" class="text" style="left: 233dp; top: 93dp; width: 18dp; height: 17dp;">+</div>
+      <input type="range" id="optadvg-SldObjects" game="SldObjects" title="Determines overall graphic quality of buildings, fences, trains, cars, etc." class="slider" style="left: 25dp; top: 98dp; width: 204dp; height: 16dp;"/>
+      <div id="optadvg-rbwLabel4" game="rbwLabel4" class="text" style="left: 23dp; top: 121dp; width: 207dp; height: 17dp; text-align: center;">Terrain</div>
+      <div id="optadvg-rbwLabel3" game="rbwLabel3" class="text" style="left: 6dp; top: 133dp; width: 15dp; height: 17dp; text-align: right;">-</div>
+      <div id="optadvg-rbwLabel1" game="rbwLabel1" class="text" style="left: 233dp; top: 133dp; width: 18dp; height: 17dp;">+</div>
+      <input type="range" id="optadvg-SldTerrain" game="SldTerrain" title="Determines the overall graphic quality of terrain &amp; ground textures." class="slider" style="left: 25dp; top: 138dp; width: 204dp; height: 16dp;"/>
+      <div id="optadvg-UnusedSlide03Text" game="UnusedSlide03Text" class="text" style="left: 23dp; top: 161dp; width: 207dp; height: 17dp; text-align: center;">Visibility</div>
+      <div id="optadvg-Less03" game="Less03" class="text" style="left: 6dp; top: 173dp; width: 15dp; height: 17dp; text-align: right;">-</div>
+      <div id="optadvg-More03" game="More03" class="text" style="left: 233dp; top: 173dp; width: 18dp; height: 17dp;">+</div>
+      <input type="range" id="optadvg-SldVisibility" game="SldVisibility" title="Determines how far your forward field of view is when riding." class="slider" style="left: 25dp; top: 178dp; width: 204dp; height: 16dp;"/>
+    </div>
+    <div id="optadvg-rbwLabel12" game="rbwLabel12" class="text" style="left: 24dp; top: 72dp; width: 249dp; height: 25dp; font-size: 14dp; padding-top: 5dp;">Emergency Repair Features:</div>
+    <div id="optadvg-ChkForceVideoMem" game="ChkForceVideoMem" title="Speeds up game, but reduces visual quality" class="check" style="left: 24dp; top: 106dp; width: 329dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Force textures to fit in video memory</span></div>
+    <div id="optadvg-rbwLabel2" game="rbwLabel2" class="text" style="left: 24dp; top: 130dp; width: 257dp; height: 19dp; padding-top: 2dp;">Terrain Detail:</div>
+    <div id="optadvg-RadTerrSingle" game="RadTerrSingle" title="Turn off if having problems with terrain texture details" class="radio" style="left: 48dp; top: 152dp; width: 305dp; height: 17dp; padding-top: 1dp; padding-left: 17dp;"><div class="box"/><span class="t">Single pass</span></div>
+    <div id="optadvg-RadTerrDual" game="RadTerrDual" title="Try this if having texture problems with Single Pass selected." class="radio" style="left: 48dp; top: 172dp; width: 305dp; height: 17dp; padding-top: 1dp; padding-left: 17dp;"><div class="box"/><span class="t">Dual pass</span></div>
+    <div id="optadvg-RadTerrNone" game="RadTerrNone" title="Try this if having texture problems with Single Pass selected." class="radio" style="left: 48dp; top: 192dp; width: 305dp; height: 17dp; padding-top: 1dp; padding-left: 17dp;"><div class="box"/><span class="t">None</span></div>
+    <div id="optadvg-ChkFilterInput" game="ChkFilterInput" title="Reduces jittery control feel, but may affect driving control." class="check" style="left: 24dp; top: 224dp; width: 329dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Filter joystick input</span></div>
+    <div id="optadvg-CardSelectionBox" game="CardSelectionBox" class="plate" game-text="off" style="left: 25dp; top: 297dp; width: 309dp; height: 91dp;">
+      <div id="optadvg-StartupCardSelectionText" game="StartupCardSelectionText" class="text" style="left: 8dp; top: 6dp; width: 296dp; height: 19dp;">Current 3-D Renderer Selection</div>
+      <div id="optadvg-Txt3DCard" game="Txt3DCard" title="Lists which device, if any, is being used to render 3D graphics." class="text" style="left: 24dp; top: 32dp; width: 246dp; height: 21dp; color: #7ab9fe; padding-top: 3dp; padding-left: 3dp;"></div>
+      <div id="optadvg-ChkShowPick3D" game="ChkShowPick3D" title="Dialog box for choosing Graphics Renderer is displayed at game start." class="check" style="left: 8dp; top: 64dp; width: 294dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Show 3-D Renderer Selector at Startup</span></div>
+    </div>
+    <div id="optadvg-ChkShowPickController" game="ChkShowPickController" title="List of available controllers displayed at game start." class="check" style="left: 344dp; top: 361dp; width: 281dp; height: 20dp; padding-left: 17dp;"><div class="box"/><span class="t">Show Controller Selector at Startup</span></div>
+    <div id="optadvg-Back" game="Back" title="Return To Previous Screen" class="button" style="left: 16dp; top: 404dp; width: 79dp; height: 76dp;"></div>
+    <div id="optadvg-Help" game="Help" title="Open Help" class="button" style="left: 146dp; top: 404dp; width: 56dp; height: 76dp;"></div>
+  </div>
+</div>
+</body>
+</rml>

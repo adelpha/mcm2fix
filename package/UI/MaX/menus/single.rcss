@@ -1,0 +1,142 @@
+/* single.rml: each control's own pictures (from the game's layouts). Made by tools/mcm2rml.py. */
+#d-spbase { decorator: image(/dat/SPBASE/SinglePlayer/SPBackGround.tga); }
+#spbase-EventTab { decorator: image(/dat/SPBASE/SinglePlayer/TabDown01.tga); }
+#spbase-EventTab.on { decorator: image(/dat/SPBASE/SinglePlayer/Tab01.tga); }
+#spbase-EventTab.disabled { decorator: image(/dat/GLOBAL/Resources/RadioButtonOffGrey.tga); }
+#spbase-BikeRiderTab { decorator: image(/dat/SPBASE/SinglePlayer/TabDown02.tga); }
+#spbase-BikeRiderTab.on { decorator: image(/dat/SPBASE/SinglePlayer/Tab02.tga); }
+#spbase-BikeRiderTab.disabled { decorator: image(/dat/GLOBAL/Resources/RadioButtonOffGrey.tga); }
+#spbase-RaceInfoTab { decorator: image(/dat/SPBASE/SinglePlayer/TabDown03.tga); }
+#spbase-RaceInfoTab.on { decorator: image(/dat/SPBASE/SinglePlayer/Tab03.tga); }
+#spbase-RaceInfoTab.disabled { decorator: image(/dat/GLOBAL/Resources/RadioButtonOffGrey.tga); }
+#spbase-Back { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackUp.tga); }
+#spbase-Back:hover, #spbase-Back:focus-visible { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackLit.tga); }
+#spbase-Back:active { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackDown.tga); }
+#spbase-Help { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2HelpUp.tga); }
+#spbase-Help:hover, #spbase-Help:focus-visible { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2HelpLit.tga); }
+#spbase-Help:active { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2HelpDown.tga); }
+#spbase-Joystick { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2JoyUp.tga); }
+#spbase-Joystick:hover, #spbase-Joystick:focus-visible { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2JoyLit.tga); }
+#spbase-Joystick:active { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2JoyDown.tga); }
+#spbase-Options { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2OptionUp.tga); }
+#spbase-Options:hover, #spbase-Options:focus-visible { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2OptionLit.tga); }
+#spbase-Options:active { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2OptionDown.tga); }
+#spbase-Start { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2StartUp.tga); }
+#spbase-Start:hover, #spbase-Start:focus-visible { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2StartLit.tga); }
+#spbase-Start:active { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2StartDown.tga); }
+#d-spevent { decorator: image(/dat/SPEVENT/SinglePlayer/1_EventDialog/SPEBack.tga); }
+#spevent-PictureBox { decorator: image(/dat/SPEVENT/SinglePlayer/1_EventDialog/Screen.tga); }
+#spevent-CornerUL { decorator: image(/dat/SPEVENT/SinglePlayer/1_EventDialog/SPCornerUL.tga); }
+#spevent-CornerUR { decorator: image(/dat/SPEVENT/SinglePlayer/1_EventDialog/SPCornerUR.tga); }
+#spevent-EventTypeDropDown selectvalue { decorator: image(/dat/SPEVENT/SinglePlayer/1_EventDialog/DropDown01.tga); }
+#spevent-EventTypeDropDown selectbox { decorator: image(/dat/SPEVENT/SinglePlayer/1_EventDialog/DropDownBG01.tga); }
+#spevent-RaceModeDropDown selectvalue { decorator: image(/dat/SPEVENT/SinglePlayer/1_EventDialog/DropDown01.tga); }
+#spevent-RaceModeDropDown selectbox { decorator: image(/dat/SPEVENT/SinglePlayer/1_EventDialog/DropDownBG01.tga); }
+#spevent-OpponentsControlBox { decorator: image(/dat/SPEVENT/SinglePlayer/1_EventDialog/Plate01.tga); }
+#spevent-OpponentsLeftarrow { decorator: image(/dat/GLOBAL/Resources/LeftArrowUp.tga); }
+#spevent-OpponentsLeftarrow:hover, #spevent-OpponentsLeftarrow:focus-visible { decorator: image(/dat/GLOBAL/Resources/LeftArrowLit.tga); }
+#spevent-OpponentsLeftarrow:active { decorator: image(/dat/GLOBAL/Resources/LeftArrowDown.tga); }
+#spevent-OpponentsLeftarrow.disabled { decorator: image(/dat/GLOBAL/Resources/LeftArrowGrey.tga); }
+#spevent-OpponentsListBox { decorator: image(/dat/SPEVENT/SinglePlayer/1_EventDialog/SmalleditBox.tga); }
+#spevent-OpponentsListBox .row.on { color: #c0c000; }
+#spevent-OpponentsrightArrow { decorator: image(/dat/GLOBAL/Resources/RightArrowUp.tga); }
+#spevent-OpponentsrightArrow:hover, #spevent-OpponentsrightArrow:focus-visible { decorator: image(/dat/GLOBAL/Resources/RightArrowLit.tga); }
+#spevent-OpponentsrightArrow:active { decorator: image(/dat/GLOBAL/Resources/RightArrowDown.tga); }
+#spevent-OpponentsrightArrow.disabled { decorator: image(/dat/GLOBAL/Resources/RightArrowGrey.tga); }
+#spevent-LapsControlBox { decorator: image(/dat/SPEVENT/SinglePlayer/1_EventDialog/Plate02.tga); }
+#spevent-LapsLeftArrow { decorator: image(/dat/GLOBAL/Resources/LeftArrowUp.tga); }
+#spevent-LapsLeftArrow:hover, #spevent-LapsLeftArrow:focus-visible { decorator: image(/dat/GLOBAL/Resources/LeftArrowLit.tga); }
+#spevent-LapsLeftArrow:active { decorator: image(/dat/GLOBAL/Resources/LeftArrowDown.tga); }
+#spevent-LapsLeftArrow.disabled { decorator: image(/dat/GLOBAL/Resources/LeftArrowGrey.tga); }
+#spevent-LapsListBox { decorator: image(/dat/SPEVENT/SinglePlayer/1_EventDialog/SmalleditBox.tga); }
+#spevent-LapsListBox .row.on { color: #c0c000; }
+#spevent-LapsrightArrow { decorator: image(/dat/GLOBAL/Resources/RightArrowUp.tga); }
+#spevent-LapsrightArrow:hover, #spevent-LapsrightArrow:focus-visible { decorator: image(/dat/GLOBAL/Resources/RightArrowLit.tga); }
+#spevent-LapsrightArrow:active { decorator: image(/dat/GLOBAL/Resources/RightArrowDown.tga); }
+#spevent-LapsrightArrow.disabled { decorator: image(/dat/GLOBAL/Resources/RightArrowGrey.tga); }
+#spevent-CornerLL { decorator: image(/dat/SPEVENT/SinglePlayer/1_EventDialog/SPCornerLL.tga); }
+#spevent-CornerLR { decorator: image(/dat/SPEVENT/SinglePlayer/1_EventDialog/SPCornerLR.tga); }
+#spevent-TrackLeft { decorator: image(/dat/GLOBAL/Resources/LeftArrowUp.tga); }
+#spevent-TrackLeft:hover, #spevent-TrackLeft:focus-visible { decorator: image(/dat/GLOBAL/Resources/LeftArrowLit.tga); }
+#spevent-TrackLeft:active { decorator: image(/dat/GLOBAL/Resources/LeftArrowDown.tga); }
+#spevent-TrackLeft.disabled { decorator: image(/dat/GLOBAL/Resources/LeftArrowGrey.tga); }
+#spevent-DDLTextBox selectvalue { decorator: image(/dat/SPEVENT/SinglePlayer/1_EventDialog/EvDropDown04.tga); }
+#spevent-DDLTextBox selectbox { decorator: image(/dat/SPEVENT/SinglePlayer/1_EventDialog/EvDropDownBG04.tga); }
+#spevent-TrackRight { decorator: image(/dat/GLOBAL/Resources/RightArrowUp.tga); }
+#spevent-TrackRight:hover, #spevent-TrackRight:focus-visible { decorator: image(/dat/GLOBAL/Resources/RightArrowLit.tga); }
+#spevent-TrackRight:active { decorator: image(/dat/GLOBAL/Resources/RightArrowDown.tga); }
+#spevent-TrackRight.disabled { decorator: image(/dat/GLOBAL/Resources/RightArrowGrey.tga); }
+#spevent-racesControlBox { decorator: image(/dat/SPEVENT/SinglePlayer/1_EventDialog/Plate03.tga); }
+#spevent-RacesLeftArrow { decorator: image(/dat/GLOBAL/Resources/LeftArrowUp.tga); }
+#spevent-RacesLeftArrow:hover, #spevent-RacesLeftArrow:focus-visible { decorator: image(/dat/GLOBAL/Resources/LeftArrowLit.tga); }
+#spevent-RacesLeftArrow:active { decorator: image(/dat/GLOBAL/Resources/LeftArrowDown.tga); }
+#spevent-RacesLeftArrow.disabled { decorator: image(/dat/GLOBAL/Resources/LeftArrowGrey.tga); }
+#spevent-RacesListBox { decorator: image(/dat/SPEVENT/SinglePlayer/1_EventDialog/SmalleditBox.tga); }
+#spevent-RacesListBox .row.on { color: #c0c000; }
+#spevent-RacesRightArrow { decorator: image(/dat/GLOBAL/Resources/RightArrowUp.tga); }
+#spevent-RacesRightArrow:hover, #spevent-RacesRightArrow:focus-visible { decorator: image(/dat/GLOBAL/Resources/RightArrowLit.tga); }
+#spevent-RacesRightArrow:active { decorator: image(/dat/GLOBAL/Resources/RightArrowDown.tga); }
+#spevent-RacesRightArrow.disabled { decorator: image(/dat/GLOBAL/Resources/RightArrowGrey.tga); }
+#spevent-GhostBox { decorator: image(/dat/SPEVENT/SinglePlayer/1_EventDialog/GhostPanel.tga); }
+#spevent-GhostLeft { decorator: image(/dat/GLOBAL/Resources/LeftArrowUp.tga); }
+#spevent-GhostLeft:hover, #spevent-GhostLeft:focus-visible { decorator: image(/dat/GLOBAL/Resources/LeftArrowLit.tga); }
+#spevent-GhostLeft:active { decorator: image(/dat/GLOBAL/Resources/LeftArrowDown.tga); }
+#spevent-GhostLeft.disabled { decorator: image(/dat/GLOBAL/Resources/LeftArrowGrey.tga); }
+#spevent-DDLGhostRaces selectvalue { decorator: image(/dat/SPEVENT/SinglePlayer/1_EventDialog/GhostDropDown.tga); }
+#spevent-DDLGhostRaces selectbox { decorator: image(/dat/SPEVENT/SinglePlayer/1_EventDialog/GhostDropDownBG.tga); }
+#spevent-GhostRight { decorator: image(/dat/GLOBAL/Resources/RightArrowUp.tga); }
+#spevent-GhostRight:hover, #spevent-GhostRight:focus-visible { decorator: image(/dat/GLOBAL/Resources/RightArrowLit.tga); }
+#spevent-GhostRight:active { decorator: image(/dat/GLOBAL/Resources/RightArrowDown.tga); }
+#spevent-GhostRight.disabled { decorator: image(/dat/GLOBAL/Resources/RightArrowGrey.tga); }
+#spevent-WaypointBox { decorator: image(/dat/SPEVENT/SinglePlayer/1_EventDialog/Plate04.tga); }
+#spevent-SeedLeft { decorator: image(/dat/GLOBAL/Resources/LeftArrowUp.tga); }
+#spevent-SeedLeft:hover, #spevent-SeedLeft:focus-visible { decorator: image(/dat/GLOBAL/Resources/LeftArrowLit.tga); }
+#spevent-SeedLeft:active { decorator: image(/dat/GLOBAL/Resources/LeftArrowDown.tga); }
+#spevent-SeedLeft.disabled { decorator: image(/dat/GLOBAL/Resources/LeftArrowGrey.tga); }
+#spevent-EditSeed { decorator: image(/dat/SPEVENT/SinglePlayer/1_EventDialog/SmalleditBox.tga); }
+#spevent-SeedRight { decorator: image(/dat/GLOBAL/Resources/RightArrowUp.tga); }
+#spevent-SeedRight:hover, #spevent-SeedRight:focus-visible { decorator: image(/dat/GLOBAL/Resources/RightArrowLit.tga); }
+#spevent-SeedRight:active { decorator: image(/dat/GLOBAL/Resources/RightArrowDown.tga); }
+#spevent-SeedRight.disabled { decorator: image(/dat/GLOBAL/Resources/RightArrowGrey.tga); }
+#spevent-RandomGatesLeftArrow { decorator: image(/dat/GLOBAL/Resources/LeftArrowUp.tga); }
+#spevent-RandomGatesLeftArrow:hover, #spevent-RandomGatesLeftArrow:focus-visible { decorator: image(/dat/GLOBAL/Resources/LeftArrowLit.tga); }
+#spevent-RandomGatesLeftArrow:active { decorator: image(/dat/GLOBAL/Resources/LeftArrowDown.tga); }
+#spevent-RandomGatesLeftArrow.disabled { decorator: image(/dat/GLOBAL/Resources/LeftArrowGrey.tga); }
+#spevent-LstNumGates { decorator: image(/dat/SPEVENT/SinglePlayer/1_EventDialog/SmalleditBox.tga); }
+#spevent-LstNumGates .row.on { color: #7ab9fe; }
+#spevent-RandomGatesRightArrow { decorator: image(/dat/GLOBAL/Resources/RightArrowUp.tga); }
+#spevent-RandomGatesRightArrow:hover, #spevent-RandomGatesRightArrow:focus-visible { decorator: image(/dat/GLOBAL/Resources/RightArrowLit.tga); }
+#spevent-RandomGatesRightArrow:active { decorator: image(/dat/GLOBAL/Resources/RightArrowDown.tga); }
+#spevent-RandomGatesRightArrow.disabled { decorator: image(/dat/GLOBAL/Resources/RightArrowGrey.tga); }
+#d-sprinfo { decorator: image(/dat/SPRINFO/SinglePlayer/3_RaceInfoDlg/SPRBack.tga); }
+#sprinfo-rbwFrame1 { decorator: image(/dat/SPRINFO/SinglePlayer/3_RaceInfoDlg/RIScreen.tga); }
+#sprinfo-ButViewReplay { decorator: image(/dat/SPRINFO/SinglePlayer/3_RaceInfoDlg/SPSaveReplayUp.tga); }
+#sprinfo-ButViewReplay:active { decorator: image(/dat/SPRINFO/SinglePlayer/3_RaceInfoDlg/SPSaveReplayDown.tga); }
+#sprinfo-ButViewReplay.disabled { decorator: image(/dat/SPRINFO/SinglePlayer/3_RaceInfoDlg/SPSaveReplayUp.tga); }
+#d-spbiker { decorator: image(/dat/SPBIKER/SinglePlayer/2_BikeRiderDlg/SPBBack.tga); }
+#spbiker-DDLEngineSize selectvalue { decorator: image(/dat/SPBIKER/SinglePlayer/2_BikeRiderDlg/BRDropDown01.tga); }
+#spbiker-DDLEngineSize selectbox { decorator: image(/dat/SPBIKER/SinglePlayer/2_BikeRiderDlg/BRDropDownBG01.tga); }
+#spbiker-RiderLeft { decorator: image(/dat/GLOBAL/Resources/LeftArrowUp.tga); }
+#spbiker-RiderLeft:hover, #spbiker-RiderLeft:focus-visible { decorator: image(/dat/GLOBAL/Resources/LeftArrowLit.tga); }
+#spbiker-RiderLeft:active { decorator: image(/dat/GLOBAL/Resources/LeftArrowDown.tga); }
+#spbiker-RiderLeft.disabled { decorator: image(/dat/GLOBAL/Resources/LeftArrowGrey.tga); }
+#spbiker-DDLRiders selectvalue { decorator: image(/dat/SPBIKER/SinglePlayer/2_BikeRiderDlg/BRDropDown04.tga); }
+#spbiker-DDLRiders selectbox { decorator: image(/dat/SPBIKER/SinglePlayer/2_BikeRiderDlg/BRDropDownBG04.tga); }
+#spbiker-RiderRight { decorator: image(/dat/GLOBAL/Resources/RightArrowUp.tga); }
+#spbiker-RiderRight:hover, #spbiker-RiderRight:focus-visible { decorator: image(/dat/GLOBAL/Resources/RightArrowLit.tga); }
+#spbiker-RiderRight:active { decorator: image(/dat/GLOBAL/Resources/RightArrowDown.tga); }
+#spbiker-RiderRight.disabled { decorator: image(/dat/GLOBAL/Resources/RightArrowGrey.tga); }
+#spbiker-BikeLeft { decorator: image(/dat/GLOBAL/Resources/LeftArrowUp.tga); }
+#spbiker-BikeLeft:hover, #spbiker-BikeLeft:focus-visible { decorator: image(/dat/GLOBAL/Resources/LeftArrowLit.tga); }
+#spbiker-BikeLeft:active { decorator: image(/dat/GLOBAL/Resources/LeftArrowDown.tga); }
+#spbiker-BikeLeft.disabled { decorator: image(/dat/GLOBAL/Resources/LeftArrowGrey.tga); }
+#spbiker-DDLBikes selectvalue { decorator: image(/dat/SPBIKER/SinglePlayer/2_BikeRiderDlg/BRDropDown04.tga); }
+#spbiker-DDLBikes selectbox { decorator: image(/dat/SPBIKER/SinglePlayer/2_BikeRiderDlg/BRDropDownBG04.tga); }
+#spbiker-BikeRight { decorator: image(/dat/GLOBAL/Resources/RightArrowUp.tga); }
+#spbiker-BikeRight:hover, #spbiker-BikeRight:focus-visible { decorator: image(/dat/GLOBAL/Resources/RightArrowLit.tga); }
+#spbiker-BikeRight:active { decorator: image(/dat/GLOBAL/Resources/RightArrowDown.tga); }
+#spbiker-BikeRight.disabled { decorator: image(/dat/GLOBAL/Resources/RightArrowGrey.tga); }
+#spbiker-ButWrench { decorator: image(/dat/SPBIKER/SinglePlayer/2_BikeRiderDlg/SnglWrenchUp.tga); }
+#spbiker-ButWrench:hover, #spbiker-ButWrench:focus-visible { decorator: image(/dat/SPBIKER/SinglePlayer/2_BikeRiderDlg/SnglWrenchLit.tga); }
+#spbiker-ButWrench:active { decorator: image(/dat/SPBIKER/SinglePlayer/2_BikeRiderDlg/SnglWrenchDown.tga); }
+#spbiker-EditPlateNumber { decorator: image(/dat/SPBIKER/SinglePlayer/2_BikeRiderDlg/BRSmalleditBox.tga); }

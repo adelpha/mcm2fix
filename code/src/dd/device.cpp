@@ -7,6 +7,7 @@
 #include "motionblur.h"
 #include "gpushadow.h"
 #include "gputext.h"
+#include "hires3d.h"
 #include "hudtext.h"
 #include "racetitle.h"
 #include "probe.h"
@@ -1216,6 +1217,7 @@ HRESULT Device::Clear(DWORD count, D3DRECT* rects, DWORD flags, D3DCOLOR color, 
   FlushBatch(kBreakClear);
   PROF_ZONE(kClear);
   prof::Count(prof::cClears);
+  const bool hi = HiResPrepare();
   if (rt_ && (flags & D3DCLEAR_TARGET)) {
     const void* n = rt_->GpuKey();
     if (GpuTextHasText(n)) {
@@ -1288,11 +1290,64 @@ HRESULT Device::Clear(DWORD count, D3DRECT* rects, DWORD flags, D3DCOLOR color, 
     b.ctx->Draw(4, 0);
     ContextTouched();
   }
+  // MenuHiRes3D: the same clears in the window-sized copy.
+  ID3D11RenderTargetView* hi_rtv = nullptr;
+  ID3D11DepthStencilView* hi_dsv = nullptr;
+  float hsx = 1, hsy = 1;
+  UINT hw = 0, hh = 0;
+  if (hi && has_depth && Hi3dViews(&hi_rtv, &hi_dsv, &hsx, &hsy, &hw, &hh)) {
+    for (const RECT& r : list) {
+      bool full = r.left <= 0 && r.top <= 0 && r.right >= static_cast<LONG>(rt->width) &&
+                  r.bottom >= static_cast<LONG>(rt->height);
+      if (full) {
+        if (clear_color) b.ctx->ClearRenderTargetView(hi_rtv, rgba);
+        if (clear_depth) b.ctx->ClearDepthStencilView(hi_dsv, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, z, 0);
+      } else {
+        ClearConstants cc{};
+        cc.rect[0] = 2.0f * r.left / rt->width - 1.0f;
+        cc.rect[1] = 1.0f - 2.0f * r.top / rt->height;
+        cc.rect[2] = 2.0f * r.right / rt->width - 1.0f;
+        cc.rect[3] = 1.0f - 2.0f * r.bottom / rt->height;
+        std::memcpy(cc.color, rgba, sizeof(rgba));
+        cc.depth[0] = z;
+        b.ctx->UpdateSubresource(g_pipe.clear_cb, 0, nullptr, &cc, 0, 0);
+        b.ctx->OMSetRenderTargets(1, &hi_rtv, clear_depth ? hi_dsv : nullptr);
+        D3D11_VIEWPORT v{0, 0, static_cast<float>(hw), static_cast<float>(hh), 0, 1};
+        b.ctx->RSSetViewports(1, &v);
+        b.ctx->RSSetState(b.blit_raster);
+        b.ctx->OMSetDepthStencilState(g_pipe.clear_depth[clear_depth ? 1 : 0], 0);
+        b.ctx->OMSetBlendState(g_pipe.clear_blend[clear_color ? 1 : 0], nullptr, 0xffffffff);
+        b.ctx->IASetInputLayout(nullptr);
+        b.ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+        b.ctx->VSSetShader(g_pipe.clear_vs, nullptr, 0);
+        b.ctx->VSSetConstantBuffers(0, 1, &g_pipe.clear_cb);
+        b.ctx->PSSetShader(g_pipe.clear_ps, nullptr, 0);
+        b.ctx->Draw(4, 0);
+        ContextTouched();
+      }
+      if (clear_color) Hi3dDrawn(r, true);
+    }
+  }
   if (clear_color) {
     if (cur_msaa_) MsaaMarkDrawn();
     rt_->MarkGpuWritten();
   }
   return D3D_OK;
+}
+
+// MenuHiRes3D: before drawing into the render target, decide whether the
+// draw also goes to the window-sized copy (3D into the 640x480 menus); if
+// not, what was drawn there so far is put into the overlay first, so this
+// draw lands on top of it.
+bool Device::HiResPrepare() {
+  if (!rt_ || IsD3D9() || !GetConfig().menu_hires_3d || !Ready()) return false;
+  bool hi = false;
+  if (Surface* z = rt_->ZBuffer()) {
+    if (z->Width() == rt_->Width() && z->Height() == rt_->Height())
+      hi = Hi3dPrepare(*rt_->GpuForDraw(), rt_->Width(), rt_->Height());
+  }
+  if (!hi) Hi3dRelease(rt_->GpuKey());
+  return hi;
 }
 
 HRESULT Device::SetTransform(DWORD type, D3DMATRIX* m) {
@@ -2346,6 +2401,8 @@ void Device::NoteDrawLog(const Draw& d) {
 }
 
 void Device::SubmitDraw(const Draw& d) {
+  // MenuHiRes3D: 3D in the 640x480 menus is drawn again at window size.
+  const bool hi = HiResPrepare();
   OccludeText(d);
   if (prof::On()) GpuTimerMark();
   if (IsD3D9()) return Submit9(d);
@@ -2479,6 +2536,29 @@ void Device::SubmitDraw(const Draw& d) {
     b.ctx->DrawIndexed(nidx, ioff / 2, base_vertex);
   } else {
     b.ctx->Draw(d.count, static_cast<UINT>(base_vertex));
+  }
+  ID3D11RenderTargetView* hi_rtv = nullptr;
+  ID3D11DepthStencilView* hi_dsv = nullptr;
+  float hsx = 1, hsy = 1;
+  UINT hw = 0, hh = 0;
+  if (hi && has_depth && Hi3dViews(&hi_rtv, &hi_dsv, &hsx, &hsy, &hw, &hh)) {
+    // The same draw into the window-sized copy: only the viewport is scaled
+    // (vertex positions are made relative to the viewport by the shader).
+    b.ctx->OMSetRenderTargets(1, &hi_rtv, hi_dsv);
+    D3D11_VIEWPORT hv{v.TopLeftX * hsx, v.TopLeftY * hsy, v.Width * hsx, v.Height * hsy, v.MinDepth, v.MaxDepth};
+    b.ctx->RSSetViewports(1, &hv);
+    if (idx) {
+      b.ctx->DrawIndexed(nidx, ioff / 2, base_vertex);
+    } else {
+      b.ctx->Draw(d.count, static_cast<UINT>(base_vertex));
+    }
+    b.ctx->OMSetRenderTargets(1, &cur_rtv_, cur_dsv_);
+    b.ctx->RSSetViewports(1, &v);
+    RECT vr{static_cast<LONG>(viewport_.dwX), static_cast<LONG>(viewport_.dwY),
+            static_cast<LONG>(viewport_.dwX + viewport_.dwWidth), static_cast<LONG>(viewport_.dwY + viewport_.dwHeight)};
+    // Screen-space draws only count inside the 3D area (they are in the copy too).
+    if (mode == 1) vr = RECT{};
+    Hi3dDrawn(vr, false);
   }
   if (cur_msaa_) MsaaMarkDrawn();
   if (has_depth) Note3DDraw();

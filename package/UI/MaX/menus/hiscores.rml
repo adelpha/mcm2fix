@@ -1,0 +1,52 @@
+<rml>
+<head>
+  <title>hiscores</title>
+  <link type="text/rcss" href="menus.rcss"/>
+  <link type="text/rcss" href="hiscores.rcss"/>
+</head>
+<!--
+  A copy of the game's own hiscores (MaXMenus=1), drawn over it while the game
+  shows it. Made by tools/mcm2rml.py from the game's layouts, then edited by
+  hand. 1dp = one pixel of the game's 640x480 menus. See ..\README.txt.
+
+  game-dialogs     the game dialogs (layouts) this screen copies
+  game-opaque      it covers the whole menu (nothing under it is drawn)
+  game-dialog="x"  the part that copies the game's dialog x: shown while the
+                   game shows x, where the game put it
+  game="Name"      tied to the game's control of that name on that dialog
+  game-back        the control Esc / B / the right mouse button clicks
+-->
+<body game-dialogs="hiscores" game-opaque game-back="Back">
+<div id="screen">
+
+
+  <!-- HISCORES.DAT -->
+  <div id="d-hiscores" class="dialog" game-dialog="hiscores" style="left: 0dp; top: 0dp; width: 640dp; height: 480dp;">
+    <div id="hiscores-TabLeft" game="TabLeft" title="Miscellaneous Game Settings" class="pick" style="left: 0dp; top: 0dp; width: 220dp; height: 33dp; padding-top: 14dp; text-align: center;">Single Stunt</div>
+    <div id="hiscores-TabMiddle" game="TabMiddle" title="Miscellaneous Game Settings" class="pick" style="left: 220dp; top: 0dp; width: 200dp; height: 33dp; padding-top: 14dp; text-align: center;">Single Stunt</div>
+    <div id="hiscores-TabRight" game="TabRight" title="Miscellaneous Game Settings" class="pick" style="left: 420dp; top: 0dp; width: 220dp; height: 33dp; padding-top: 14dp; text-align: center;">Single Stunt</div>
+    <div id="hiscores-TxtTitle" game="TxtTitle" class="text" style="left: 56dp; top: 52dp; width: 521dp; height: 25dp; padding-top: 5dp; text-align: center;"></div>
+    <div id="hiscores-BoxLeft" game="BoxLeft" class="plate" game-text="off" style="left: 150dp; top: 84dp; width: 175dp; height: 291dp;">
+      <div id="hiscores-TxtTrack" game="TxtTrack" class="text" style="left: 5dp; top: 2dp; width: 167dp; height: 17dp; color: #7ab9fe; padding-top: 1dp;"></div>
+      <div id="hiscores-LstTrack" game="LstTrack" class="list" style="left: 7dp; top: 24dp; width: 161dp; height: 261dp; color: #7ab9fe;"></div>
+    </div>
+    <div id="hiscores-BoxRight" game="BoxRight" class="plate" game-text="off" style="left: 361dp; top: 84dp; width: 233dp; height: 291dp;">
+      <div id="hiscores-TxtStats1" game="TxtStats1" class="text" style="left: 6dp; top: 2dp; width: 91dp; height: 17dp; color: #7ab9fe; padding-top: 1dp;"></div>
+      <div id="hiscores-TxtStats2" game="TxtStats2" class="text" style="left: 104dp; top: 2dp; width: 123dp; height: 17dp; color: #7ab9fe; padding-top: 1dp;"></div>
+      <div id="hiscores-LstStats1" game="LstStats1" class="list" style="left: 6dp; top: 23dp; width: 92dp; height: 261dp; color: #7ab9fe;"></div>
+      <div id="hiscores-LstStats2" game="LstStats2" class="list" style="left: 104dp; top: 24dp; width: 122dp; height: 260dp; color: #7ab9fe;"></div>
+    </div>
+    <div id="hiscores-BoxScrollBackLeft" game="BoxScrollBackLeft" class="plate" game-text="off" style="left: 326dp; top: 105dp; width: 21dp; height: 270dp;"/>
+    <input type="range" orientation="vertical" id="hiscores-TrackScroll" game="TrackScroll" class="slider vslider" style="left: 329dp; top: 110dp; width: 16dp; height: 259dp;"/>
+    <div id="hiscores-TabQuarry" game="TabQuarry" class="pick" style="left: 19dp; top: 147dp; width: 123dp; height: 25dp; padding-top: 5dp; text-align: center;">Stunt Quarry</div>
+    <div id="hiscores-TabTag" game="TabTag" class="pick" style="left: 19dp; top: 176dp; width: 123dp; height: 25dp; padding-top: 5dp; text-align: center;">Moto-Tag</div>
+    <div id="hiscores-TabSupercross" game="TabSupercross" class="pick" style="left: 19dp; top: 205dp; width: 123dp; height: 25dp; padding-top: 5dp; text-align: center;">Supercross</div>
+    <div id="hiscores-TabNationals" game="TabNationals" class="pick" style="left: 19dp; top: 234dp; width: 123dp; height: 25dp; padding-top: 5dp; text-align: center;">Nationals</div>
+    <div id="hiscores-TabBaja" game="TabBaja" class="pick" style="left: 19dp; top: 263dp; width: 123dp; height: 25dp; padding-top: 5dp; text-align: center;">Baja</div>
+    <div id="hiscores-TabEnduro" game="TabEnduro" class="pick" style="left: 19dp; top: 292dp; width: 123dp; height: 25dp; padding-top: 5dp; text-align: center;">Enduro</div>
+    <div id="hiscores-Back" game="Back" title="Return To Previous Screen" class="button" style="left: 16dp; top: 404dp; width: 79dp; height: 76dp;"></div>
+    <div id="hiscores-Help" game="Help" title="Open Help" class="button" style="left: 146dp; top: 404dp; width: 56dp; height: 76dp;"></div>
+  </div>
+</div>
+</body>
+</rml>

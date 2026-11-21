@@ -14,6 +14,8 @@
 #include "framerate.h"
 #include "freecam.h"
 #include "input_timing.h"
+#include "menugame.h"
+#include "menunav.h"
 #include "prof.h"
 #include "smooth.h"
 
@@ -323,6 +325,8 @@ const MsTimerFn kGameMs = reinterpret_cast<MsTimerFn>(0x4C41D0);
 // zero after a reset); we keep them up to date for anything else reading
 // them and return the step in seconds on the FPU stack, like the original.
 float __stdcall GameFrameTime(uintptr_t game) {
+  MenuNavTick();  // menu clicks from the keyboard / controllers
+  mg::Tick();     // MenuMaX changes to the game's own menu controls
   auto& now_ms = *reinterpret_cast<DWORD*>(game + 0x2d8);
   auto& last_ms = *reinterpret_cast<DWORD*>(game + 0x2dc);
   LONGLONG now = Now();
@@ -465,6 +469,8 @@ int __stdcall FixedTick(uintptr_t g) {
 
 void FixedTickBody(uintptr_t g) {
   SoundPausePoll(g);
+  MenuNavTick();  // menu clicks from the keyboard / controllers
+  mg::Tick();     // MenuMaX changes to the game's own menu controls
   auto& now_ms = *reinterpret_cast<DWORD*>(g + 0x2d8);
   auto& last_ms = *reinterpret_cast<DWORD*>(g + 0x2dc);
   const LONGLONG now = Now();
@@ -748,6 +754,22 @@ void RaceGone(uintptr_t race) {
     patch::Log("menu frame cap: race %08x destroyed", static_cast<unsigned>(race));
     g_live_race = 0;
   }
+}
+
+// A race is running (as MenuFpsCap decides, below): bikes or the player
+// simulated in the last half second, or a race between its countdown being
+// set and its start, or its podium. The pause menu is not racing.
+bool RaceRunning() {
+  if (!g_freq.QuadPart) return false;
+  const LONGLONG half = g_freq.QuadPart / 2;
+  const LONGLONG t = Now();
+  const bool bikes = g_bike_seen && t - g_bike_seen < half;
+  const bool player = g_player_seen && t - g_player_seen < half;
+  const uintptr_t race = g_live_race;
+  const bool started = race && *reinterpret_cast<const uint8_t*>(race + 0x18A) != 0;
+  const uintptr_t game = *reinterpret_cast<const uintptr_t*>(0x5743AC);
+  const bool podium = race && game && *reinterpret_cast<const int*>(game + 0x3430) != 0;
+  return bikes || player || (race && (!started || podium));
 }
 
 void WaitForFrameSlot() {

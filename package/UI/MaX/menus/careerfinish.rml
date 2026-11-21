@@ -1,0 +1,46 @@
+<rml>
+<head>
+  <title>careerfinish</title>
+  <link type="text/rcss" href="menus.rcss"/>
+  <link type="text/rcss" href="careerfinish.rcss"/>
+</head>
+<!--
+  A copy of the game's own careerfinish (MaXMenus=1), drawn over it while the game
+  shows it. Made by tools/mcm2rml.py from the game's layouts, then edited by
+  hand. 1dp = one pixel of the game's 640x480 menus. See ..\README.txt.
+
+  game-dialogs     the game dialogs (layouts) this screen copies
+  game-opaque      it covers the whole menu (nothing under it is drawn)
+  game-dialog="x"  the part that copies the game's dialog x: shown while the
+                   game shows x, where the game put it
+  game="Name"      tied to the game's control of that name on that dialog
+  game-back        the control Esc / B / the right mouse button clicks
+-->
+<body game-dialogs="pcfinish" game-opaque game-back="Back">
+<div id="screen">
+
+
+  <!-- PCFINISH.DAT -->
+  <div id="d-pcfinish" class="dialog" game-dialog="pcfinish" style="left: 0dp; top: 0dp; width: 640dp; height: 480dp;">
+    <div id="pcfinish-rbwLabel1" game="rbwLabel1" class="text" style="left: 32dp; top: 24dp; width: 577dp; height: 25dp; padding-top: 5dp; text-align: center;">Final Pro-Circuit Standings</div>
+    <div id="pcfinish-rbwFrame1" game="rbwFrame1" class="plate" game-text="off" style="left: 28dp; top: 56dp; width: 586dp; height: 335dp;">
+      <div id="pcfinish-ButRank" game="ButRank" class="button" style="left: 16dp; top: 2dp; width: 41dp; height: 17dp; color: #7ab9fe; padding-top: 1dp;">Rank</div>
+      <div id="pcfinish-ButName" game="ButName" class="button" style="left: 61dp; top: 2dp; width: 113dp; height: 17dp; color: #7ab9fe; padding-top: 1dp;">Name</div>
+      <div id="pcfinish-ButPoints" game="ButPoints" class="button" style="left: 177dp; top: 2dp; width: 57dp; height: 17dp; color: #7ab9fe; padding-top: 1dp;">Points</div>
+      <div id="pcfinish-ButBike" game="ButBike" class="button" style="left: 237dp; top: 2dp; width: 84dp; height: 17dp; color: #7ab9fe; padding-top: 1dp;">Bike</div>
+      <div id="pcfinish-ButCash" game="ButCash" class="button" style="left: 325dp; top: 2dp; width: 81dp; height: 17dp; color: #7ab9fe; padding-top: 1dp;">Cash</div>
+      <div id="pcfinish-ButRepairs" game="ButRepairs" class="button" style="left: 409dp; top: 2dp; width: 81dp; height: 17dp; color: #7ab9fe; padding-top: 1dp;">Repairs</div>
+      <div id="pcfinish-ButMedical" game="ButMedical" class="button" style="left: 493dp; top: 2dp; width: 81dp; height: 17dp; color: #7ab9fe; padding-top: 1dp;">Medical</div>
+      <div id="pcfinish-LstRank" game="LstRank" class="list" style="left: 16dp; top: 24dp; width: 41dp; height: 305dp; color: #7ab9fe; text-align: center;"></div>
+      <div id="pcfinish-LstName" game="LstName" class="list" style="left: 60dp; top: 24dp; width: 113dp; height: 305dp; color: #7ab9fe;"></div>
+      <div id="pcfinish-LstPoints" game="LstPoints" class="list" style="left: 176dp; top: 24dp; width: 57dp; height: 305dp; color: #7ab9fe; text-align: center;"></div>
+      <div id="pcfinish-LstBike" game="LstBike" class="list" style="left: 236dp; top: 24dp; width: 85dp; height: 305dp; color: #7ab9fe; text-align: center;"></div>
+      <div id="pcfinish-LstCash" game="LstCash" class="list" style="left: 324dp; top: 24dp; width: 81dp; height: 305dp; color: #7ab9fe; text-align: right;"></div>
+      <div id="pcfinish-LstRepairs" game="LstRepairs" class="list" style="left: 408dp; top: 24dp; width: 81dp; height: 305dp; color: #7ab9fe; text-align: right;"></div>
+      <div id="pcfinish-LstMedical" game="LstMedical" class="list" style="left: 493dp; top: 24dp; width: 81dp; height: 305dp; color: #7ab9fe; text-align: right;"></div>
+    </div>
+    <div id="pcfinish-Back" game="Back" title="Return To Previous Screen" class="button" style="left: 16dp; top: 404dp; width: 79dp; height: 76dp;"></div>
+  </div>
+</div>
+</body>
+</rml>

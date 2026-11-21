@@ -1,0 +1,65 @@
+<rml>
+<head>
+  <title>mainmenu</title>
+  <link type="text/rcss" href="menus.rcss"/>
+  <link type="text/rcss" href="mainmenu.rcss"/>
+</head>
+<!--
+  A copy of the game's own mainmenu (MaXMenus=1), drawn over it while the game
+  shows it. Made by tools/mcm2rml.py from the game's layouts, then edited by
+  hand. 1dp = one pixel of the game's 640x480 menus. See ..\README.txt.
+
+  game-dialogs     the game dialogs (layouts) this screen copies
+  game-opaque      it covers the whole menu (nothing under it is drawn)
+  game-dialog="x"  the part that copies the game's dialog x: shown while the
+                   game shows x, where the game put it
+  game="Name"      tied to the game's control of that name on that dialog
+  game-back        the control Esc / B / the right mouse button clicks
+-->
+<body game-dialogs="mainmenu">
+<div id="screen">
+
+
+  <!-- MAINMENU.DAT -->
+  <div id="d-mainmenu" class="dialog" game-dialog="mainmenu" style="left: 0dp; top: 0dp; width: 640dp; height: 480dp;">
+    <div id="mainmenu-MenuSingle" game="MenuSingle" title="Start a single player race event" class="button" style="left: 64dp; top: 96dp; width: 79dp; height: 44dp;"></div>
+    <div id="mainmenu-MenuMulti" game="MenuMulti" title="Start a multiplayer race event" class="button" style="left: 44dp; top: 140dp; width: 84dp; height: 45dp;"></div>
+    <div id="mainmenu-MenuOptions" game="MenuOptions" title="Options" class="button" style="left: 35dp; top: 195dp; width: 86dp; height: 50dp;"></div>
+    <div id="mainmenu-MenuUserProfile" game="MenuUserProfile" title="Create a new user profile or load an existing one" class="button" style="left: 36dp; top: 254dp; width: 80dp; height: 57dp;"></div>
+    <div id="mainmenu-MenuHighScore" game="MenuHighScore" title="High Scores" class="button" style="left: 40dp; top: 318dp; width: 82dp; height: 55dp;"></div>
+    <div id="mainmenu-MenuHelp" game="MenuHelp" title="Help" class="button" style="left: 528dp; top: 339dp; width: 71dp; height: 47dp;"></div>
+    <div id="mainmenu-MenuReplay" game="MenuReplay" title="Play saved Instant Replays and Ghost Races" class="button" style="left: 54dp; top: 374dp; width: 77dp; height: 46dp;"></div>
+    <div id="mainmenu-MenuCredits" game="MenuCredits" title="Game Credits" class="button" style="left: 522dp; top: 392dp; width: 69dp; height: 50dp;"></div>
+    <div id="mainmenu-Menuexit" game="Menuexit" title="Quit Motocross Madness" class="button" style="left: 73dp; top: 419dp; width: 70dp; height: 42dp;"></div>
+    <div id="mainmenu-TxtCurrentProfile" game="TxtCurrentProfile" class="text" style="left: 218dp; top: 454dp; width: 250dp; height: 18dp; color: #7ab9fe; padding-top: 1dp; text-align: center;"></div>
+    <div id="mainmenu-MenuSingleAnimation" game="MenuSingleAnimation" game-anim-in="/dat/GLOBAL/01_Main/SinglePullDown0001.tga /dat/GLOBAL/01_Main/SinglePullDown0002.tga /dat/GLOBAL/01_Main/SinglePullDown0003.tga /dat/GLOBAL/01_Main/SinglePullDown0004.tga /dat/GLOBAL/01_Main/SinglePullDown0005.tga /dat/GLOBAL/01_Main/SinglePullDown0006.tga /dat/GLOBAL/01_Main/SinglePullDown0007.tga /dat/GLOBAL/01_Main/SinglePullDown0008.tga /dat/GLOBAL/01_Main/SinglePullDown0009.tga /dat/GLOBAL/01_Main/SinglePullDown0010.tga /dat/GLOBAL/01_Main/SinglePullDown0011.tga /dat/GLOBAL/01_Main/SinglePullDown0012.tga /dat/GLOBAL/01_Main/SinglePullDown0013.tga /dat/GLOBAL/01_Main/SinglePullDown0014.tga /dat/GLOBAL/01_Main/SinglePullDown0015.tga" game-anim-out="/dat/GLOBAL/01_Main/SinglePullDown0001.tga /dat/GLOBAL/01_Main/SinglePullDown0002.tga /dat/GLOBAL/01_Main/SinglePullDown0003.tga /dat/GLOBAL/01_Main/SinglePullDown0004.tga /dat/GLOBAL/01_Main/SinglePullDown0005.tga /dat/GLOBAL/01_Main/SinglePullDown0006.tga /dat/GLOBAL/01_Main/SinglePullDown0007.tga /dat/GLOBAL/01_Main/SinglePullDown0008.tga /dat/GLOBAL/01_Main/SinglePullDown0009.tga /dat/GLOBAL/01_Main/SinglePullDown0010.tga /dat/GLOBAL/01_Main/SinglePullDown0011.tga /dat/GLOBAL/01_Main/SinglePullDown0012.tga /dat/GLOBAL/01_Main/SinglePullDown0013.tga /dat/GLOBAL/01_Main/SinglePullDown0014.tga /dat/GLOBAL/01_Main/SinglePullDown0015.tga" class="plate" game-text="off" style="left: 108dp; top: 76dp; width: 458dp; height: 223dp;">
+      <div id="mainmenu-ScreenOverCtl" game="ScreenOverCtl" class="plate" game-text="off" style="left: 247dp; top: 37dp; width: 144dp; height: 104dp;"/>
+      <div id="mainmenu-ButBaja" game="ButBaja" title="Follow the arrow as you race through easy, open terrain" class="button" style="left: 88dp; top: 53dp; width: 105dp; height: 14dp; color: #7ab9fe; text-align: right;">BAJA</div>
+      <div id="mainmenu-ButStuntQuarry" game="ButStuntQuarry" title="Compete in time-based events for maximum stunt points" class="button" style="left: 88dp; top: 68dp; width: 105dp; height: 14dp; color: #7ab9fe; text-align: right;">STUNTS</div>
+      <div id="mainmenu-ButEnduro" game="ButEnduro" title="Race laps through large open environments" class="button" style="left: 88dp; top: 83dp; width: 105dp; height: 14dp; color: #7ab9fe; text-align: right;">ENDURO</div>
+      <div id="mainmenu-ButNationals" game="ButNationals" title="Race on challenging outdoor motocross tracks" class="button" style="left: 88dp; top: 98dp; width: 105dp; height: 14dp; color: #7ab9fe; text-align: right;">NATIONAL</div>
+      <div id="mainmenu-ButSupercross" game="ButSupercross" title="Race on tight and treacherous indoor stadium tracks" class="button" style="left: 88dp; top: 113dp; width: 105dp; height: 14dp; color: #7ab9fe; text-align: right;">SUPERCROSS</div>
+      <div id="mainmenu-ButProCircuit" game="ButProCircuit" title="Compete for cash and points as you build a pro riding career" class="button" style="left: 88dp; top: 128dp; width: 105dp; height: 14dp; color: #7ab9fe; text-align: right;">PRO-CIRCUIT</div>
+    </div>
+    <div id="mainmenu-MenuMultiAnimation" game="MenuMultiAnimation" game-anim-in="/dat/GLOBAL/01_Main/MultiPullDown0001.tga /dat/GLOBAL/01_Main/MultiPullDown0002.tga /dat/GLOBAL/01_Main/MultiPullDown0003.tga /dat/GLOBAL/01_Main/MultiPullDown0004.tga /dat/GLOBAL/01_Main/MultiPullDown0005.tga /dat/GLOBAL/01_Main/MultiPullDown0006.tga /dat/GLOBAL/01_Main/MultiPullDown0007.tga /dat/GLOBAL/01_Main/MultiPullDown0008.tga /dat/GLOBAL/01_Main/MultiPullDown0009.tga /dat/GLOBAL/01_Main/MultiPullDown0010.tga /dat/GLOBAL/01_Main/MultiPullDown0011.tga /dat/GLOBAL/01_Main/MultiPullDown0012.tga /dat/GLOBAL/01_Main/MultiPullDown0013.tga /dat/GLOBAL/01_Main/MultiPullDown0014.tga /dat/GLOBAL/01_Main/MultiPullDown0015.tga" game-anim-out="/dat/GLOBAL/01_Main/MultiPullDown0001.tga /dat/GLOBAL/01_Main/MultiPullDown0002.tga /dat/GLOBAL/01_Main/MultiPullDown0003.tga /dat/GLOBAL/01_Main/MultiPullDown0004.tga /dat/GLOBAL/01_Main/MultiPullDown0005.tga /dat/GLOBAL/01_Main/MultiPullDown0006.tga /dat/GLOBAL/01_Main/MultiPullDown0007.tga /dat/GLOBAL/01_Main/MultiPullDown0008.tga /dat/GLOBAL/01_Main/MultiPullDown0009.tga /dat/GLOBAL/01_Main/MultiPullDown0010.tga /dat/GLOBAL/01_Main/MultiPullDown0011.tga /dat/GLOBAL/01_Main/MultiPullDown0012.tga /dat/GLOBAL/01_Main/MultiPullDown0013.tga /dat/GLOBAL/01_Main/MultiPullDown0014.tga /dat/GLOBAL/01_Main/MultiPullDown0015.tga" class="plate" game-text="off" style="left: 105dp; top: 128dp; width: 383dp; height: 274dp;">
+      <div id="mainmenu-ButTCP" game="ButTCP" title="Connect with up to 7 other people via the Internet using IP addresses" class="button" style="left: 225dp; top: 32dp; width: 103dp; height: 81dp;"></div>
+      <div id="mainmenu-ButIPX" game="ButIPX" title="Connect with up to 7 other people sharing a Local Area Network (LAN)" class="button" style="left: 93dp; top: 47dp; width: 112dp; height: 48dp;"></div>
+      <div id="mainmenu-ButZone" game="ButZone" title="Connect with other players via the MSN Gaming Zone" class="button" style="left: 139dp; top: 104dp; width: 156dp; height: 64dp;"></div>
+      <div id="mainmenu-ButCable" game="ButCable" title="Use a standard serial cable to physically connect two computers" class="button" style="left: 93dp; top: 176dp; width: 112dp; height: 37dp;"></div>
+      <div id="mainmenu-ButModem" game="ButModem" title="Connect with one other player via a telephone/modem connection" class="button" style="left: 221dp; top: 176dp; width: 111dp; height: 37dp;"></div>
+    </div>
+    <div id="mainmenu-MenuUserAnimation" game="MenuUserAnimation" game-anim-in="/dat/GLOBAL/01_Main/UserPullDown0001.tga /dat/GLOBAL/01_Main/UserPullDown0002.tga /dat/GLOBAL/01_Main/UserPullDown0003.tga /dat/GLOBAL/01_Main/UserPullDown0004.tga /dat/GLOBAL/01_Main/UserPullDown0005.tga /dat/GLOBAL/01_Main/UserPullDown0006.tga /dat/GLOBAL/01_Main/UserPullDown0007.tga /dat/GLOBAL/01_Main/UserPullDown0008.tga /dat/GLOBAL/01_Main/UserPullDown0009.tga /dat/GLOBAL/01_Main/UserPullDown0010.tga /dat/GLOBAL/01_Main/UserPullDown0011.tga /dat/GLOBAL/01_Main/UserPullDown0012.tga /dat/GLOBAL/01_Main/UserPullDown0013.tga /dat/GLOBAL/01_Main/UserPullDown0014.tga /dat/GLOBAL/01_Main/UserPullDown0015.tga" game-anim-out="/dat/GLOBAL/01_Main/UserPullDown0001.tga /dat/GLOBAL/01_Main/UserPullDown0002.tga /dat/GLOBAL/01_Main/UserPullDown0003.tga /dat/GLOBAL/01_Main/UserPullDown0004.tga /dat/GLOBAL/01_Main/UserPullDown0005.tga /dat/GLOBAL/01_Main/UserPullDown0006.tga /dat/GLOBAL/01_Main/UserPullDown0007.tga /dat/GLOBAL/01_Main/UserPullDown0008.tga /dat/GLOBAL/01_Main/UserPullDown0009.tga /dat/GLOBAL/01_Main/UserPullDown0010.tga /dat/GLOBAL/01_Main/UserPullDown0011.tga /dat/GLOBAL/01_Main/UserPullDown0012.tga /dat/GLOBAL/01_Main/UserPullDown0013.tga /dat/GLOBAL/01_Main/UserPullDown0014.tga /dat/GLOBAL/01_Main/UserPullDown0015.tga" class="plate" game-text="off" style="left: 109dp; top: 152dp; width: 434dp; height: 328dp;">
+      <div id="mainmenu-rbwLabel1" game="rbwLabel1" class="text" style="left: 150dp; top: 11dp; width: 169dp; height: 21dp; font-size: 14dp; padding-top: 3dp; text-align: center;">User Profiles</div>
+      <div id="mainmenu-ProfileScrollUp" game="ProfileScrollUp" class="button" style="left: 243dp; top: 41dp; width: 20dp; height: 18dp;"></div>
+      <div id="mainmenu-LstProfiles" game="LstProfiles" class="list" style="left: 88dp; top: 48dp; width: 153dp; height: 177dp; color: #ffffff; text-align: right;"></div>
+      <div id="mainmenu-ButNewProfile" game="ButNewProfile" class="button" style="left: 288dp; top: 48dp; width: 117dp; height: 34dp; padding-top: 9dp; text-align: center;">New...</div>
+      <input type="range" orientation="vertical" id="mainmenu-SldProfile" game="SldProfile" class="slider vslider" style="left: 243dp; top: 59dp; width: 20dp; height: 157dp;"/>
+      <div id="mainmenu-ButLoadProfile" game="ButLoadProfile" class="button" style="left: 288dp; top: 96dp; width: 117dp; height: 34dp; padding-top: 9dp; text-align: center;">Load</div>
+      <div id="mainmenu-ButRemoveProfile" game="ButRemoveProfile" class="button" style="left: 288dp; top: 144dp; width: 117dp; height: 34dp; padding-top: 9dp; text-align: center;">Remove</div>
+      <div id="mainmenu-ButCancelProfile" game="ButCancelProfile" class="button" style="left: 288dp; top: 192dp; width: 117dp; height: 34dp; padding-top: 9dp; text-align: center;">Close</div>
+      <div id="mainmenu-ProfileScrollDown" game="ProfileScrollDown" class="button" style="left: 243dp; top: 216dp; width: 20dp; height: 18dp;"></div>
+    </div>
+  </div>
+</div>
+</body>
+</rml>

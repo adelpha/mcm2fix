@@ -26,6 +26,7 @@
 #include "../config.h"
 #include "../framerate.h"
 #include "../mode_prompt.h"
+#include "../ui/ui.h"
 #include "directdraw.h"
 #include "msaa.h"
 #include "texreplace.h"
@@ -1200,6 +1201,24 @@ HRESULT Surface::AddAttachedSurface(LPDIRECTDRAWSURFACE7 s) {
 
 HRESULT Surface::AddOverlayDirtyRect(LPRECT) { return DDERR_UNSUPPORTED; }
 
+// MenuMaX screens draw their own pointer: the game's menu cursor (a
+// colour-keyed sprite of at most 64x64 drawn over its position, which stays
+// put while a screen is up) is not drawn then.
+bool HideGameCursor(const RECT& r) {
+  if (!ui::Active()) return false;
+  POINT c{};
+  if (!ModePromptCursor(&c)) return false;
+  if (c.x < r.left || c.y < r.top || c.x >= r.right || c.y >= r.bottom) return false;
+  if (r.right - r.left > 64 || r.bottom - r.top > 64) return false;
+  static int logged = 0;
+  if (logged < 3) {
+    ++logged;
+    Log("MenuMaX: the game's cursor sprite (%ld,%ld-%ld,%ld, cursor at %ld,%ld) is not drawn while a screen is up",
+        r.left, r.top, r.right, r.bottom, c.x, c.y);
+  }
+  return true;
+}
+
 HRESULT Surface::Blt(LPRECT dr_in, LPDIRECTDRAWSURFACE7 src_in, LPRECT sr_in, DWORD flags,
                      LPDDBLTFX fx) {
   FlushPendingDraws(kBreakSurface);
@@ -1257,6 +1276,7 @@ HRESULT Surface::Blt(LPRECT dr_in, LPDIRECTDRAWSURFACE7 src_in, LPRECT sr_in, DW
     key = true;
     key_value = src->key_.dwColorSpaceLowValue;
   }
+  if (key && HideGameCursor(dr)) return DD_OK;
   if (dr.left == 0 && dr.top == 0 && dr.right == full.right && dr.bottom == full.bottom && sr.left == 0 &&
       sr.top == 0 && sr.right == static_cast<LONG>(src->Width()) && sr.bottom == static_cast<LONG>(src->Height()))
     InheritName(src);

@@ -1,0 +1,148 @@
+/* multi.rml: each control's own pictures (from the game's layouts). Made by tools/mcm2rml.py. */
+#d-mpbase { decorator: image(/dat/MPBASE/Multiplayer/MultiBG.tga); }
+#mpbase-EventTab { decorator: image(/dat/MPBASE/Multiplayer/TabDown00.tga); }
+#mpbase-EventTab.on { decorator: image(/dat/MPBASE/Multiplayer/Tab00.tga); }
+#mpbase-EventTab.disabled { decorator: image(/dat/GLOBAL/Resources/RadioButtonOffGrey.tga); }
+#mpbase-BikeRiderTab { decorator: image(/dat/MPBASE/Multiplayer/TabDown01.tga); }
+#mpbase-BikeRiderTab.on { decorator: image(/dat/MPBASE/Multiplayer/Tab01.tga); }
+#mpbase-BikeRiderTab.disabled { decorator: image(/dat/GLOBAL/Resources/RadioButtonOffGrey.tga); }
+#mpbase-RaceInfoTab { decorator: image(/dat/MPBASE/Multiplayer/TabDown02.tga); }
+#mpbase-RaceInfoTab.on { decorator: image(/dat/MPBASE/Multiplayer/Tab02.tga); }
+#mpbase-RaceInfoTab.disabled { decorator: image(/dat/GLOBAL/Resources/RadioButtonOffGrey.tga); }
+#mpbase-OptionsTab { decorator: image(/dat/MPBASE/Multiplayer/TabDown03.tga); }
+#mpbase-OptionsTab.on { decorator: image(/dat/MPBASE/Multiplayer/Tab03.tga); }
+#mpbase-OptionsTab.disabled { decorator: image(/dat/GLOBAL/Resources/RadioButtonOffGrey.tga); }
+#mpbase-ButRdyUser { decorator: image(/dat/MPBASE/Multiplayer/RdyButton01Up.tga); }
+#mpbase-ButRdyUser:active { decorator: image(/dat/MPBASE/Multiplayer/RdyButton01Down.tga); }
+#mpbase-UserName { decorator: image(/dat/MPBASE/Multiplayer/NameBox.tga); }
+#mpbase-ButRdyPlayer2 { decorator: image(/dat/MPBASE/Multiplayer/RdyButton02Up.tga); }
+#mpbase-ButRdyPlayer2:active { decorator: image(/dat/MPBASE/Multiplayer/RdyButton02Down.tga); }
+#mpbase-NamePlayer2 { decorator: image(/dat/MPBASE/Multiplayer/NameBox.tga); }
+#mpbase-ButRdyPlayer3 { decorator: image(/dat/MPBASE/Multiplayer/RdyButton03Up.tga); }
+#mpbase-ButRdyPlayer3:active { decorator: image(/dat/MPBASE/Multiplayer/RdyButton03Down.tga); }
+#mpbase-NamePlayer3 { decorator: image(/dat/MPBASE/Multiplayer/NameBox.tga); }
+#mpbase-ButRdyPlayer4 { decorator: image(/dat/MPBASE/Multiplayer/RdyButton04Up.tga); }
+#mpbase-ButRdyPlayer4:active { decorator: image(/dat/MPBASE/Multiplayer/RdyButton04Down.tga); }
+#mpbase-NamePlayer4 { decorator: image(/dat/MPBASE/Multiplayer/NameBox.tga); }
+#mpbase-ButRdyPlayer5 { decorator: image(/dat/MPBASE/Multiplayer/RdyButton05Up.tga); }
+#mpbase-ButRdyPlayer5:active { decorator: image(/dat/MPBASE/Multiplayer/RdyButton05Down.tga); }
+#mpbase-NamePlayer5 { decorator: image(/dat/MPBASE/Multiplayer/NameBox.tga); }
+#mpbase-ButRdyPlayer6 { decorator: image(/dat/MPBASE/Multiplayer/RdyButton06Up.tga); }
+#mpbase-ButRdyPlayer6:active { decorator: image(/dat/MPBASE/Multiplayer/RdyButton06Down.tga); }
+#mpbase-NamePlayer6 { decorator: image(/dat/MPBASE/Multiplayer/NameBox.tga); }
+#mpbase-ButRdyPlayer7 { decorator: image(/dat/MPBASE/Multiplayer/RdyButton07Up.tga); }
+#mpbase-ButRdyPlayer7:active { decorator: image(/dat/MPBASE/Multiplayer/RdyButton07Down.tga); }
+#mpbase-NamePlayer7 { decorator: image(/dat/MPBASE/Multiplayer/NameBox.tga); }
+#mpbase-ButRdyPlayer8 { decorator: image(/dat/MPBASE/Multiplayer/RdyButton08Up.tga); }
+#mpbase-ButRdyPlayer8:active { decorator: image(/dat/MPBASE/Multiplayer/RdyButton08Down.tga); }
+#mpbase-NamePlayer8 { decorator: image(/dat/MPBASE/Multiplayer/NameBox.tga); }
+#mpbase-ListChat { decorator: image(/dat/MPBASE/Multiplayer/ChatBox.tga); }
+#mpbase-ListChat .row.on { color: #7ab9fe; }
+#mpbase-ScrollChat slidertrack { decorator: image(/dat/MPBASE/Multiplayer/ChatVertScroll.tga); }
+#mpbase-ScrollChat sliderbar { width: 17dp; height: 17dp; margin-left: 2dp; decorator: image(/dat/GLOBAL/Resources/ElevatorThumbUp.tga); }
+#mpbase-EditChat { decorator: image(/dat/MPBASE/Multiplayer/ChatEditBox2.tga); }
+#mpbase-ButChatSend { decorator: image(/dat/MPBASE/Multiplayer/MPSendUp.tga); }
+#mpbase-ButChatSend:active { decorator: image(/dat/MPBASE/Multiplayer/MPSendDown.tga); }
+#mpbase-ButChatSend.disabled { decorator: image(/dat/MPBASE/Multiplayer/MPSendUp.tga); }
+#mpbase-Back { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackUp.tga); }
+#mpbase-Back:hover, #mpbase-Back:focus-visible { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackLit.tga); }
+#mpbase-Back:active { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackDown.tga); }
+#mpbase-Help { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2HelpUp.tga); }
+#mpbase-Help:hover, #mpbase-Help:focus-visible { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2HelpLit.tga); }
+#mpbase-Help:active { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2HelpDown.tga); }
+#mpbase-Joystick { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2JoyUp.tga); }
+#mpbase-Joystick:hover, #mpbase-Joystick:focus-visible { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2JoyLit.tga); }
+#mpbase-Joystick:active { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2JoyDown.tga); }
+#mpbase-Options { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2OptionUp.tga); }
+#mpbase-Options:hover, #mpbase-Options:focus-visible { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2OptionLit.tga); }
+#mpbase-Options:active { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2OptionDown.tga); }
+#mpbase-Start { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2StartUp.tga); }
+#mpbase-Start:hover, #mpbase-Start:focus-visible { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2StartLit.tga); }
+#mpbase-Start:active { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2StartDown.tga); }
+#d-mpevent { decorator: image(/dat/MPEVENT/Multiplayer/MultiEvent/MPEBack.tga); }
+#mpevent-EventTypeDropDown selectvalue { decorator: image(/dat/MPEVENT/Multiplayer/MultiEvent/EDropDown01.tga); }
+#mpevent-EventTypeDropDown selectbox { decorator: image(/dat/MPEVENT/Multiplayer/MultiEvent/EDropDownBG01.tga); }
+#mpevent-RaceModeDropDown selectvalue { decorator: image(/dat/MPEVENT/Multiplayer/MultiEvent/EDropDown01.tga); }
+#mpevent-RaceModeDropDown selectbox { decorator: image(/dat/MPEVENT/Multiplayer/MultiEvent/EDropDownBG01.tga); }
+#mpevent-PictureBox { decorator: image(/dat/MPEVENT/Multiplayer/MultiEvent/EScreen.tga); }
+#mpevent-CornerUL { decorator: image(/dat/MPEVENT/Multiplayer/MultiEvent/ECornerUL.tga); }
+#mpevent-CornerUR { decorator: image(/dat/MPEVENT/Multiplayer/MultiEvent/ECornerUR.tga); }
+#mpevent-OpponentsControlBox { decorator: image(/dat/MPEVENT/Multiplayer/MultiEvent/EPlate01.tga); }
+#mpevent-OpponentsLeftArrow { decorator: image(/dat/GLOBAL/Resources/LeftArrowUp.tga); }
+#mpevent-OpponentsLeftArrow:hover, #mpevent-OpponentsLeftArrow:focus-visible { decorator: image(/dat/GLOBAL/Resources/LeftArrowLit.tga); }
+#mpevent-OpponentsLeftArrow:active { decorator: image(/dat/GLOBAL/Resources/LeftArrowDown.tga); }
+#mpevent-OpponentsLeftArrow.disabled { decorator: image(/dat/GLOBAL/Resources/LeftArrowGrey.tga); }
+#mpevent-OpponentsListBox .row.on { color: #7ab9fe; }
+#mpevent-OpponentsRightArrow { decorator: image(/dat/GLOBAL/Resources/RightArrowUp.tga); }
+#mpevent-OpponentsRightArrow:hover, #mpevent-OpponentsRightArrow:focus-visible { decorator: image(/dat/GLOBAL/Resources/RightArrowLit.tga); }
+#mpevent-OpponentsRightArrow:active { decorator: image(/dat/GLOBAL/Resources/RightArrowDown.tga); }
+#mpevent-OpponentsRightArrow.disabled { decorator: image(/dat/GLOBAL/Resources/RightArrowGrey.tga); }
+#mpevent-LapsControlBox { decorator: image(/dat/MPEVENT/Multiplayer/MultiEvent/EPlate02.tga); }
+#mpevent-LapsLeftArrow { decorator: image(/dat/GLOBAL/Resources/LeftArrowUp.tga); }
+#mpevent-LapsLeftArrow:hover, #mpevent-LapsLeftArrow:focus-visible { decorator: image(/dat/GLOBAL/Resources/LeftArrowLit.tga); }
+#mpevent-LapsLeftArrow:active { decorator: image(/dat/GLOBAL/Resources/LeftArrowDown.tga); }
+#mpevent-LapsLeftArrow.disabled { decorator: image(/dat/GLOBAL/Resources/LeftArrowGrey.tga); }
+#mpevent-LapsListBox .row.on { color: #7ab9fe; }
+#mpevent-LapRightArrow { decorator: image(/dat/GLOBAL/Resources/RightArrowUp.tga); }
+#mpevent-LapRightArrow:hover, #mpevent-LapRightArrow:focus-visible { decorator: image(/dat/GLOBAL/Resources/RightArrowLit.tga); }
+#mpevent-LapRightArrow:active { decorator: image(/dat/GLOBAL/Resources/RightArrowDown.tga); }
+#mpevent-LapRightArrow.disabled { decorator: image(/dat/GLOBAL/Resources/RightArrowGrey.tga); }
+#mpevent-RacesControlBox { decorator: image(/dat/MPEVENT/Multiplayer/MultiEvent/EPlate03.tga); }
+#mpevent-RacesLeftArrow { decorator: image(/dat/GLOBAL/Resources/LeftArrowUp.tga); }
+#mpevent-RacesLeftArrow:hover, #mpevent-RacesLeftArrow:focus-visible { decorator: image(/dat/GLOBAL/Resources/LeftArrowLit.tga); }
+#mpevent-RacesLeftArrow:active { decorator: image(/dat/GLOBAL/Resources/LeftArrowDown.tga); }
+#mpevent-RacesLeftArrow.disabled { decorator: image(/dat/GLOBAL/Resources/LeftArrowGrey.tga); }
+#mpevent-RacesListBox .row.on { color: #7ab9fe; }
+#mpevent-RacesRightArrow { decorator: image(/dat/GLOBAL/Resources/RightArrowUp.tga); }
+#mpevent-RacesRightArrow:hover, #mpevent-RacesRightArrow:focus-visible { decorator: image(/dat/GLOBAL/Resources/RightArrowLit.tga); }
+#mpevent-RacesRightArrow:active { decorator: image(/dat/GLOBAL/Resources/RightArrowDown.tga); }
+#mpevent-RacesRightArrow.disabled { decorator: image(/dat/GLOBAL/Resources/RightArrowGrey.tga); }
+#mpevent-TrackLeft { decorator: image(/dat/GLOBAL/Resources/LeftArrowUp.tga); }
+#mpevent-TrackLeft:hover, #mpevent-TrackLeft:focus-visible { decorator: image(/dat/GLOBAL/Resources/LeftArrowLit.tga); }
+#mpevent-TrackLeft:active { decorator: image(/dat/GLOBAL/Resources/LeftArrowDown.tga); }
+#mpevent-TrackLeft.disabled { decorator: image(/dat/GLOBAL/Resources/LeftArrowGrey.tga); }
+#mpevent-CornerLL { decorator: image(/dat/MPEVENT/Multiplayer/MultiEvent/ECornerLL.tga); }
+#mpevent-DDLTextBox selectvalue { decorator: image(/dat/MPEVENT/Multiplayer/MultiEvent/MPEPullDown05.tga); }
+#mpevent-DDLTextBox selectbox { decorator: image(/dat/MPEVENT/Multiplayer/MultiEvent/MPEPullDownBG05.tga); }
+#mpevent-TrackRight { decorator: image(/dat/GLOBAL/Resources/RightArrowUp.tga); }
+#mpevent-TrackRight:hover, #mpevent-TrackRight:focus-visible { decorator: image(/dat/GLOBAL/Resources/RightArrowLit.tga); }
+#mpevent-TrackRight:active { decorator: image(/dat/GLOBAL/Resources/RightArrowDown.tga); }
+#mpevent-TrackRight.disabled { decorator: image(/dat/GLOBAL/Resources/RightArrowGrey.tga); }
+#mpevent-CornerLR { decorator: image(/dat/MPEVENT/Multiplayer/MultiEvent/ECornerLR.tga); }
+#d-mprinfo { decorator: image(/dat/MPRINFO/Multiplayer/MultiRaceInfo/MPRBack.tga); }
+#mprinfo-rbwFrame1 { decorator: image(/dat/MPRINFO/Multiplayer/MultiRaceInfo/IScreenSmaller.tga); }
+#d-mpbiker { decorator: image(/dat/MPBIKER/Multiplayer/MultiBike_Rider/B_RBack.tga); }
+#mpbiker-LargestOpponentDropDown selectvalue { decorator: image(/dat/MPBIKER/Multiplayer/MultiBike_Rider/B_RDropDown01.tga); }
+#mpbiker-LargestOpponentDropDown selectbox { decorator: image(/dat/MPBIKER/Multiplayer/MultiBike_Rider/B_RDropDownBG01.tga); }
+#mpbiker-DDLEngineSize selectvalue { decorator: image(/dat/MPBIKER/Multiplayer/MultiBike_Rider/B_RDropDown01.tga); }
+#mpbiker-DDLEngineSize selectbox { decorator: image(/dat/MPBIKER/Multiplayer/MultiBike_Rider/B_RDropDownBG01.tga); }
+#mpbiker-RiderLeft { decorator: image(/dat/GLOBAL/Resources/LeftArrowUp.tga); }
+#mpbiker-RiderLeft:hover, #mpbiker-RiderLeft:focus-visible { decorator: image(/dat/GLOBAL/Resources/LeftArrowLit.tga); }
+#mpbiker-RiderLeft:active { decorator: image(/dat/GLOBAL/Resources/LeftArrowDown.tga); }
+#mpbiker-RiderLeft.disabled { decorator: image(/dat/GLOBAL/Resources/LeftArrowGrey.tga); }
+#mpbiker-DDLRiders selectvalue { decorator: image(/dat/MPBIKER/Multiplayer/MultiBike_Rider/B_RPullDown05.tga); }
+#mpbiker-DDLRiders selectbox { decorator: image(/dat/MPBIKER/Multiplayer/MultiBike_Rider/B_RPullDownBG05.tga); }
+#mpbiker-RiderRight { decorator: image(/dat/GLOBAL/Resources/RightArrowUp.tga); }
+#mpbiker-RiderRight:hover, #mpbiker-RiderRight:focus-visible { decorator: image(/dat/GLOBAL/Resources/RightArrowLit.tga); }
+#mpbiker-RiderRight:active { decorator: image(/dat/GLOBAL/Resources/RightArrowDown.tga); }
+#mpbiker-RiderRight.disabled { decorator: image(/dat/GLOBAL/Resources/RightArrowGrey.tga); }
+#mpbiker-CornerUL { decorator: image(/dat/MPBIKER/Multiplayer/MultiBike_Rider/B_RCornerUL.tga); }
+#mpbiker-CornerUR { decorator: image(/dat/MPBIKER/Multiplayer/MultiBike_Rider/B_RCornerUR.tga); }
+#mpbiker-EditPlateNumber { decorator: image(/dat/MPBIKER/Multiplayer/MultiBike_Rider/B_RSmalleditBox.tga); }
+#mpbiker-ButWrench { decorator: image(/dat/MPBIKER/Multiplayer/MultiBike_Rider/MultiWrenchUp.tga); }
+#mpbiker-ButWrench:hover, #mpbiker-ButWrench:focus-visible { decorator: image(/dat/MPBIKER/Multiplayer/MultiBike_Rider/MultiWrenchLit.tga); }
+#mpbiker-ButWrench:active { decorator: image(/dat/MPBIKER/Multiplayer/MultiBike_Rider/MultiWrenchDown.tga); }
+#mpbiker-CornerLL { decorator: image(/dat/MPBIKER/Multiplayer/MultiBike_Rider/B_RCornerLL.tga); }
+#mpbiker-BikeLeft { decorator: image(/dat/GLOBAL/Resources/LeftArrowUp.tga); }
+#mpbiker-BikeLeft:hover, #mpbiker-BikeLeft:focus-visible { decorator: image(/dat/GLOBAL/Resources/LeftArrowLit.tga); }
+#mpbiker-BikeLeft:active { decorator: image(/dat/GLOBAL/Resources/LeftArrowDown.tga); }
+#mpbiker-BikeLeft.disabled { decorator: image(/dat/GLOBAL/Resources/LeftArrowGrey.tga); }
+#mpbiker-DDLBikes selectvalue { decorator: image(/dat/MPBIKER/Multiplayer/MultiBike_Rider/B_RPullDown05.tga); }
+#mpbiker-DDLBikes selectbox { decorator: image(/dat/MPBIKER/Multiplayer/MultiBike_Rider/B_RPullDownBG05.tga); }
+#mpbiker-BikeRight { decorator: image(/dat/GLOBAL/Resources/RightArrowUp.tga); }
+#mpbiker-BikeRight:hover, #mpbiker-BikeRight:focus-visible { decorator: image(/dat/GLOBAL/Resources/RightArrowLit.tga); }
+#mpbiker-BikeRight:active { decorator: image(/dat/GLOBAL/Resources/RightArrowDown.tga); }
+#mpbiker-BikeRight.disabled { decorator: image(/dat/GLOBAL/Resources/RightArrowGrey.tga); }
+#mpbiker-CornerLR { decorator: image(/dat/MPBIKER/Multiplayer/MultiBike_Rider/B_RCornerLR.tga); }
+#d-mpopt { decorator: image(/dat/MPOPT/Multiplayer/MultiOptions/MPOBack.tga); }
+#mpopt-EditMaxAIBikes { decorator: image(/dat/MPOPT/Multiplayer/MultiOptions/MOSmalleditBox.tga); }

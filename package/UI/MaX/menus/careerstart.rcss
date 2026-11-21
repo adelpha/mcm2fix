@@ -1,0 +1,21 @@
+/* careerstart.rml: each control's own pictures (from the game's layouts). Made by tools/mcm2rml.py. */
+#d-pcstart { decorator: image(/dat/PCSTART/ProCircuitScreens/PCStartUp/PCStartUpBG.tga); }
+#pcstart-LstCurrent { decorator: image(/dat/PCSTART/ProCircuitScreens/PCStartUp/PanelScreen01.tga); }
+#pcstart-rbwVertSlider2 sliderbar { width: 8dp; height: 7dp; margin-left: 0dp; decorator: image(/dat/PCSTART/ProCircuitScreens/PCStartUp/PCScreenThumb.tga); }
+#pcstart-ButContinue { decorator: image(/dat/PCSTART/ProCircuitScreens/PCStartUp/NewUp.tga); }
+#pcstart-ButContinue:active { decorator: image(/dat/PCSTART/ProCircuitScreens/PCStartUp/NewDown.tga); }
+#pcstart-ButContinue.disabled { decorator: image(/dat/PCSTART/ProCircuitScreens/PCStartUp/NewUp.tga); }
+#pcstart-ButDelete { decorator: image(/dat/PCSTART/ProCircuitScreens/PCStartUp/NewUp.tga); }
+#pcstart-ButDelete:active { decorator: image(/dat/PCSTART/ProCircuitScreens/PCStartUp/NewDown.tga); }
+#pcstart-ButDelete.disabled { decorator: image(/dat/PCSTART/ProCircuitScreens/PCStartUp/NewUp.tga); }
+#pcstart-LstFinished { decorator: image(/dat/PCSTART/ProCircuitScreens/PCStartUp/PanelScreen01.tga); }
+#pcstart-rbwVertSlider1 sliderbar { width: 8dp; height: 7dp; margin-left: 0dp; decorator: image(/dat/PCSTART/ProCircuitScreens/PCStartUp/PCScreenThumb.tga); }
+#pcstart-ButDoneDelete { decorator: image(/dat/PCSTART/ProCircuitScreens/PCStartUp/ContinueUp.tga); }
+#pcstart-ButDoneDelete:active { decorator: image(/dat/PCSTART/ProCircuitScreens/PCStartUp/ContinueDown.tga); }
+#pcstart-ButDoneDelete.disabled { decorator: image(/dat/PCSTART/ProCircuitScreens/PCStartUp/ContinueUp.tga); }
+#pcstart-Back { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackUp.tga); }
+#pcstart-Back:hover, #pcstart-Back:focus-visible { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackLit.tga); }
+#pcstart-Back:active { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackDown.tga); }
+#pcstart-ButNew { decorator: image(/dat/PCSTART/ProCircuitScreens/PCStartUp/ContinueUp.tga); }
+#pcstart-ButNew:active { decorator: image(/dat/PCSTART/ProCircuitScreens/PCStartUp/ContinueDown.tga); }
+#pcstart-ButNew.disabled { decorator: image(/dat/PCSTART/ProCircuitScreens/PCStartUp/ContinueUp.tga); }

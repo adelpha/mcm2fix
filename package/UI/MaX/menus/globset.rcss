@@ -1,0 +1,10 @@
+/* globset.rml: each control's own pictures (from the game's layouts). Made by tools/mcm2rml.py. */
+#d-globset { decorator: image(/dat/GLOBSET/GlobalSettingsPop/GlobalBG.tga); }
+#globset-LstProfiles .row.on { color: #ffffff; }
+#globset-ScrollProfiles sliderbar { width: 8dp; height: 7dp; margin-left: 2dp; decorator: image(/dat/GLOBSET/GlobalSettingsPop/GlobalThumb.tga); }
+#globset-ButLoad { decorator: image(/dat/GLOBSET/GlobalSettingsPop/GlobalBttnUp.tga); }
+#globset-ButLoad:active { decorator: image(/dat/GLOBSET/GlobalSettingsPop/GlobalBttnDown.tga); }
+#globset-ButLoad.disabled { decorator: image(/dat/GLOBSET/GlobalSettingsPop/GlobalBttnUp.tga); }
+#globset-ButCancel { decorator: image(/dat/GLOBSET/GlobalSettingsPop/GlobalBttnUp.tga); }
+#globset-ButCancel:active { decorator: image(/dat/GLOBSET/GlobalSettingsPop/GlobalBttnDown.tga); }
+#globset-ButCancel.disabled { decorator: image(/dat/GLOBSET/GlobalSettingsPop/GlobalBttnUp.tga); }

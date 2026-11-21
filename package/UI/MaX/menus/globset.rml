@@ -1,0 +1,35 @@
+<rml>
+<head>
+  <title>globset</title>
+  <link type="text/rcss" href="menus.rcss"/>
+  <link type="text/rcss" href="globset.rcss"/>
+</head>
+<!--
+  A copy of the game's own globset (MaXMenus=1), drawn over it while the game
+  shows it. Made by tools/mcm2rml.py from the game's layouts, then edited by
+  hand. 1dp = one pixel of the game's 640x480 menus. See ..\README.txt.
+
+  game-dialogs     the game dialogs (layouts) this screen copies
+  game-opaque      it covers the whole menu (nothing under it is drawn)
+  game-dialog="x"  the part that copies the game's dialog x: shown while the
+                   game shows x, where the game put it
+  game="Name"      tied to the game's control of that name on that dialog
+  game-back        the control Esc / B / the right mouse button clicks
+-->
+<body game-dialogs="globset">
+<div id="screen">
+
+
+  <!-- GLOBSET.DAT -->
+  <div id="d-globset" class="dialog" game-dialog="globset" style="left: 213dp; top: 120dp; width: 214dp; height: 240dp;">
+    <div id="globset-TitleText" game="TitleText" class="text" style="left: 9dp; top: 7dp; width: 195dp; height: 21dp; padding-top: 3dp; text-align: center;">User Settings</div>
+    <div id="globset-ButFactory" game="ButFactory" class="radio" style="left: 32dp; top: 40dp; width: 153dp; height: 17dp; padding-top: 1dp; padding-left: 18dp;"><div class="box"/><span class="t">Reset to Defaults</span></div>
+    <div id="globset-ButCopyUser" game="ButCopyUser" class="radio" style="left: 32dp; top: 56dp; width: 153dp; height: 17dp; padding-top: 1dp; padding-left: 18dp;"><div class="box"/><span class="t">Copy from profile:</span></div>
+    <div id="globset-LstProfiles" game="LstProfiles" class="list" style="left: 23dp; top: 81dp; width: 150dp; height: 106dp; color: #7ab9fe;"></div>
+    <input type="range" orientation="vertical" id="globset-ScrollProfiles" game="ScrollProfiles" class="slider vslider" style="left: 180dp; top: 85dp; width: 12dp; height: 100dp;"/>
+    <div id="globset-ButLoad" game="ButLoad" class="button" style="left: 16dp; top: 199dp; width: 66dp; height: 25dp; padding-top: 5dp; text-align: center;">Ok</div>
+    <div id="globset-ButCancel" game="ButCancel" class="button" style="left: 132dp; top: 199dp; width: 66dp; height: 25dp; padding-top: 5dp; text-align: center;">Cancel</div>
+  </div>
+</div>
+</body>
+</rml>

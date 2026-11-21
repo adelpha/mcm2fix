@@ -1,0 +1,33 @@
+/* replays.rml: each control's own pictures (from the game's layouts). Made by tools/mcm2rml.py. */
+#d-grbase { decorator: image(/dat/GRBASE/Ghost_Replay/G_RBG.tga); }
+#grbase-TabLeft { decorator: image(/dat/GRBASE/Ghost_Replay/G_RTab01Down.tga); }
+#grbase-TabLeft.on { decorator: image(/dat/GRBASE/Ghost_Replay/G_RTab01Up.tga); }
+#grbase-TabLeft.disabled { decorator: image(/dat/GLOBAL/Resources/RadioButtonOffGrey.tga); }
+#grbase-TabRight { decorator: image(/dat/GRBASE/Ghost_Replay/G_RTab02Down.tga); }
+#grbase-TabRight.on { decorator: image(/dat/GRBASE/Ghost_Replay/G_RTab02Up.tga); }
+#grbase-TabRight.disabled { decorator: image(/dat/GLOBAL/Resources/RadioButtonOffGrey.tga); }
+#grbase-Back { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackUp.tga); }
+#grbase-Back:hover, #grbase-Back:focus-visible { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackLit.tga); }
+#grbase-Back:active { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2BackDown.tga); }
+#grbase-Help { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2HelpUp.tga); }
+#grbase-Help:hover, #grbase-Help:focus-visible { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2HelpLit.tga); }
+#grbase-Help:active { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2HelpDown.tga); }
+#grbase-Start { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2StartUp.tga); }
+#grbase-Start:hover, #grbase-Start:focus-visible { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2StartLit.tga); }
+#grbase-Start:active { decorator: image(/dat/GLOBAL/Rev2GlobalSource/R2StartDown.tga); }
+#ghostfil-Screen { decorator: image(/dat/GHOSTFIL/Ghost_Replay/Ghost/Ghost_screen.tga); }
+#ghostfil-SldGhosts sliderbar { width: 8dp; height: 7dp; margin-left: 2dp; decorator: image(/dat/GHOSTFIL/Ghost_Replay/Ghost/Ghost_ScreenThumb.tga); }
+#ghostfil-ButDescription { decorator: image(/dat/GHOSTFIL/Ghost_Replay/Ghost/Ghost_LeftBttnUp.tga); }
+#ghostfil-ButDescription:active { decorator: image(/dat/GHOSTFIL/Ghost_Replay/Ghost/Ghost_LeftBttnDown.tga); }
+#ghostfil-ButDescription.disabled { decorator: image(/dat/GHOSTFIL/Ghost_Replay/Ghost/Ghost_LeftBttnUp.tga); }
+#ghostfil-ButDelete { decorator: image(/dat/GHOSTFIL/Ghost_Replay/Ghost/Ghost_RightBttnUp.tga); }
+#ghostfil-ButDelete:active { decorator: image(/dat/GHOSTFIL/Ghost_Replay/Ghost/Ghost_RightBttnDown.tga); }
+#ghostfil-ButDelete.disabled { decorator: image(/dat/GHOSTFIL/Ghost_Replay/Ghost/Ghost_RightBttnUp.tga); }
+#replyfil-Screen { decorator: image(/dat/REPLYFIL/Ghost_Replay/Replay/Replay_screen.tga); }
+#replyfil-SldReplays sliderbar { width: 8dp; height: 7dp; margin-left: 2dp; decorator: image(/dat/REPLYFIL/Ghost_Replay/Replay/Replay_ScreenThumb.tga); }
+#replyfil-ButDescription { decorator: image(/dat/REPLYFIL/Ghost_Replay/Replay/Replay_LeftBttnUp.tga); }
+#replyfil-ButDescription:active { decorator: image(/dat/REPLYFIL/Ghost_Replay/Replay/Replay_LeftBttnDown.tga); }
+#replyfil-ButDescription.disabled { decorator: image(/dat/REPLYFIL/Ghost_Replay/Replay/Replay_LeftBttnUp.tga); }
+#replyfil-ButDelete { decorator: image(/dat/REPLYFIL/Ghost_Replay/Replay/Replay_RightBttnUp.tga); }
+#replyfil-ButDelete:active { decorator: image(/dat/REPLYFIL/Ghost_Replay/Replay/Replay_RightBttnDown.tga); }
+#replyfil-ButDelete.disabled { decorator: image(/dat/REPLYFIL/Ghost_Replay/Replay/Replay_RightBttnUp.tga); }

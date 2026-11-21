@@ -1,0 +1,73 @@
+<rml>
+<head>
+  <title>replays</title>
+  <link type="text/rcss" href="menus.rcss"/>
+  <link type="text/rcss" href="replays.rcss"/>
+</head>
+<!--
+  A copy of the game's own replays (MaXMenus=1), drawn over it while the game
+  shows it. Made by tools/mcm2rml.py from the game's layouts, then edited by
+  hand. 1dp = one pixel of the game's 640x480 menus. See ..\README.txt.
+
+  game-dialogs     the game dialogs (layouts) this screen copies
+  game-opaque      it covers the whole menu (nothing under it is drawn)
+  game-dialog="x"  the part that copies the game's dialog x: shown while the
+                   game shows x, where the game put it
+  game="Name"      tied to the game's control of that name on that dialog
+  game-back        the control Esc / B / the right mouse button clicks
+-->
+<body game-dialogs="grbase ghostfil replyfil" game-opaque game-back="Back">
+<div id="screen">
+
+
+  <!-- GRBASE.DAT -->
+  <div id="d-grbase" class="dialog" game-dialog="grbase" style="left: 0dp; top: 0dp; width: 640dp; height: 480dp;">
+    <div id="grbase-TabLeft" game="TabLeft" class="pick" style="left: 120dp; top: 0dp; width: 201dp; height: 33dp; padding-top: 14dp; text-align: center;">Single Stunt</div>
+    <div id="grbase-TabRight" game="TabRight" class="pick" style="left: 321dp; top: 0dp; width: 199dp; height: 33dp; padding-top: 14dp; text-align: center;">Single Stunt</div>
+    <div id="grbase-Back" game="Back" title="Return To Previous Screen" class="button" style="left: 17dp; top: 404dp; width: 79dp; height: 76dp;"></div>
+    <div id="grbase-Help" game="Help" title="Open Help" class="button" style="left: 147dp; top: 404dp; width: 56dp; height: 76dp;"></div>
+    <div id="grbase-Start" game="Start" class="button" style="left: 546dp; top: 404dp; width: 64dp; height: 76dp;"></div>
+  </div>
+
+  <!-- GHOSTFIL.DAT -->
+  <div id="d-ghostfil" class="dialog" game-dialog="ghostfil" style="left: 20dp; top: 35dp; width: 600dp; height: 360dp;">
+    <div id="ghostfil-TxtTitle" game="TxtTitle" class="text" style="left: 48dp; top: 16dp; width: 513dp; height: 25dp; padding-top: 5dp; text-align: center;">Saved Ghost Race Files List</div>
+    <div id="ghostfil-Screen" game="Screen" class="plate" game-text="off" style="left: 8dp; top: 48dp; width: 586dp; height: 224dp;">
+      <div id="ghostfil-TxtTrack" game="TxtTrack" class="text" style="left: 8dp; top: 5dp; width: 137dp; height: 13dp; color: #7ab9fe;">Track</div>
+      <div id="ghostfil-TxtRider" game="TxtRider" class="text" style="left: 149dp; top: 5dp; width: 81dp; height: 13dp; color: #7ab9fe;">Rider</div>
+      <div id="ghostfil-TxtLaps" game="TxtLaps" class="text" style="left: 233dp; top: 5dp; width: 32dp; height: 13dp; color: #7ab9fe;">Laps</div>
+      <div id="ghostfil-TxtLength" game="TxtLength" class="text" style="left: 271dp; top: 5dp; width: 81dp; height: 13dp; color: #7ab9fe;">Length</div>
+      <div id="ghostfil-TxtDesc" game="TxtDesc" class="text" style="left: 357dp; top: 5dp; width: 201dp; height: 13dp; color: #7ab9fe;">Description</div>
+      <div id="ghostfil-LstTrack" game="LstTrack" class="list" style="left: 8dp; top: 25dp; width: 137dp; height: 193dp; color: #7ab9fe;"></div>
+      <div id="ghostfil-LstRider" game="LstRider" class="list" style="left: 149dp; top: 25dp; width: 81dp; height: 193dp; color: #7ab9fe;"></div>
+      <div id="ghostfil-LstLaps" game="LstLaps" class="list" style="left: 232dp; top: 25dp; width: 35dp; height: 193dp; color: #7ab9fe;"></div>
+      <div id="ghostfil-LstLength" game="LstLength" class="list" style="left: 270dp; top: 26dp; width: 81dp; height: 193dp; color: #7ab9fe;"></div>
+      <div id="ghostfil-LstDesc" game="LstDesc" class="list" style="left: 356dp; top: 25dp; width: 201dp; height: 193dp; color: #7ab9fe;"></div>
+      <input type="range" orientation="vertical" id="ghostfil-SldGhosts" game="SldGhosts" class="slider vslider" style="left: 566dp; top: 29dp; width: 12dp; height: 185dp;"/>
+    </div>
+    <div id="ghostfil-ButDescription" game="ButDescription" class="button" style="left: 32dp; top: 280dp; width: 134dp; height: 33dp; padding-top: 9dp; text-align: center;">Description...</div>
+    <div id="ghostfil-ButDelete" game="ButDelete" class="button" style="left: 432dp; top: 280dp; width: 134dp; height: 33dp; padding-top: 9dp; text-align: center;">Delete</div>
+  </div>
+
+  <!-- REPLYFIL.DAT -->
+  <div id="d-replyfil" class="dialog" game-dialog="replyfil" style="left: 20dp; top: 35dp; width: 600dp; height: 360dp;">
+    <div id="replyfil-TxtTitle" game="TxtTitle" class="text" style="left: 48dp; top: 16dp; width: 513dp; height: 25dp; padding-top: 5dp; text-align: center;">Saved Replay File List</div>
+    <div id="replyfil-Screen" game="Screen" class="plate" game-text="off" style="left: 8dp; top: 48dp; width: 586dp; height: 224dp;">
+      <div id="replyfil-TxtTrack" game="TxtTrack" class="text" style="left: 8dp; top: 5dp; width: 185dp; height: 13dp; color: #7ab9fe;">Track</div>
+      <div id="replyfil-TxtRider" game="TxtRider" class="text" style="left: 199dp; top: 5dp; width: 81dp; height: 13dp; color: #7ab9fe;">Rider</div>
+      <div id="replyfil-TxtLaps" game="TxtLaps" class="text" style="left: 283dp; top: 5dp; width: 32dp; height: 13dp; color: #7ab9fe;">Laps</div>
+      <div id="replyfil-TxtLength" game="TxtLength" class="text" style="left: 321dp; top: 5dp; width: 81dp; height: 13dp; color: #7ab9fe;">Length</div>
+      <div id="replyfil-TxtDesc" game="TxtDesc" class="text" style="left: 405dp; top: 5dp; width: 153dp; height: 13dp; color: #7ab9fe;">Description</div>
+      <div id="replyfil-LstTrack" game="LstTrack" class="list" style="left: 8dp; top: 25dp; width: 185dp; height: 193dp; color: #7ab9fe;"></div>
+      <div id="replyfil-LstRider" game="LstRider" class="list" style="left: 199dp; top: 25dp; width: 81dp; height: 193dp; color: #7ab9fe;"></div>
+      <div id="replyfil-LstLaps" game="LstLaps" class="list" style="left: 282dp; top: 25dp; width: 35dp; height: 193dp; color: #7ab9fe;"></div>
+      <div id="replyfil-LstLength" game="LstLength" class="list" style="left: 320dp; top: 26dp; width: 81dp; height: 193dp; color: #7ab9fe;"></div>
+      <div id="replyfil-LstDesc" game="LstDesc" class="list" style="left: 404dp; top: 25dp; width: 153dp; height: 193dp; color: #7ab9fe;"></div>
+      <input type="range" orientation="vertical" id="replyfil-SldReplays" game="SldReplays" class="slider vslider" style="left: 566dp; top: 29dp; width: 12dp; height: 185dp;"/>
+    </div>
+    <div id="replyfil-ButDescription" game="ButDescription" class="button" style="left: 32dp; top: 280dp; width: 134dp; height: 33dp; padding-top: 9dp; text-align: center;">Description...</div>
+    <div id="replyfil-ButDelete" game="ButDelete" class="button" style="left: 432dp; top: 280dp; width: 134dp; height: 33dp; padding-top: 9dp; text-align: center;">Delete</div>
+  </div>
+</div>
+</body>
+</rml>

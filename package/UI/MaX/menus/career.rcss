@@ -1,0 +1,66 @@
+/* career.rml: each control's own pictures (from the game's layouts). Made by tools/mcm2rml.py. */
+#d-pcc { decorator: image(/dat/PCC/ProCircuitScreens/PCCentral/PCBG.tga); }
+#pcc-TabNext { decorator: image(/dat/PCC/ProCircuitScreens/PCCentral/PCTab01Down.tga); }
+#pcc-TabNext.on { decorator: image(/dat/PCC/ProCircuitScreens/PCCentral/PCTab01Up.tga); }
+#pcc-TabNext.disabled { decorator: image(/dat/GLOBAL/Resources/RadioButtonOffGrey.tga); }
+#pcc-TabBikeRider { decorator: image(/dat/PCC/ProCircuitScreens/PCCentral/PCTab02Down.tga); }
+#pcc-TabBikeRider.on { decorator: image(/dat/PCC/ProCircuitScreens/PCCentral/PCTab02Up.tga); }
+#pcc-TabBikeRider.disabled { decorator: image(/dat/GLOBAL/Resources/RadioButtonOffGrey.tga); }
+#pcc-TabStandings { decorator: image(/dat/PCC/ProCircuitScreens/PCCentral/PCTab03Down.tga); }
+#pcc-TabStandings.on { decorator: image(/dat/PCC/ProCircuitScreens/PCCentral/PCTab03Up.tga); }
+#pcc-TabStandings.disabled { decorator: image(/dat/GLOBAL/Resources/RadioButtonOffGrey.tga); }
+#pcc-Back { decorator: image(/dat/PCC/ProCircuitScreens/PCCentral/PCBackUp.tga); }
+#pcc-Back:hover, #pcc-Back:focus-visible { decorator: image(/dat/PCC/ProCircuitScreens/PCCentral/PCBackLit.tga); }
+#pcc-Back:active { decorator: image(/dat/PCC/ProCircuitScreens/PCCentral/PCBackDown.tga); }
+#pcc-Help { decorator: image(/dat/PCC/ProCircuitScreens/PCCentral/PCHelpUp.tga); }
+#pcc-Help:hover, #pcc-Help:focus-visible { decorator: image(/dat/PCC/ProCircuitScreens/PCCentral/PCHelpLit.tga); }
+#pcc-Help:active { decorator: image(/dat/PCC/ProCircuitScreens/PCCentral/PCHelpDown.tga); }
+#pcc-Controls { decorator: image(/dat/PCC/ProCircuitScreens/PCCentral/PCJoyUp.tga); }
+#pcc-Controls:hover, #pcc-Controls:focus-visible { decorator: image(/dat/PCC/ProCircuitScreens/PCCentral/PCJoyLit.tga); }
+#pcc-Controls:active { decorator: image(/dat/PCC/ProCircuitScreens/PCCentral/PCJoyDown.tga); }
+#pcc-Options { decorator: image(/dat/PCC/ProCircuitScreens/PCCentral/PCOptionsUp.tga); }
+#pcc-Options:hover, #pcc-Options:focus-visible { decorator: image(/dat/PCC/ProCircuitScreens/PCCentral/PCOptionsLit.tga); }
+#pcc-Options:active { decorator: image(/dat/PCC/ProCircuitScreens/PCCentral/PCOptionsDown.tga); }
+#pcc-Practice { decorator: image(/dat/PCC/ProCircuitScreens/PCCentral/PCPracticeUp.tga); }
+#pcc-Practice:hover, #pcc-Practice:focus-visible { decorator: image(/dat/PCC/ProCircuitScreens/PCCentral/PCPracticeLit.tga); }
+#pcc-Practice:active { decorator: image(/dat/PCC/ProCircuitScreens/PCCentral/PCPracticeDown.tga); }
+#pcc-Start { decorator: image(/dat/PCC/ProCircuitScreens/PCCentral/PCStartUp.tga); }
+#pcc-Start:hover, #pcc-Start:focus-visible { decorator: image(/dat/PCC/ProCircuitScreens/PCCentral/PCStartLit.tga); }
+#pcc-Start:active { decorator: image(/dat/PCC/ProCircuitScreens/PCCentral/PCStartDown.tga); }
+#d-pccbiker { decorator: image(/dat/PCCBIKER/ProCircuitScreens/PCCentral/BikeandRider/PCBRBack.tga); }
+#pccbiker-DDLEngineSize selectvalue { decorator: image(/dat/PCCBIKER/ProCircuitScreens/PCCentral/BikeandRider/PCBRDropDown01.tga); }
+#pccbiker-DDLEngineSize selectbox { decorator: image(/dat/PCCBIKER/ProCircuitScreens/PCCentral/BikeandRider/PCBRDropDownBG01.tga); }
+#pccbiker-RiderLeft { decorator: image(/dat/GLOBAL/Resources/LeftArrowUp.tga); }
+#pccbiker-RiderLeft:hover, #pccbiker-RiderLeft:focus-visible { decorator: image(/dat/GLOBAL/Resources/LeftArrowLit.tga); }
+#pccbiker-RiderLeft:active { decorator: image(/dat/GLOBAL/Resources/LeftArrowDown.tga); }
+#pccbiker-RiderLeft.disabled { decorator: image(/dat/GLOBAL/Resources/LeftArrowGrey.tga); }
+#pccbiker-DDLRiders selectvalue { decorator: image(/dat/PCCBIKER/ProCircuitScreens/PCCentral/BikeandRider/PCBRDropDown04.tga); }
+#pccbiker-DDLRiders selectbox { decorator: image(/dat/PCCBIKER/ProCircuitScreens/PCCentral/BikeandRider/PCBRDropDownBG04.tga); }
+#pccbiker-RiderRight { decorator: image(/dat/GLOBAL/Resources/RightArrowUp.tga); }
+#pccbiker-RiderRight:hover, #pccbiker-RiderRight:focus-visible { decorator: image(/dat/GLOBAL/Resources/RightArrowLit.tga); }
+#pccbiker-RiderRight:active { decorator: image(/dat/GLOBAL/Resources/RightArrowDown.tga); }
+#pccbiker-RiderRight.disabled { decorator: image(/dat/GLOBAL/Resources/RightArrowGrey.tga); }
+#pccbiker-CornerUL { decorator: image(/dat/PCCBIKER/ProCircuitScreens/PCCentral/BikeandRider/PCBRCornerUL.tga); }
+#pccbiker-CornerUR { decorator: image(/dat/PCCBIKER/ProCircuitScreens/PCCentral/BikeandRider/PCBRCornerUR.tga); }
+#pccbiker-CornerLL { decorator: image(/dat/PCCBIKER/ProCircuitScreens/PCCentral/BikeandRider/PCBRCornerLL.tga); }
+#pccbiker-CornerLR { decorator: image(/dat/PCCBIKER/ProCircuitScreens/PCCentral/BikeandRider/PCBRCornerLR.tga); }
+#pccbiker-BikeLeft { decorator: image(/dat/GLOBAL/Resources/LeftArrowUp.tga); }
+#pccbiker-BikeLeft:hover, #pccbiker-BikeLeft:focus-visible { decorator: image(/dat/GLOBAL/Resources/LeftArrowLit.tga); }
+#pccbiker-BikeLeft:active { decorator: image(/dat/GLOBAL/Resources/LeftArrowDown.tga); }
+#pccbiker-BikeLeft.disabled { decorator: image(/dat/GLOBAL/Resources/LeftArrowGrey.tga); }
+#pccbiker-DDLBikes selectvalue { decorator: image(/dat/PCCBIKER/ProCircuitScreens/PCCentral/BikeandRider/PCBRDropDown04.tga); }
+#pccbiker-DDLBikes selectbox { decorator: image(/dat/PCCBIKER/ProCircuitScreens/PCCentral/BikeandRider/PCBRDropDownBG04.tga); }
+#pccbiker-BikeRight { decorator: image(/dat/GLOBAL/Resources/RightArrowUp.tga); }
+#pccbiker-BikeRight:hover, #pccbiker-BikeRight:focus-visible { decorator: image(/dat/GLOBAL/Resources/RightArrowLit.tga); }
+#pccbiker-BikeRight:active { decorator: image(/dat/GLOBAL/Resources/RightArrowDown.tga); }
+#pccbiker-BikeRight.disabled { decorator: image(/dat/GLOBAL/Resources/RightArrowGrey.tga); }
+#pccbiker-ButWrench { decorator: image(/dat/PCCBIKER/ProCircuitScreens/PCCentral/BikeandRider/PCBRWrenchUp.tga); }
+#pccbiker-ButWrench:hover, #pccbiker-ButWrench:focus-visible { decorator: image(/dat/PCCBIKER/ProCircuitScreens/PCCentral/BikeandRider/PCBRWrenchLit.tga); }
+#pccbiker-ButWrench:active { decorator: image(/dat/PCCBIKER/ProCircuitScreens/PCCentral/BikeandRider/PCBRWrenchDown.tga); }
+#pccbiker-EditPlateNumber { decorator: image(/dat/PCCBIKER/ProCircuitScreens/PCCentral/BikeandRider/PCBRSmalleditBox.tga); }
+#d-pccnext { decorator: image(/dat/PCCNEXT/ProCircuitScreens/PCCentral/NextRace/PCEBack.tga); }
+#pccnext-rbwFrame3 { decorator: image(/dat/PCCNEXT/ProCircuitScreens/PCCentral/NextRace/PCE_ULCorner.tga); }
+#pccnext-rbwFrame6 { decorator: image(/dat/PCCNEXT/ProCircuitScreens/PCCentral/NextRace/PCE_URCorner.tga); }
+#pccnext-rbwFrame4 { decorator: image(/dat/PCCNEXT/ProCircuitScreens/PCCentral/NextRace/PCE_BLCorner.tga); }
+#pccnext-rbwFrame5 { decorator: image(/dat/PCCNEXT/ProCircuitScreens/PCCentral/NextRace/PCE_BRCorner.tga); }
+#d-pccstand { decorator: image(/dat/PCCSTAND/ProCircuitScreens/PCCentral/Standings/PCSBack.tga); }

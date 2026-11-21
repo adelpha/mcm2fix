@@ -252,6 +252,7 @@ class Device : public d3d7::IDirect3DDevice7 {
   bool SubmitWideLine(const Draw& d);
   void SubmitDraw(const Draw& d);
   void OccludeText(const Draw& d);
+  bool HiResPrepare();
   // Reflections (reflect.cpp).
   bool ReflectWants(const Draw& d);
   void ReflectSky(const Draw& d);

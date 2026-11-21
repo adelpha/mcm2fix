@@ -1,0 +1,45 @@
+<rml>
+<head>
+  <title>careernew</title>
+  <link type="text/rcss" href="menus.rcss"/>
+  <link type="text/rcss" href="careernew.rcss"/>
+</head>
+<!--
+  A copy of the game's own careernew (MaXMenus=1), drawn over it while the game
+  shows it. Made by tools/mcm2rml.py from the game's layouts, then edited by
+  hand. 1dp = one pixel of the game's 640x480 menus. See ..\README.txt.
+
+  game-dialogs     the game dialogs (layouts) this screen copies
+  game-opaque      it covers the whole menu (nothing under it is drawn)
+  game-dialog="x"  the part that copies the game's dialog x: shown while the
+                   game shows x, where the game put it
+  game="Name"      tied to the game's control of that name on that dialog
+  game-back        the control Esc / B / the right mouse button clicks
+-->
+<body game-dialogs="pcnew" game-back="CancelButton">
+<div id="screen">
+
+
+  <!-- PCNEW.DAT -->
+  <div id="d-pcnew" class="dialog" game-dialog="pcnew" style="left: 104dp; top: 154dp; width: 432dp; height: 172dp;">
+    <div id="pcnew-TitleText" game="TitleText" class="text" style="left: 24dp; top: 5dp; width: 193dp; height: 17dp; padding-top: 1dp;">Create a New Pro Circuit:</div>
+    <div id="pcnew-OKButton" game="OKButton" class="button" style="left: 311dp; top: 21dp; width: 100dp; height: 25dp; padding-top: 5dp; text-align: center;">OK</div>
+    <div id="pcnew-rbwLabel1" game="rbwLabel1" class="text" style="left: 32dp; top: 24dp; width: 89dp; height: 17dp; padding-top: 1dp;">Bike Class:</div>
+    <div id="pcnew-rbwLabel2" game="rbwLabel2" title="Specifies how tough your opponents will be" class="text" style="left: 160dp; top: 24dp; width: 145dp; height: 17dp; padding-top: 1dp;">Difficulty Level:</div>
+    <div id="pcnew-RadClass125" game="RadClass125" title="You &amp; your opponents ride 125cc class bikes (bikes are lighter, more nimble than 250s)" class="radio" style="left: 32dp; top: 44dp; width: 49dp; height: 17dp; padding-top: 1dp; padding-left: 17dp;"><div class="box"/><span class="t">125</span></div>
+    <div id="pcnew-RadLODEasy" game="RadLODEasy" title="Specifies how tough your opponents will be" class="radio" style="left: 160dp; top: 44dp; width: 89dp; height: 17dp; padding-top: 1dp; padding-left: 17dp;"><div class="box"/><span class="t">Easy</span></div>
+    <div id="pcnew-CancelButton" game="CancelButton" class="button" style="left: 311dp; top: 55dp; width: 100dp; height: 25dp; padding-top: 5dp; text-align: center;">Cancel</div>
+    <div id="pcnew-RadClass250" game="RadClass250" title="You &amp; your opponents ride 250cc-2-stroke or 400cc-4-stroke bikes (more powerful than 125s)" class="radio" style="left: 32dp; top: 61dp; width: 49dp; height: 17dp; padding-top: 1dp; padding-left: 17dp;"><div class="box"/><span class="t">250</span></div>
+    <div id="pcnew-RadLODMedium" game="RadLODMedium" title="Specifies how tough your opponents will be" class="radio" style="left: 160dp; top: 61dp; width: 89dp; height: 17dp; padding-top: 1dp; padding-left: 17dp;"><div class="box"/><span class="t">Normal</span></div>
+    <div id="pcnew-RadClassOpen" game="RadClassOpen" title="You &amp; your opponents ride bikes in any class" class="radio" style="left: 32dp; top: 78dp; width: 73dp; height: 17dp; padding-top: 1dp; padding-left: 17dp;"><div class="box"/><span class="t">Open</span></div>
+    <div id="pcnew-RadLODHard" game="RadLODHard" title="Specifies how tough your opponents will be" class="radio" style="left: 160dp; top: 78dp; width: 81dp; height: 17dp; padding-top: 1dp; padding-left: 17dp;"><div class="box"/><span class="t">Hard</span></div>
+    <div id="pcnew-rbwLabel4" game="rbwLabel4" title="Specifies how tough your opponents will be" class="text" style="left: 32dp; top: 101dp; width: 151dp; height: 17dp; padding-top: 1dp;">No. of Opponents:</div>
+    <div id="pcnew-OpponentsLeftArrow" game="OpponentsLeftArrow" class="button" style="left: 186dp; top: 99dp; width: 21dp; height: 21dp;"></div>
+    <div id="pcnew-OpponentsListBox" game="OpponentsListBox" title="Specifies # of opponents (10 max.)" class="list" style="left: 208dp; top: 99dp; width: 33dp; height: 21dp; color: #ffffff; text-align: center;"></div>
+    <div id="pcnew-OpponentsRightArrow" game="OpponentsRightArrow" class="button" style="left: 243dp; top: 99dp; width: 21dp; height: 21dp;"></div>
+    <div id="pcnew-rbwLabel3" game="rbwLabel3" class="text" style="left: 16dp; top: 128dp; width: 41dp; height: 25dp; padding-top: 5dp;">Name:</div>
+    <input type="text" id="pcnew-EditBox" game="EditBox" class="edit" style="left: 63dp; top: 133dp; width: 345dp; height: 18dp; color: #7ab9fe;"/>
+  </div>
+</div>
+</body>
+</rml>

@@ -1,0 +1,105 @@
+/* Shared by the game menu copies (menus/*.rml). 1dp = one pixel of the
+   game's 640x480 menus. Made by tools/mcm2rml.py, then edited by hand. Pictures:
+   /dat/<ARCHIVE>/<file> is the game's own (UI\<ARCHIVE>.DAT); options after
+   '?': black (black is see-through too), opaque, frame=N (only the outer N
+   pixels), bar (a slider track without its tick marks). */
+
+body, div, span, p { display: block; }
+span { display: inline; }
+body {
+  width: 100%;
+  height: 100%;
+  font-family: Arial;
+  font-weight: bold;
+  font-size: 13dp;
+  line-height: 15dp;
+  color: #ffffff;
+  font-effect: shadow(1dp 1dp #000000);
+  white-space: nowrap;
+}
+/* The 640x480 menu area in the middle of the window. */
+#screen {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 640dp;
+  height: 480dp;
+  margin-left: -320dp;
+  margin-top: -240dp;
+}
+#screen div, #screen input, #screen select { position: absolute; box-sizing: border-box; }
+#screen span { position: static; }
+#screen .list div { position: static; }
+.game-hidden { display: none; }
+
+/* Everything that can be picked: arrows / d-pad move, Enter / A clicks. */
+.tab, .button, .check, .radio, .pick, .cycle, .slider, .dropdown, .edit, .list .row { tab-index: auto; nav: auto; focus: auto; }
+.disabled { tab-index: none; nav: none; focus: none; }
+
+/* Box plates on MCM2MaX's own layouts: the edge of a game plate only. */
+@spritesheet plate {
+  src: /dat/OPTGRAPH/Options/Graphics/GPlate03.tga?frame=2;
+  plate-outer: 0px 0px 228px 123px;
+  plate-inner: 2px 2px 224px 119px;
+}
+
+/* Tabs: the picked one is lit (.on). */
+.tab { text-align: center; }
+
+/* Checkboxes and radio buttons: the box, then the text. */
+.check .box, .radio .box { left: 0; top: 0; width: 14dp; height: 18dp; }
+.radio .box { height: 14dp; }
+.check .box { decorator: image(/dat/GLOBAL/Rev2GlobalSource/CheckBoxOff.tga); }
+.check.on .box { decorator: image(/dat/GLOBAL/Rev2GlobalSource/CheckBoxOn.tga); }
+.check.disabled .box { decorator: image(/dat/GLOBAL/Rev2GlobalSource/CheckBoxOffGrey.tga); }
+.check.on.disabled .box { decorator: image(/dat/GLOBAL/Rev2GlobalSource/CheckBoxOnGrey.tga); }
+.radio .box { decorator: image(/dat/GLOBAL/Resources/RadioButtonOff.tga); }
+.radio.on .box { decorator: image(/dat/GLOBAL/Resources/RadioButtonOn.tga); }
+.radio.disabled .box { decorator: image(/dat/GLOBAL/Resources/RadioButtonOffGrey.tga); }
+.radio.on.disabled .box { decorator: image(/dat/GLOBAL/Resources/RadioButtonOnGrey.tga); }
+.disabled { color: #8c8c8c; }
+
+/* A setting that steps through its choices (Chat Box Mode). */
+.cycle { text-align: center; }
+
+/* A radio button drawn as a picture of its own. */
+.pick { text-align: center; }
+
+/* Lists: the rows the game shows now; .on the chosen one. */
+.list { overflow: hidden; padding: 2dp 4dp; }
+.list .row { display: block; height: 16dp; line-height: 16dp; }
+.list .row:hover { background-color: #3a4a8c80; }
+.list .row.on { background-color: #3a4a8c; }
+/* A control's tooltip (its title=, the game's tooltip text), shown by MenuMaX
+   when the pointer rests on it. */
+#max-tooltip { position: absolute; z-index: 100; padding: 2dp 5dp; background-color: #fff8d0;
+  border: 1dp #000000; color: #000000; font-size: 12dp; font-effect: none; white-space: nowrap; pointer-events: none; }
+
+/* Edit boxes. */
+.edit { padding-top: 3dp; }
+
+/* Vertical sliders (a list's scroll bar). */
+.vslider slidertrack { width: 100%; }
+
+/* Sliders: the track and its thumb (each slider's own pictures below). */
+.slider slidertrack { height: 100%; }
+.slider sliderarrowdec, .slider sliderarrowinc { width: 0; height: 0; }
+
+/* Dropdowns: the text box, the arrow, the list. */
+.dropdown { text-align: left; }
+.dropdown selectvalue { display: block; width: auto; margin-right: 21dp; height: 18dp; padding: 3dp 4dp 0 4dp; decorator: image(/dat/OPTGRAPH/Options/Graphics/DropDown05.tga); }
+.dropdown selectarrow { display: block; width: 21dp; height: 21dp; decorator: image(/dat/GLOBAL/Resources/DownArrowUp.tga); }
+.dropdown:hover selectarrow, .dropdown:focus-visible selectarrow { decorator: image(/dat/GLOBAL/Resources/DownArrowLit.tga); }
+.dropdown selectarrow:active { decorator: image(/dat/GLOBAL/Resources/DownArrowDown.tga); }
+.dropdown selectbox {
+  margin-top: 0;
+  max-height: 200dp;
+  overflow-y: auto;
+  background-color: #10183a;
+  border: 1dp #5a6290;
+}
+.dropdown selectbox option { padding: 0 4dp; height: 16dp; line-height: 16dp; }
+.dropdown selectbox option:hover, .dropdown selectbox option:checked { background-color: #3a4a8c; color: #ffffff; }
+.dropdown selectbox scrollbarvertical { width: 21dp; decorator: image(/dat/OPTGRAPH/Options/Graphics/VerticleScroll04.tga); }
+.dropdown selectbox scrollbarvertical sliderbar { width: 17dp; margin-left: 2dp; decorator: image(/dat/GLOBAL/Resources/ElevatorThumbUp.tga); }
+.dropdown selectbox scrollbarvertical sliderarrowdec, .dropdown selectbox scrollbarvertical sliderarrowinc { width: 0; height: 0; }

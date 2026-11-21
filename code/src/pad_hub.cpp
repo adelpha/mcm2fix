@@ -64,6 +64,18 @@ float g_kb_x = 0, g_kb_y = 0;  // ramped steering / lean, -1..1
 Uint64 g_kb_ns = 0;
 DWORD g_kb_touches = 0;
 
+// Other joysticks (wheels, flight sticks), opened only so the menu screens
+// can read their hat and buttons; SDL reads them without taking them from
+// the game's DirectInput.
+struct Stick {
+  SDL_JoystickID id = 0;
+  SDL_Joystick* j = nullptr;
+  std::string name;
+  bool axes_centred = false;  // axes 0 / 1 rest in the middle (not pedals)
+  StickState st = {-1, 0};
+};
+std::vector<Stick> g_sticks;
+
 struct Lock {
   Lock() { EnterCriticalSection(&g_cs); }
   ~Lock() { LeaveCriticalSection(&g_cs); }
@@ -324,6 +336,59 @@ void Add(SDL_JoystickID id) {
   if (g_active == -1 && p.enabled) SetActive(static_cast<int>(g_pads.size()) - 1, "connected");
 }
 
+void AddStick(SDL_JoystickID id) {
+  for (const Pad& p : g_pads)
+    if (p.id == id) return;
+  for (const Stick& k : g_sticks)
+    if (k.id == id) return;
+  SDL_Joystick* j = SDL_OpenJoystick(id);
+  if (!j) {
+    patch::Log("hub: could not open joystick %u for the menus: %s", static_cast<unsigned>(id), SDL_GetError());
+    return;
+  }
+  Stick k;
+  k.id = id;
+  k.j = j;
+  const char* name = SDL_GetJoystickName(j);
+  k.name = name && *name ? name : "Joystick";
+  const int axes = SDL_GetNumJoystickAxes(j);
+  k.axes_centred = axes >= 2 && std::abs(SDL_GetJoystickAxis(j, 0)) < 8000 && std::abs(SDL_GetJoystickAxis(j, 1)) < 8000;
+  patch::Log("hub: joystick \"%s\" (%d axes, %d buttons, %d hats) read for the menus only%s", k.name.c_str(), axes,
+             SDL_GetNumJoystickButtons(j), SDL_GetNumJoystickHats(j),
+             k.axes_centred ? "" : " (axes 0 / 1 not centred: hat only)");
+  g_sticks.push_back(k);
+}
+
+void RemoveStick(SDL_JoystickID id) {
+  for (size_t i = 0; i < g_sticks.size(); ++i) {
+    if (g_sticks[i].id != id) continue;
+    patch::Log("hub: joystick \"%s\" disconnected", g_sticks[i].name.c_str());
+    SDL_CloseJoystick(g_sticks[i].j);
+    g_sticks.erase(g_sticks.begin() + static_cast<std::ptrdiff_t>(i));
+    return;
+  }
+}
+
+StickState ReadStick(const Stick& k) {
+  StickState st = {-1, 0};
+  const Uint8 hat = SDL_GetNumJoystickHats(k.j) > 0 ? SDL_GetJoystickHat(k.j, 0) : SDL_HAT_CENTERED;
+  if (hat & SDL_HAT_UP) st.dir = 0;
+  else if (hat & SDL_HAT_RIGHT) st.dir = 1;
+  else if (hat & SDL_HAT_DOWN) st.dir = 2;
+  else if (hat & SDL_HAT_LEFT) st.dir = 3;
+  else if (k.axes_centred) {
+    const int x = SDL_GetJoystickAxis(k.j, 0), y = SDL_GetJoystickAxis(k.j, 1);  // y: down positive
+    if (y < -24000) st.dir = 0;
+    else if (x > 24000) st.dir = 1;
+    else if (y > 24000) st.dir = 2;
+    else if (x < -24000) st.dir = 3;
+  }
+  const int n = std::min(SDL_GetNumJoystickButtons(k.j), 32);
+  for (int b = 0; b < n; ++b)
+    if (SDL_GetJoystickButton(k.j, b)) st.buttons |= 1u << b;
+  return st;
+}
+
 void Remove(SDL_JoystickID id) {
   for (int i = 0; i < static_cast<int>(g_pads.size()); ++i) {
     if (g_pads[i].id != id) continue;
@@ -403,6 +468,9 @@ bool Init(bool log, const char* disabled) {
   SDL_JoystickID* ids = SDL_GetGamepads(&n);
   for (int i = 0; ids && i < n; ++i) Add(ids[i]);
   SDL_free(ids);
+  ids = SDL_GetJoysticks(&n);
+  for (int i = 0; ids && i < n; ++i) AddStick(ids[i]);
+  SDL_free(ids);
   RefreshIds();
   patch::Log("hub: %d gamepad(s) at start%s", static_cast<int>(g_pads.size()),
              g_pads.empty() ? " (plugging one in later works)" : "");
@@ -416,6 +484,7 @@ void Pump() {
   SDL_Event e;
   Lock lock;
   bool changed_list = false;
+  std::vector<SDL_JoystickID> joysticks_added;
   while (SDL_PeepEvents(&e, 1, SDL_GETEVENT, SDL_EVENT_FIRST, SDL_EVENT_LAST) > 0) {
     if (e.type == SDL_EVENT_GAMEPAD_ADDED) {
       Add(e.gdevice.which);
@@ -423,8 +492,15 @@ void Pump() {
     } else if (e.type == SDL_EVENT_GAMEPAD_REMOVED) {
       Remove(e.gdevice.which);
       changed_list = true;
+    } else if (e.type == SDL_EVENT_JOYSTICK_ADDED) {
+      joysticks_added.push_back(e.jdevice.which);  // after the gamepad events of this pump
+    } else if (e.type == SDL_EVENT_JOYSTICK_REMOVED) {
+      RemoveStick(e.jdevice.which);
     }
   }
+  for (SDL_JoystickID id : joysticks_added)
+    AddStick(id);  // not if it was opened as a gamepad
+  for (Stick& k : g_sticks) k.st = ReadStick(k);
   if (changed_list) RefreshIds();
   const Uint64 now = SDL_GetTicksNS();
   if (g_kb_on) {
@@ -477,6 +553,23 @@ bool Read(PadState* out, DWORD* packet) {
   *out = g_active != -1 ? g_out : PadState{};
   *packet = g_packet;
   return g_active != -1;
+}
+
+bool ReadAll(std::vector<PadState>* out) {
+  out->clear();
+  if (!g_ready) return false;
+  Lock lock;
+  for (const Pad& p : g_pads)
+    if (p.enabled) out->push_back(p.st);
+  return true;
+}
+
+bool ReadSticks(std::vector<StickState>* out) {
+  out->clear();
+  if (!g_ready) return false;
+  Lock lock;
+  for (const Stick& k : g_sticks) out->push_back(k.st);
+  return true;
 }
 
 void Rumble(WORD low, WORD high) {

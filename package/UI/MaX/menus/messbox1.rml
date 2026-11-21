@@ -1,0 +1,33 @@
+<rml>
+<head>
+  <title>messbox1</title>
+  <link type="text/rcss" href="menus.rcss"/>
+  <link type="text/rcss" href="messbox1.rcss"/>
+</head>
+<!--
+  A copy of the game's own messbox1 (MaXMenus=1), drawn over it while the game
+  shows it. Made by tools/mcm2rml.py from the game's layouts, then edited by
+  hand. 1dp = one pixel of the game's 640x480 menus. See ..\README.txt.
+
+  game-dialogs     the game dialogs (layouts) this screen copies
+  game-opaque      it covers the whole menu (nothing under it is drawn)
+  game-dialog="x"  the part that copies the game's dialog x: shown while the
+                   game shows x, where the game put it
+  game="Name"      tied to the game's control of that name on that dialog
+  game-back        the control Esc / B / the right mouse button clicks
+-->
+<body game-dialogs="messbox1" game-back="CancelButton">
+<div id="screen">
+
+
+  <!-- MESSBOX1.DAT -->
+  <div id="d-messbox1" class="dialog" game-dialog="messbox1" style="left: 104dp; top: 154dp; width: 432dp; height: 172dp;">
+    <div id="messbox1-OKButton" game="OKButton" class="button" style="left: 312dp; top: 22dp; width: 100dp; height: 25dp; padding-top: 5dp; text-align: center;">OK</div>
+    <div id="messbox1-TitleText" game="TitleText" class="text" style="left: 43dp; top: 24dp; width: 244dp; height: 23dp; color: #7ab9fe; padding-left: 3dp;"></div>
+    <div id="messbox1-TxtPrompt" game="TxtPrompt" class="text" style="left: 44dp; top: 47dp; width: 240dp; height: 65dp; color: #7ab9fe; white-space: normal; text-align: center;"></div>
+    <div id="messbox1-CancelButton" game="CancelButton" class="button" style="left: 312dp; top: 56dp; width: 100dp; height: 25dp; padding-top: 5dp; text-align: center;">Cancel</div>
+    <input type="text" id="messbox1-EditBox" game="EditBox" class="edit" style="left: 22dp; top: 132dp; width: 385dp; height: 18dp; color: #7ab9fe;"/>
+  </div>
+</div>
+</body>
+</rml>

@@ -1,0 +1,11 @@
+/* messbox2.rml: each control's own pictures (from the game's layouts). Made by tools/mcm2rml.py. */
+#d-messbox2 { decorator: image(/dat/MESSBOX2/MessageBox02/Message02BG.tga); }
+#messbox2-ButLeft { decorator: image(/dat/MESSBOX2/MessageBox02/MsgBx02Bttn01Up.tga); }
+#messbox2-ButLeft:active { decorator: image(/dat/MESSBOX2/MessageBox02/MsgBx02Bttn01Down.tga); }
+#messbox2-ButLeft.disabled { decorator: image(/dat/MESSBOX2/MessageBox02/MsgBx02Bttn01Up.tga); }
+#messbox2-ButMiddle { decorator: image(/dat/MESSBOX2/MessageBox02/MsgBx02Bttn01Up.tga); }
+#messbox2-ButMiddle:active { decorator: image(/dat/MESSBOX2/MessageBox02/MsgBx02Bttn01Down.tga); }
+#messbox2-ButMiddle.disabled { decorator: image(/dat/MESSBOX2/MessageBox02/MsgBx02Bttn01Up.tga); }
+#messbox2-ButRight { decorator: image(/dat/MESSBOX2/MessageBox02/MsgBx02Bttn01Up.tga); }
+#messbox2-ButRight:active { decorator: image(/dat/MESSBOX2/MessageBox02/MsgBx02Bttn01Down.tga); }
+#messbox2-ButRight.disabled { decorator: image(/dat/MESSBOX2/MessageBox02/MsgBx02Bttn01Up.tga); }

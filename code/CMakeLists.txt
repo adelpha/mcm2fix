@@ -62,6 +62,7 @@ add_library(MCM2MaX SHARED
   src/dd/drawlog.cpp
   src/dd/motionblur.cpp
   src/dd/hudtext.cpp
+  src/dd/hires3d.cpp
   src/dd/racetitle.cpp
   src/dd/oneshot.cpp
   src/dd/hook.cpp
@@ -78,6 +79,8 @@ add_library(MCM2MaX SHARED
   src/video/player.cpp
   src/music.cpp
   src/menus.cpp
+  src/menunav.cpp
+  src/menugame.cpp
   src/music_decoders.cpp
   MCM2MaX.def)
 # Indeo 5 video decoding needs a static FFmpeg (tools/build-ffmpeg.sh). Without
@@ -102,6 +105,18 @@ if(MCM2MaX_SDL3)
   target_link_libraries(MCM2MaX PRIVATE "${MCM2MaX_SDL3}/lib/libSDL3.a" imm32 oleaut32 version uuid advapi32 setupapi)
 else()
   target_sources(MCM2MaX PRIVATE src/pad_hub_stub.cpp)
+endif()
+
+# MenuMaX screens need static RmlUi + FreeType (tools/build-rmlui.sh). Without
+# them the DLL has stubs and the new screens are off.
+set(MCM2MaX_RMLUI "" CACHE PATH "RmlUi + FreeType install prefix from tools/build-rmlui.sh")
+if(MCM2MaX_RMLUI)
+  target_sources(MCM2MaX PRIVATE src/ui/ui.cpp src/ui/gameart.cpp src/ui/render.cpp src/ui/render_d3d11.cpp src/ui/render_d3d9.cpp)
+  target_include_directories(MCM2MaX PRIVATE "${MCM2MaX_RMLUI}/include")
+  target_compile_definitions(MCM2MaX PRIVATE RMLUI_STATIC_LIB)
+  target_link_libraries(MCM2MaX PRIVATE "${MCM2MaX_RMLUI}/lib/librmlui.a" "${MCM2MaX_RMLUI}/lib/libfreetype.a")
+else()
+  target_sources(MCM2MaX PRIVATE src/ui/ui_stub.cpp)
 endif()
 
 set_target_properties(MCM2MaX PROPERTIES PREFIX "" OUTPUT_NAME "MCM2MaX")

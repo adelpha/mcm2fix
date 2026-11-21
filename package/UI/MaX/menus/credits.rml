@@ -1,0 +1,29 @@
+<rml>
+<head>
+  <title>credits</title>
+  <link type="text/rcss" href="menus.rcss"/>
+  <link type="text/rcss" href="credits.rcss"/>
+</head>
+<!--
+  A copy of the game's own credits (MaXMenus=1), drawn over it while the game
+  shows it. Made by tools/mcm2rml.py from the game's layouts, then edited by
+  hand. 1dp = one pixel of the game's 640x480 menus. See ..\README.txt.
+
+  game-dialogs     the game dialogs (layouts) this screen copies
+  game-opaque      it covers the whole menu (nothing under it is drawn)
+  game-dialog="x"  the part that copies the game's dialog x: shown while the
+                   game shows x, where the game put it
+  game="Name"      tied to the game's control of that name on that dialog
+  game-back        the control Esc / B / the right mouse button clicks
+-->
+<body game-dialogs="credits" game-back="Back">
+<div id="screen">
+
+
+  <!-- CREDITS.DAT -->
+  <div id="d-credits" class="dialog" game-dialog="credits" style="left: 0dp; top: 0dp; width: 640dp; height: 480dp;">
+    <div id="credits-Back" game="Back" class="button" style="left: 8dp; top: 448dp; width: 21dp; height: 21dp;"></div>
+  </div>
+</div>
+</body>
+</rml>

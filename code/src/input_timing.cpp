@@ -52,6 +52,7 @@
 //     game thinks is down but is up gets a release, and buffered joystick
 //     axes get their current value.
 #include "input_timing.h"
+#include "ui/ui.h"
 
 #include <windows.h>
 
@@ -62,6 +63,7 @@
 #include <vector>
 
 #include "config.h"
+#include "menunav.h"
 #include "mode_prompt.h"
 #include "patch.h"
 
@@ -670,8 +672,108 @@ HRESULT WINAPI MySetFormat(void* self, const void* fmt) {
 bool PromptKey(DWORD ofs) { return ofs == 0x01 || ofs == 0x1C || ofs == 0x9C; }  // DIK_ESCAPE, RETURN, NUMPADENTER
 bool PromptMouse(DWORD ofs) { return ofs >= 12 && ofs < 20; }                    // DIMOFS_BUTTON0..7
 
+// The game reads the keyboard (and mouse) both buffered and immediately;
+// while a screen is open only one of the two may feed it, or every key
+// press counts twice. Buffered reads win while the game makes them.
+DWORD g_ui_kb_buffered = 0, g_ui_mouse_buffered = 0;
+bool UiUseState(DWORD buffered_at) { return GetTickCount() - buffered_at > 1000; }
+
+// MenuMaX screens (ui/ui.h): while one is open, keys and all mouse input go
+// to it and not to the game (its cursor stays put; the screen has its own).
+HRESULT UiFilterData(void* self, DiData* data, DWORD* inout, DWORD flags, HRESULT hr) {
+  int kind = -1;
+  {
+    Lock lock;
+    if (Device* d = Find(self)) kind = d->kind;
+  }
+  if (kind != kKeyboard && kind != kMouse) return hr;
+  if (!(flags & kPeek)) (kind == kKeyboard ? g_ui_kb_buffered : g_ui_mouse_buffered) = GetTickCount();
+  DWORD k = 0;
+  for (DWORD i = 0; i < *inout; ++i) {
+    const DiData& e = data[i];
+    if (flags & kPeek) continue;  // everything is the screen's
+    if (kind == kKeyboard) ui::KeyEvent(e.ofs, (e.data & 0x80) != 0);
+    else if (e.ofs == 0) ui::MouseMove(static_cast<int>(e.data), 0);  // DIMOFS_X
+    else if (e.ofs == 4) ui::MouseMove(0, static_cast<int>(e.data));  // DIMOFS_Y
+    else if (e.ofs == 8) ui::MouseWheel(static_cast<int>(e.data));
+    else if (e.ofs < 20) ui::MouseButton(static_cast<int>(e.ofs - 12), (e.data & 0x80) != 0);
+  }
+  *inout = k;
+  return hr;
+}
+
+// Immediate reads while a screen is open: changes since the last read go to
+// the screen, the game sees nothing pressed.
+HRESULT UiFilterState(void* self, DWORD cb, void* out, HRESULT hr) {
+  int kind = -1;
+  {
+    Lock lock;
+    if (Device* d = Find(self)) kind = d->kind;
+  }
+  uint8_t* b = static_cast<uint8_t*>(out);
+  static uint8_t keys[256], mouse[8];
+  if (kind == kKeyboard && cb >= 256) {
+    for (unsigned i = 0; i < 256; ++i) {
+      const bool down = (b[i] & 0x80) != 0;
+      if (down != ((keys[i] & 0x80) != 0) && UiUseState(g_ui_kb_buffered)) ui::KeyEvent(i, down);
+      keys[i] = b[i];
+      b[i] = 0;
+    }
+  } else if (kind == kMouse && cb >= 16) {
+    const bool use = UiUseState(g_ui_mouse_buffered);
+    LONG mx, my, z;
+    std::memcpy(&mx, b, 4);
+    std::memcpy(&my, b + 4, 4);
+    if ((mx || my) && use) ui::MouseMove(mx, my);
+    std::memset(b, 0, 8);
+    std::memcpy(&z, b + 8, 4);
+    if (z && use) ui::MouseWheel(z);
+    std::memset(b + 8, 0, 4);
+    const unsigned n = cb >= 20 ? 8 : 4;
+    for (unsigned i = 0; i < n; ++i) {
+      const bool down = (b[12 + i] & 0x80) != 0;
+      if (down != ((mouse[i] & 0x80) != 0) && use) ui::MouseButton(static_cast<int>(i), down);
+      mouse[i] = b[12 + i];
+      b[12 + i] = 0;
+    }
+  } else if (kind == kJoystick && (cb == 80 || cb == 272)) {
+    // DIJOYSTATE(2): rgdwPOV[0] at 32, rgbButtons[32] at 48.
+    DWORD pov, buttons = 0;
+    std::memcpy(&pov, b + 32, 4);
+    for (unsigned i = 0; i < 32; ++i)
+      if (b[48 + i] & 0x80) buttons |= 1u << i;
+    ui::JoyState(pov, buttons);
+    std::memset(b + 32, 0xFF, 16);
+    std::memset(b + 48, 0, 32);
+  }
+  return hr;
+}
+
+// MenuNav (menunav.h): keyboard presses are passed on (the game still gets
+// them).
+void NavKeysFromData(const DiData* data, DWORD n) {
+  for (DWORD i = 0; i < n; ++i) MenuNavKey(data[i].ofs, (data[i].data & 0x80) != 0);
+}
+
+void NavKeysFromState(const uint8_t* keys) {
+  static uint8_t prev[256];
+  for (unsigned i = 0; i < 256; ++i) {
+    if ((keys[i] ^ prev[i]) & 0x80) MenuNavKey(i, (keys[i] & 0x80) != 0);
+    prev[i] = keys[i];
+  }
+}
+
 HRESULT WINAPI MyGetData(void* self, DWORD cb, DiData* data, DWORD* inout, DWORD flags) {
   const HRESULT hr = GetDataImpl(self, cb, data, inout, flags);
+  if (SUCCEEDED(hr) && data && inout && cb == sizeof(DiData) && ui::Active()) return UiFilterData(self, data, inout, flags, hr);
+  if (SUCCEEDED(hr) && data && inout && cb == sizeof(DiData) && !(flags & kPeek) && MenuNavOn()) {
+    int kind = -1;
+    {
+      Lock lock;
+      if (Device* d = Find(self)) kind = d->kind;
+    }
+    if (kind == kKeyboard) NavKeysFromData(data, *inout);
+  }
   if (FAILED(hr) || !data || !inout || cb != sizeof(DiData) || !ModePromptActive()) return hr;
   int kind = -1;
   {
@@ -699,6 +801,15 @@ HRESULT WINAPI MyGetData(void* self, DWORD cb, DiData* data, DWORD* inout, DWORD
 
 HRESULT WINAPI MyGetState(void* self, DWORD cb, void* out) {
   const HRESULT hr = GetStateImpl(self, cb, out);
+  if (SUCCEEDED(hr) && out && ui::Active()) return UiFilterState(self, cb, out, hr);
+  if (SUCCEEDED(hr) && out && MenuNavOn()) {
+    int kind = -1;
+    {
+      Lock lock;
+      if (Device* d = Find(self)) kind = d->kind;
+    }
+    if (kind == kKeyboard && cb >= 256) NavKeysFromState(static_cast<const uint8_t*>(out));
+  }
   if (FAILED(hr) || !out || !ModePromptActive()) return hr;
   int kind = -1;
   {
